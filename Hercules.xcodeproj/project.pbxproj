@@ -1,0 +1,554 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		639E41022FC388FA008C2BF2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 639E40E82FC388F8008C2BF2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 639E40EF2FC388F8008C2BF2;
+			remoteInfo = Hercules;
+		};
+		639E410C2FC388FA008C2BF2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 639E40E82FC388F8008C2BF2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 639E40EF2FC388F8008C2BF2;
+			remoteInfo = Hercules;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		639E40F02FC388F8008C2BF2 /* Hercules.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hercules.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		639E41012FC388FA008C2BF2 /* HerculesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HerculesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		639E410B2FC388FA008C2BF2 /* HerculesUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HerculesUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		639E40F22FC388F8008C2BF2 /* Hercules */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Hercules;
+			sourceTree = "<group>";
+		};
+		639E41042FC388FA008C2BF2 /* HerculesTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HerculesTests;
+			sourceTree = "<group>";
+		};
+		639E410E2FC388FA008C2BF2 /* HerculesUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HerculesUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		639E40ED2FC388F8008C2BF2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		639E40FE2FC388FA008C2BF2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		639E41082FC388FA008C2BF2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		639E40E72FC388F8008C2BF2 = {
+			isa = PBXGroup;
+			children = (
+				639E40F22FC388F8008C2BF2 /* Hercules */,
+				639E41042FC388FA008C2BF2 /* HerculesTests */,
+				639E410E2FC388FA008C2BF2 /* HerculesUITests */,
+				639E40F12FC388F8008C2BF2 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		639E40F12FC388F8008C2BF2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				639E40F02FC388F8008C2BF2 /* Hercules.app */,
+				639E41012FC388FA008C2BF2 /* HerculesTests.xctest */,
+				639E410B2FC388FA008C2BF2 /* HerculesUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		639E40EF2FC388F8008C2BF2 /* Hercules */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 639E41152FC388FB008C2BF2 /* Build configuration list for PBXNativeTarget "Hercules" */;
+			buildPhases = (
+				639E40EC2FC388F8008C2BF2 /* Sources */,
+				639E40ED2FC388F8008C2BF2 /* Frameworks */,
+				639E40EE2FC388F8008C2BF2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				639E40F22FC388F8008C2BF2 /* Hercules */,
+			);
+			name = Hercules;
+			packageProductDependencies = (
+			);
+			productName = Hercules;
+			productReference = 639E40F02FC388F8008C2BF2 /* Hercules.app */;
+			productType = "com.apple.product-type.application";
+		};
+		639E41002FC388FA008C2BF2 /* HerculesTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 639E41182FC388FB008C2BF2 /* Build configuration list for PBXNativeTarget "HerculesTests" */;
+			buildPhases = (
+				639E40FD2FC388FA008C2BF2 /* Sources */,
+				639E40FE2FC388FA008C2BF2 /* Frameworks */,
+				639E40FF2FC388FA008C2BF2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				639E41032FC388FA008C2BF2 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				639E41042FC388FA008C2BF2 /* HerculesTests */,
+			);
+			name = HerculesTests;
+			packageProductDependencies = (
+			);
+			productName = HerculesTests;
+			productReference = 639E41012FC388FA008C2BF2 /* HerculesTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		639E410A2FC388FA008C2BF2 /* HerculesUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 639E411B2FC388FB008C2BF2 /* Build configuration list for PBXNativeTarget "HerculesUITests" */;
+			buildPhases = (
+				639E41072FC388FA008C2BF2 /* Sources */,
+				639E41082FC388FA008C2BF2 /* Frameworks */,
+				639E41092FC388FA008C2BF2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				639E410D2FC388FA008C2BF2 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				639E410E2FC388FA008C2BF2 /* HerculesUITests */,
+			);
+			name = HerculesUITests;
+			packageProductDependencies = (
+			);
+			productName = HerculesUITests;
+			productReference = 639E410B2FC388FA008C2BF2 /* HerculesUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		639E40E82FC388F8008C2BF2 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					639E40EF2FC388F8008C2BF2 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					639E41002FC388FA008C2BF2 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 639E40EF2FC388F8008C2BF2;
+					};
+					639E410A2FC388FA008C2BF2 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 639E40EF2FC388F8008C2BF2;
+					};
+				};
+			};
+			buildConfigurationList = 639E40EB2FC388F8008C2BF2 /* Build configuration list for PBXProject "Hercules" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 639E40E72FC388F8008C2BF2;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 639E40F12FC388F8008C2BF2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				639E40EF2FC388F8008C2BF2 /* Hercules */,
+				639E41002FC388FA008C2BF2 /* HerculesTests */,
+				639E410A2FC388FA008C2BF2 /* HerculesUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		639E40EE2FC388F8008C2BF2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		639E40FF2FC388FA008C2BF2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		639E41092FC388FA008C2BF2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		639E40EC2FC388F8008C2BF2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		639E40FD2FC388FA008C2BF2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		639E41072FC388FA008C2BF2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		639E41032FC388FA008C2BF2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 639E40EF2FC388F8008C2BF2 /* Hercules */;
+			targetProxy = 639E41022FC388FA008C2BF2 /* PBXContainerItemProxy */;
+		};
+		639E410D2FC388FA008C2BF2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 639E40EF2FC388F8008C2BF2 /* Hercules */;
+			targetProxy = 639E410C2FC388FA008C2BF2 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		639E41132FC388FB008C2BF2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		639E41142FC388FB008C2BF2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		639E41162FC388FB008C2BF2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Hercules/Hercules.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"Hercules/Preview Content\"";
+				DEVELOPMENT_TEAM = 7WSN7BRP32;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kerador.hercules;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		639E41172FC388FB008C2BF2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Hercules/Hercules.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"Hercules/Preview Content\"";
+				DEVELOPMENT_TEAM = 7WSN7BRP32;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kerador.hercules;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		639E41192FC388FB008C2BF2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7WSN7BRP32;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kerador.herculesTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Hercules.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Hercules";
+			};
+			name = Debug;
+		};
+		639E411A2FC388FB008C2BF2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7WSN7BRP32;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kerador.herculesTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Hercules.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Hercules";
+			};
+			name = Release;
+		};
+		639E411C2FC388FB008C2BF2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7WSN7BRP32;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kerador.herculesUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Hercules;
+			};
+			name = Debug;
+		};
+		639E411D2FC388FB008C2BF2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7WSN7BRP32;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kerador.herculesUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Hercules;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		639E40EB2FC388F8008C2BF2 /* Build configuration list for PBXProject "Hercules" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				639E41132FC388FB008C2BF2 /* Debug */,
+				639E41142FC388FB008C2BF2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		639E41152FC388FB008C2BF2 /* Build configuration list for PBXNativeTarget "Hercules" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				639E41162FC388FB008C2BF2 /* Debug */,
+				639E41172FC388FB008C2BF2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		639E41182FC388FB008C2BF2 /* Build configuration list for PBXNativeTarget "HerculesTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				639E41192FC388FB008C2BF2 /* Debug */,
+				639E411A2FC388FB008C2BF2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		639E411B2FC388FB008C2BF2 /* Build configuration list for PBXNativeTarget "HerculesUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				639E411C2FC388FB008C2BF2 /* Debug */,
+				639E411D2FC388FB008C2BF2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 639E40E82FC388F8008C2BF2 /* Project object */;
+}
