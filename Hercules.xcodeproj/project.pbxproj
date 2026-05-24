@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		63E241352FC38FCB00A63DA3 /* HerculesApp in Frameworks */ = {isa = PBXBuildFile; productRef = 63E241342FC38FCB00A63DA3 /* HerculesApp */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		639E41022FC388FA008C2BF2 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +31,7 @@
 		639E40F02FC388F8008C2BF2 /* Hercules.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hercules.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		639E41012FC388FA008C2BF2 /* HerculesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HerculesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		639E410B2FC388FA008C2BF2 /* HerculesUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HerculesUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		639E412F2FC38D28008C2BF2 /* lib */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = lib; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -52,6 +57,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				63E241352FC38FCB00A63DA3 /* HerculesApp in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +84,7 @@
 				639E40F22FC388F8008C2BF2 /* Hercules */,
 				639E41042FC388FA008C2BF2 /* HerculesTests */,
 				639E410E2FC388FA008C2BF2 /* HerculesUITests */,
+				639E412E2FC38D28008C2BF2 /* Frameworks */,
 				639E40F12FC388F8008C2BF2 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +97,14 @@
 				639E410B2FC388FA008C2BF2 /* HerculesUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		639E412E2FC38D28008C2BF2 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				639E412F2FC38D28008C2BF2 /* lib */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -112,6 +127,7 @@
 			);
 			name = Hercules;
 			packageProductDependencies = (
+				63E241342FC38FCB00A63DA3 /* HerculesApp */,
 			);
 			productName = Hercules;
 			productReference = 639E40F02FC388F8008C2BF2 /* Hercules.app */;
@@ -549,6 +565,13 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		63E241342FC38FCB00A63DA3 /* HerculesApp */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HerculesApp;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 639E40E82FC388F8008C2BF2 /* Project object */;
 }
