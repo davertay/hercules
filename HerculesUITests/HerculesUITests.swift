@@ -1,10 +1,3 @@
-//
-//  HerculesUITests.swift
-//  HerculesUITests
-//
-//  Created by David Taylor on 5/24/26.
-//
-
 import XCTest
 
 final class HerculesUITests: XCTestCase {

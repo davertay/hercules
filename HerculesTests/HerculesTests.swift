@@ -1,10 +1,3 @@
-//
-//  HerculesTests.swift
-//  HerculesTests
-//
-//  Created by David Taylor on 5/24/26.
-//
-
 import Testing
 @testable import Hercules
 
