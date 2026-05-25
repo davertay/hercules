@@ -1,5 +1,7 @@
 import CustomDump
+import Foundation
 import SnapshotTesting
+import SnapshotTestingCustomDump
 import Testing
 
 @testable import Agent

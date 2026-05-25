@@ -28,6 +28,7 @@ let package = Package(
                 "Agent",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
+                .product(name: "SnapshotTestingCustomDump", package: "swift-snapshot-testing"),
             ],
             resources: [
                 .copy("Fixtures"),
