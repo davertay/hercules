@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-lib:
+    name: Lib package
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: lib
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test
+        run: swift test
+
+  build-app:
+    name: Xcode app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: make build
+
+  notify-agent:
+    name: Notify agent of CI result
+    needs: [test-lib, build-app]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      actions: read
+    steps:
+      # Posts via WORKFLOW_PAT (not the default GITHUB_TOKEN) because
+      # actions performed by GITHUB_TOKEN do NOT cascade-trigger workflows.
+      # If this used the default token, the resulting comment would never
+      # fire claude.yml's ci-feedback job. See ISSUES.md > Cascade triggering.
+      - name: Post PR comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.WORKFLOW_PAT }}
+          script: |
+            const jobs = [
+              { name: 'test-lib',  result: '${{ needs.test-lib.result  }}' },
+              { name: 'build-app', result: '${{ needs.build-app.result }}' },
+            ];
+            const failed = jobs.filter(j => j.result === 'failure');
+            const overall = failed.length === 0 ? 'Passed' : 'Failed';
+            const icon = (r) => r === 'success' ? 'passed'
+                              : r === 'failure' ? 'failed'
+                              : r === 'skipped' ? 'skipped'
+                              : r;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            let body = `<!-- ci-result -->\n## CI Result: ${overall}\n\n`;
+            body += `**Commit:** \`${context.sha.slice(0,7)}\`  \n**Run:** ${runUrl}\n\n### Jobs\n| Job | Status |\n|---|---|\n`;
+            for (const j of jobs) body += `| ${j.name} | ${icon(j.result)} |\n`;
+            if (failed.length > 0) {
+              body += `\n### Failed jobs\n`;
+              for (const j of failed) {
+                body += `- ${j.name}: [view log](${runUrl})\n`;
+              }
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });

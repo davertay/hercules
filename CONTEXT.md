@@ -1,6 +1,6 @@
 # Hercules
 
-Hercules is a macOS agentic workflow app. It launches and orchestrates Claude Code CLI processes
+Hercules is a macOS agentic coworking app. It launches and orchestrates AI Harness CLI processes
 to do work on the user's behalf, and presents their output to the user.
 
 ## Language
@@ -11,7 +11,7 @@ to do work on the user's behalf, and presents their output to the user.
 A stream of work applied to a repo — a refactor, a new feature, a debugging campaign. The
 top-level unit of organisation in the app; deleting a Workflow deletes all its on-disk state in
 one go. A Workflow bundles one **Worktree** and one or more **Sessions** under a single root
-directory (`~/Library/Application Support/Hercules/workflows/<workflow-id>/`).
+directory (`~/.hercules/workflows/<workflow-id>/`).
 _Avoid_: Project (overloaded with Xcode/Swift project), task, job.
 
 **Worktree**:

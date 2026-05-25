@@ -1,0 +1,26 @@
+name: Agent watchdog
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # hourly
+  workflow_dispatch:
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.WORKFLOW_PAT }}
+          show_full_output: true
+          prompt: "Read the file .workflow/watchdog.md and follow its steps."
+          claude_args: |
+            --allowedTools "Bash,Read,Edit,Write,Glob,Grep"
+            --max-turns 30
