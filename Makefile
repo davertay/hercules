@@ -11,6 +11,7 @@ build:
 		-scheme Hercules \
 		-destination 'platform=macOS,arch=arm64' \
 		-skipMacroValidation \
+		-skipPackagePluginValidation \
 		CODE_SIGNING_ALLOWED=NO
 
 test:
@@ -19,6 +20,7 @@ test:
 		-scheme Hercules \
 		-destination 'platform=macOS,arch=arm64' \
 		-skipMacroValidation \
+		-skipPackagePluginValidation \
 		CODE_SIGNING_ALLOWED=NO
 
 test-lib:

@@ -10,12 +10,8 @@ public struct AgentClient: Sendable {
 
 extension AgentClient: DependencyKey {
     public static var liveValue: AgentClient {
-        #if os(macOS)
         let impl = LiveAgentClient()
         return AgentClient(start: { try await impl.start($0) })
-        #else
-        return AgentClient()
-        #endif
     }
 }
 
@@ -26,7 +22,6 @@ extension DependencyValues {
     }
 }
 
-#if os(macOS)
 final class LiveAgentClient: Sendable {
     let binaryURL: URL
     private let busySessions = OSAllocatedUnfairLock(initialState: Set<Session.ID>())
@@ -80,4 +75,3 @@ final class LiveAgentClient: Sendable {
         return session
     }
 }
-#endif

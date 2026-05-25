@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 import Testing
 
@@ -83,4 +82,3 @@ struct IOTests {
         }
     }
 }
-#endif

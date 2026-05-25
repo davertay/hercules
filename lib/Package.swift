@@ -4,15 +4,14 @@ import PackageDescription
 
 let package = Package(
     name: "HerculesApp",
-    platforms: [.iOS(.v18), .macOS(.v15), .visionOS(.v2)],
+    platforms: [.macOS(.v15)],
     products: [
-        .library(name: "Agent", targets: ["Agent"]),
         .library(name: "HerculesApp", targets: ["HerculesApp"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.0.0"),
-        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", from: "1.17.0"),
-        .package(url: "https://github.com/pointfreeco/swift-custom-dump", from: "1.0.0"),
+        .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.12.0"),
+        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.2"),
+        .package(url: "https://github.com/pointfreeco/swift-custom-dump", exact: "1.5.0"),
     ],
     targets: [
         .target(
@@ -37,6 +36,7 @@ let package = Package(
         .target(
             name: "HerculesApp",
             dependencies: [
+                "Agent",
             ]
         ),
         .testTarget(

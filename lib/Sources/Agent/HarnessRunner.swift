@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 
 struct HarnessRunner {
@@ -119,4 +118,3 @@ struct HarnessRunner {
         }
     }
 }
-#endif
