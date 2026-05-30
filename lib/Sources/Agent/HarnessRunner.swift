@@ -1,10 +1,12 @@
+import Dependencies
 import Foundation
 
 struct HarnessRunner {
+    @Dependency(\.date.now) var now
     let binaryURL: URL
 
     func run(request: StartRequest, sessionId: Session.ID, writer: TranscriptWriter) async throws {
-        let startedAt = Date()
+        let startedAt = now
 
         do {
             try writer.write(.sessionStarted(.init(
@@ -32,34 +34,24 @@ struct HarnessRunner {
             sessionId: sessionId
         )
 
-        let process = Process()
-        process.executableURL = binaryURL
-        process.arguments = args
-        process.currentDirectoryURL = request.worktree
-        process.environment = ProcessInfo.processInfo.environment
-
-        let stdinPipe = Pipe()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardInput = stdinPipe
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
+        let process = SubProcess(executable: binaryURL, arguments: args, workingDirectory: request.worktree)
         do {
             try process.run()
         } catch {
             throw AgentError.harnessNotFound(triedPath: binaryURL)
         }
 
-        let promptData = Harness.renderPrompt(prompt: request.prompt, inputs: request.inputs)
-            .data(using: .utf8) ?? Data()
-        stdinPipe.fileHandleForWriting.write(promptData)
-        try? stdinPipe.fileHandleForWriting.close()
+        let outData: Data
+        let errData: Data
+        do {
+            let promptData = Harness.renderPrompt(prompt: request.prompt, inputs: request.inputs)
+            try process.write(string: promptData, close: true)
+            (outData, errData) = try await process.waitUntilExit()
+        } catch {
+            throw AgentError.harnessIOFailed(underlying: error)
+        }
 
-        let (outData, errData) = await drainPipes(stdout: stdoutPipe, stderr: stderrPipe)
-        process.waitUntilExit()
-
-        let endedAt = Date()
+        let endedAt = now
         let durationMs = Int(endedAt.timeIntervalSince(startedAt) * 1000)
         let stderrTail = String(data: errData.suffix(65536), encoding: .utf8) ?? ""
 
@@ -100,21 +92,6 @@ struct HarnessRunner {
 
         @unknown default:
             throw AgentError.harnessFailed(exitCode: process.terminationStatus, stderrTail: stderrTail)
-        }
-    }
-
-    private func drainPipes(stdout: Pipe, stderr: Pipe) async -> (Data, Data) {
-        let outHandle = stdout.fileHandleForReading
-        let errHandle = stderr.fileHandleForReading
-        return await withTaskGroup(of: (Bool, Data).self) { group in
-            group.addTask { (true, outHandle.readDataToEndOfFile()) }
-            group.addTask { (false, errHandle.readDataToEndOfFile()) }
-            var out = Data()
-            var err = Data()
-            for await (isOut, data) in group {
-                if isOut { out = data } else { err = data }
-            }
-            return (out, err)
         }
     }
 }

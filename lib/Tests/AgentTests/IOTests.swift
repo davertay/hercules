@@ -1,3 +1,4 @@
+import Dependencies
 import Foundation
 import Testing
 
@@ -6,10 +7,8 @@ import Testing
 @Suite("IO — substituted binary")
 struct IOTests {
     private func fixtureURL(_ name: String) throws -> URL {
-        let url = Bundle.module.bundleURL
-            .appendingPathComponent("Fixtures")
-            .appendingPathComponent(name)
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        let url = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Fixtures")
+        guard let url, FileManager.default.fileExists(atPath: url.path) else {
             Issue.record("Fixture not found: \(name)")
             throw CancellationError()
         }
@@ -28,7 +27,12 @@ struct IOTests {
         let storageRoot = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: storageRoot) }
 
-        let impl = LiveAgentClient(binaryURL: fixture)
+        let client = withDependencies {
+          $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: fixture)
+        }
+
         let request = StartRequest(
             prompt: "hello",
             worktree: FileManager.default.temporaryDirectory,
@@ -36,7 +40,7 @@ struct IOTests {
             storageRoot: storageRoot
         )
 
-        let session = try await impl.start(request)
+        let session = try await client.start(request)
 
         #expect(FileManager.default.fileExists(atPath: session.transcript.path))
         let lines = try String(contentsOf: session.transcript, encoding: .utf8)
@@ -61,7 +65,12 @@ struct IOTests {
         let storageRoot = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: storageRoot) }
 
-        let impl = LiveAgentClient(binaryURL: fixture)
+        let client = withDependencies {
+          $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: fixture)
+        }
+
         let request = StartRequest(
             prompt: "hello",
             worktree: FileManager.default.temporaryDirectory,
@@ -70,7 +79,7 @@ struct IOTests {
         )
 
         do {
-            _ = try await impl.start(request)
+            _ = try await client.start(request)
             Issue.record("Expected AgentError.harnessFailed to be thrown")
         } catch let err as AgentError {
             guard case .harnessFailed(let exitCode, let stderrTail) = err else {
