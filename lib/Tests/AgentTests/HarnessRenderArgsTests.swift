@@ -37,4 +37,33 @@ struct HarnessRenderArgsTests {
         #expect(!args.contains("--resume"))
         #expect(!args.contains("--allowedTools"))
     }
+
+    @Test func resumeWriteNoInputs() {
+        let args = Harness.renderArgs(
+            binary: binary,
+            operation: .resume,
+            worktree: worktree,
+            mode: .write,
+            inputs: nil,
+            sessionId: sessionId
+        )
+
+        withSnapshotTesting(record: .missing) {
+            assertSnapshot(of: args, as: .customDump)
+        }
+
+        #expect(args.contains("--resume"))
+        let resumeIdx = args.firstIndex(of: "--resume")!
+        #expect(args[args.index(after: resumeIdx)] == sessionId.rawValue.uuidString)
+
+        let startArgs = Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            worktree: worktree,
+            mode: .write,
+            inputs: nil,
+            sessionId: sessionId
+        )
+        #expect(!startArgs.contains("--resume"))
+    }
 }

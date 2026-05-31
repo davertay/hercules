@@ -4,8 +4,10 @@ final class TranscriptWriter: @unchecked Sendable {
     private let handle: FileHandle
     private let encoder = JSONEncoder.transcript
 
-    init(url: URL) throws {
-        FileManager.default.createFile(atPath: url.path, contents: nil)
+    init(url: URL, append: Bool = false) throws {
+        if !append {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
         guard let fh = FileHandle(forWritingAtPath: url.path) else {
             throw CocoaError(.fileWriteNoPermission)
         }
