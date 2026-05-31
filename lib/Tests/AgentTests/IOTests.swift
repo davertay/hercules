@@ -112,6 +112,43 @@ struct IOTests {
         #expect(tf.errorMessage == tailFromError)
     }
 
+    @Test func inputUnreadableThrownBeforeDataDir() async throws {
+        let fixture = try fixtureURL("echo-init.sh")
+        let storageRoot = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: storageRoot) }
+
+        let client = withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: fixture)
+        }
+
+        let missingDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let bundle = InputBundle(root: missingDir, relativePaths: ["file.txt"])
+
+        let request = StartRequest(
+            prompt: "hello",
+            worktree: FileManager.default.temporaryDirectory,
+            mode: .write,
+            inputs: bundle,
+            storageRoot: storageRoot
+        )
+
+        do {
+            _ = try await client.start(request)
+            Issue.record("Expected AgentError.inputUnreadable to be thrown")
+        } catch let err as AgentError {
+            guard case .inputUnreadable(let url, _) = err else {
+                Issue.record("Expected .inputUnreadable, got \(err)")
+                return
+            }
+            #expect(url == missingDir)
+            let contents = try FileManager.default.contentsOfDirectory(at: storageRoot, includingPropertiesForKeys: nil)
+            #expect(contents.isEmpty)
+        }
+    }
+
     @Test func startThenSendSucceeds() async throws {
         let fixture = try fixtureURL("echo-init.sh")
         let storageRoot = try makeTempDir()

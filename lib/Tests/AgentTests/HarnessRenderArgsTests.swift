@@ -10,6 +10,7 @@ import Testing
 struct HarnessRenderArgsTests {
     let binary = URL(fileURLWithPath: "/usr/local/bin/claude")
     let worktree = URL(fileURLWithPath: "/tmp/wt")
+    let inputsRoot = URL(fileURLWithPath: "/tmp/inputs")
     let sessionId = Session.ID(rawValue: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!)
 
     @Test func startWriteNoInputs() {
@@ -36,6 +37,50 @@ struct HarnessRenderArgsTests {
 
         #expect(!args.contains("--resume"))
         #expect(!args.contains("--allowedTools"))
+    }
+
+    @Test func startWriteWithInputs() {
+        let inputs = InputBundle(root: inputsRoot, relativePaths: ["a.txt", "b.md"])
+        let args = Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            worktree: worktree,
+            mode: .write,
+            inputs: inputs,
+            sessionId: sessionId
+        )
+
+        withSnapshotTesting(record: .missing) {
+            assertSnapshot(of: args, as: .customDump)
+        }
+
+        #expect(args.contains("--add-dir"))
+        let addDirIdx = args.firstIndex(of: "--add-dir")!
+        #expect(args[args.index(after: addDirIdx)] == inputsRoot.path)
+        #expect(!args.contains("--resume"))
+        #expect(!args.contains("--allowedTools"))
+    }
+
+    @Test func resumeReadOnlyWithInputs() {
+        let inputs = InputBundle(root: inputsRoot, relativePaths: ["c.swift"])
+        let args = Harness.renderArgs(
+            binary: binary,
+            operation: .resume,
+            worktree: worktree,
+            mode: .readOnly,
+            inputs: inputs,
+            sessionId: sessionId
+        )
+
+        withSnapshotTesting(record: .missing) {
+            assertSnapshot(of: args, as: .customDump)
+        }
+
+        #expect(args.contains("--resume"))
+        #expect(args.contains("--allowedTools"))
+        #expect(args.contains("--add-dir"))
+        let addDirIdx = args.firstIndex(of: "--add-dir")!
+        #expect(args[args.index(after: addDirIdx)] == inputsRoot.path)
     }
 
     @Test func resumeWriteNoInputs() {
