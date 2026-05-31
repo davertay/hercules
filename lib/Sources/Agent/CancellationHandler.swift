@@ -27,9 +27,11 @@ struct CancellationHandler: Sendable {
                 Darwin.kill(processIdentifier, SIGKILL)
             }
         }
-        // onCancel runs on `self` (this struct copy); check the flag here where
-        // we know it was set, before returning to callers that hold other copies.
-        if weCancelledFlag.withLock({ $0 }) {
+        // Throw if the task was cancelled, whether or not onCancel fired first.
+        // Task.isCancelled is the authoritative source; the flag covers callers
+        // that check weCancelled (e.g. classifyTermination) after we return.
+        if Task.isCancelled || weCancelledFlag.withLock({ $0 }) {
+            weCancelledFlag.withLock { $0 = true }
             throw CancellationError()
         }
         return result
