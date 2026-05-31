@@ -3,6 +3,9 @@ name: Reconcile branches
 on:
   pull_request:
     types: [closed]
+  # Manual re-run: heal/retry reconciliation across all open agent branches
+  # (e.g. after a run hit its turn budget, or to mop up a backlog).
+  workflow_dispatch:
 
 # Share the serial group with claude.yml's implement-issue job. Concurrency
 # groups are repo-wide across workflows, so at most one agent build/merge job
@@ -15,8 +18,9 @@ concurrency:
 jobs:
   reconcile-branches:
     if: >-
-      github.event.pull_request.merged == true &&
-      github.event.pull_request.base.ref == 'main'
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       github.event.pull_request.base.ref == 'main')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -32,7 +36,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.WORKFLOW_PAT }}
           show_full_output: true
-          prompt: "Read the file .workflow/reconcile-branches.md and follow its steps. PR #${{ github.event.pull_request.number }} just merged to main."
+          prompt: "Read the file .workflow/reconcile-branches.md and follow its steps: merge the latest main into every open agent branch."
           claude_args: |
             --allowedTools "Bash,Read,Edit,Write,Glob,Grep"
-            --max-turns 60
+            --max-turns 150
