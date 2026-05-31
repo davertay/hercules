@@ -41,6 +41,13 @@ jobs:
       github.event.action == 'labeled' &&
       github.event.label.name == 'agent:ready'
     runs-on: ubuntu-latest
+    # Serialise builds: at most one implement-issue (or reconcile-branches)
+    # job runs at a time, repo-wide. Paces API usage and stops parallel
+    # branches piling up. cancel-in-progress is false so a running build is
+    # never killed mid-flight. See ISSUES.md > Build dispatcher & WIP cap.
+    concurrency:
+      group: agent-serial-build
+      cancel-in-progress: false
     permissions:
       contents: write
       issues: write
