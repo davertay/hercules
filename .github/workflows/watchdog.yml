@@ -2,7 +2,7 @@ name: Agent watchdog
 
 on:
   schedule:
-    - cron: '0 * * * *'  # hourly
+    - cron: '8 6 * * *'
   workflow_dispatch:
 
 jobs:
