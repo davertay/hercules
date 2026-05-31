@@ -24,8 +24,14 @@ label state machine.
      `agent:pending` → `agent:ready` on this issue.
    - If any remain open → leave the label alone.
 
-3. **Done.** No comment needed; the label change is the signal and
-   `/implement-issue` cascades on the new `agent:ready` event.
+3. **Dispatch the next build.** This close just merged a PR, freeing a WIP
+   slot. Run the dispatcher from [ISSUES.md](../ISSUES.md) > Build dispatcher
+   & WIP cap to start the next queued `agent:ready` issue if the cap allows.
+   This is the step that resumes the serial queue after a merge — without it,
+   newly-promoted (and previously dropped) `agent:ready` issues would sit idle
+   because builds no longer start on their own `labeled` event alone.
+
+4. **Done.** No comment needed; the label changes are the signal.
 
 ## Notes
 

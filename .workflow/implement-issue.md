@@ -84,6 +84,12 @@ status comment template.
    Criteria` section if present. If absent, write a single line:
    `_No acceptance criteria found in issue body; relying on CI pass._`
 
+10. **Dispatch the next build.** Builds are serialised (one at a time), so a
+    queued `agent:ready` issue won't start on its own — run the dispatcher
+    from [ISSUES.md](../ISSUES.md) > Build dispatcher & WIP cap to kick the
+    next one if there's a free WIP slot. This drains the queue one build at a
+    time without exceeding the cap.
+
 ## Notes
 
 - The `<!-- agent-status -->` marker on the first line is how `/ci-feedback`
@@ -95,3 +101,6 @@ status comment template.
   branch and PR, but post the status comment with state `blocked`,
   swap the issue label to `agent:blocked`, and explain in the PR body. This
   is rare; normal flow has the human author write a usable spec.
+- On any early exit (the step 1 race check, or a blocked exit) still run the
+  dispatcher (step 10) before returning — otherwise the serial queue stalls
+  with no build in flight to kick the next one.

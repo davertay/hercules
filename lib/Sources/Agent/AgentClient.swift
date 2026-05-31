@@ -6,12 +6,16 @@ import os
 @DependencyClient
 public struct AgentClient: Sendable {
     public var start: @Sendable (StartRequest) async throws -> Session
+    public var send: @Sendable (SendRequest) async throws -> Session
 }
 
 extension AgentClient: DependencyKey {
     public static var liveValue: AgentClient {
         let impl = LiveAgentClient()
-        return AgentClient(start: { try await impl.start($0) })
+        return AgentClient(
+            start: { try await impl.start($0) },
+            send: { try await impl.send($0) }
+        )
     }
 }
 
@@ -39,6 +43,29 @@ final class LiveAgentClient: Sendable {
             }
         }
         return URL(fileURLWithPath: "/usr/local/bin/claude")
+    }
+
+    func send(_ request: SendRequest) async throws -> Session {
+        guard FileManager.default.isExecutableFile(atPath: binaryURL.path) else {
+            throw AgentError.harnessNotFound(triedPath: binaryURL)
+        }
+
+        let session = request.session
+
+        let writer: TranscriptWriter
+        do {
+            writer = try TranscriptWriter(url: session.transcript, append: true)
+        } catch {
+            throw AgentError.transcriptIOFailed(session.transcript, underlying: error)
+        }
+
+        busySessions.withLock { $0.insert(session.id) }
+        defer { busySessions.withLock { $0.remove(session.id) } }
+
+        let runner = HarnessRunner(binaryURL: binaryURL)
+        try await runner.run(request: request, writer: writer)
+
+        return session
     }
 
     func start(_ request: StartRequest) async throws -> Session {
