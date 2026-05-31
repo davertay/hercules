@@ -77,11 +77,13 @@ Steps:
    count heads matching `agent/issue-\d+`. Call it `inflight`.
 2. **Cap check.** If `inflight >= 3` → stop. The next merge re-runs the
    dispatcher.
-3. **Find the next build.** The oldest open issue labelled `agent:ready` that
-   has **no** branch yet: `gh issue list --label agent:ready --state open
-   --json number,createdAt`, oldest first; for each, `git ls-remote --heads
-   origin agent/issue-N` — the first with no branch is next. (No branch = not
-   yet built; one that already has a branch is mid-build or done.)
+3. **Find the next build.** The **lowest-numbered** open issue labelled
+   `agent:ready` that has **no** branch yet: `gh issue list --label
+   agent:ready --state open --json number`, sorted ascending by issue number;
+   for each, `git ls-remote --heads origin agent/issue-N` — the first with no
+   branch is next. (No branch = not yet built; one that already has a branch is
+   mid-build or done.) Ascending issue order keeps pickup deterministic and
+   tends to build earlier/dependency issues first.
 4. **Nothing queued** → stop.
 5. **Kick it.** `gh issue edit N --remove-label agent:ready` then
    `gh issue edit N --add-label agent:ready`. Re-adding fires a fresh
