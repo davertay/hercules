@@ -2,8 +2,8 @@
 
 Operating manual for the automated issue → PR pipeline. All workflow skills
 (`/triage-queue`, `/implement-issue`, `/ci-feedback`, `/promote-waiting`,
-`/watchdog`) reference this document. Codebase conventions live in
-[AGENTS.md](AGENTS.md); workflow mechanics live here.
+`/reconcile-branches`, `/watchdog`) reference this document. Codebase
+conventions live in [AGENTS.md](AGENTS.md); workflow mechanics live here.
 
 ## Labels
 
@@ -41,6 +41,58 @@ agent:pending ──── /promote-waiting (when deps close) ──── agent
                                             ▼                            (resume; see below)
                                        (closed)
 ```
+
+## Build dispatcher & WIP cap
+
+Builds are **serialised** and the number of open agent PRs is **capped**, to
+pace API usage against the hourly limits and to bound merge churn (each merge
+re-merges `main` into the *other* open branches via `/reconcile-branches`, so
+fewer open branches means fewer rebuilds per merge).
+
+- **Serial builds.** The `implement-issue` and `reconcile-branches` jobs share
+  the GitHub Actions concurrency group **`agent-serial-build`**
+  (`cancel-in-progress: false`). Concurrency groups are repo-wide across
+  workflows, so at most one of these Claude jobs runs at a time. Cheap jobs
+  (`triage-queue`, `promote-waiting`, `ci-feedback`) stay parallel — they're
+  short and the WIP cap already bounds how many can fire.
+
+- **WIP cap.** At most **`AGENT_WIP_CAP` = 3** agent PRs may be open at once.
+  This is a *soft* target (brief overshoot under racing closes is harmless and
+  self-corrects). Tune it by editing the number here and in the dispatcher
+  reference below. You can also gate manually by controlling how many issues
+  carry `agent:queued`.
+
+### The dispatcher
+
+A serial concurrency group keeps only **one** run pending; if several
+`agent:ready` events arrive together (e.g. a freshly-triaged milestone),
+GitHub drops all but one. The dispatcher recovers the dropped ones and
+enforces the cap, draining the queue **one build at a time**. It runs at the
+tail of `/implement-issue` (after a build completes) and `/promote-waiting`
+(after a merge frees a slot).
+
+Steps:
+
+1. **Count in-flight PRs.** `gh pr list --state open --json headRefName`;
+   count heads matching `agent/issue-\d+`. Call it `inflight`.
+2. **Cap check.** If `inflight >= 3` → stop. The next merge re-runs the
+   dispatcher.
+3. **Find the next build.** The oldest open issue labelled `agent:ready` that
+   has **no** branch yet: `gh issue list --label agent:ready --state open
+   --json number,createdAt`, oldest first; for each, `git ls-remote --heads
+   origin agent/issue-N` — the first with no branch is next. (No branch = not
+   yet built; one that already has a branch is mid-build or done.)
+4. **Nothing queued** → stop.
+5. **Kick it.** `gh issue edit N --remove-label agent:ready` then
+   `gh issue edit N --add-label agent:ready`. Re-adding fires a fresh
+   `labeled` event → `/implement-issue` for issue N (the serial group queues
+   it behind the finishing job). Kick **exactly one**; that build's own
+   dispatcher tail continues draining until the cap is hit.
+
+The kick is a brucebruiser-authored label write via `WORKFLOW_PAT`, so it
+cascades to `/implement-issue` (see [Cascade triggering](#cascade-triggering)).
+`/promote-waiting` runs the dispatcher *after* promoting deps, so newly-eligible
+issues are considered in the same pass.
 
 ## Branch naming
 
@@ -202,6 +254,12 @@ job must therefore use a PAT — `secrets.WORKFLOW_PAT` in this repo.
 - `claude-code-action` invocations in `claude.yml` pass `WORKFLOW_PAT`
   as `github_token`. Without this, agent label writes wouldn't fire any
   downstream job.
+- The dispatcher's `agent:ready` re-label (run from `/implement-issue` and
+  `/promote-waiting`) depends on this to fire the next `/implement-issue`.
+  It's the same cascade `/promote-waiting`'s dep-promotion already relies on.
+- `/reconcile-branches` (`reconcile-branches.yml`) also passes `WORKFLOW_PAT`,
+  so the merge commits it pushes to agent branches re-run CI (the PR's
+  `synchronize` event) and re-fire `/ci-feedback`.
 - `notify-agent` in `ci.yml` posts the `<!-- ci-result -->` comment via
   `WORKFLOW_PAT` (passed to `actions/github-script` as
   `github-token`). Without this, the CI result comment would post as
@@ -229,3 +287,10 @@ would kill the cascade. The body-contains check on `ci-feedback`
 
 `promote-waiting` triggers on `issues.closed` and intentionally has no
 sender filter so it runs whether the closer is human or brucebruiser.
+
+`reconcile-branches` triggers on `pull_request.closed` (merged only) and has
+no sender filter. It can't loop: its pushes land on `agent/issue-N` branches
+(firing CI → `/ci-feedback`, the intended cascade), and its only label write
+is the terminal `agent:blocked`, which has no workflow listener. The
+dispatcher's `agent:ready` re-label can't loop either — once a build starts it
+swaps the issue to `agent:in-progress`, removing the trigger label.
