@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "HerculesApp", targets: ["HerculesApp"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/pointfreeco/swift-clocks", exact: "1.0.6"),
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.12.0"),
         .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.2"),
         .package(url: "https://github.com/pointfreeco/swift-custom-dump", exact: "1.5.0"),
@@ -25,6 +26,7 @@ let package = Package(
             name: "AgentTests",
             dependencies: [
                 "Agent",
+                .product(name: "Clocks", package: "swift-clocks"),
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
                 .product(name: "SnapshotTestingCustomDump", package: "swift-snapshot-testing"),

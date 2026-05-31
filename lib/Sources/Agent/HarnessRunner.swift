@@ -41,13 +41,27 @@ struct HarnessRunner {
             throw AgentError.harnessNotFound(triedPath: binaryURL)
         }
 
+        let handler = CancellationHandler()
         let outData: Data
         let errData: Data
         do {
-            let promptData = Harness.renderPrompt(prompt: request.prompt, inputs: request.inputs)
-            try process.write(string: promptData, close: true)
-            (outData, errData) = try await process.waitUntilExit()
+            (outData, errData) = try await handler.withCancellation(
+                processIdentifier: process.processIdentifier
+            ) {
+                let promptData = Harness.renderPrompt(prompt: request.prompt, inputs: request.inputs)
+                try process.write(string: promptData, close: true)
+                return try await process.waitUntilExit()
+            }
         } catch {
+            if handler.weCancelled {
+                let endedAt = now
+                let durationMs = Int(endedAt.timeIntervalSince(startedAt) * 1000)
+                try? writer.write(.turnFailed(.init(
+                    endedAt: endedAt, durationMs: durationMs,
+                    errorKind: "cancelled", errorMessage: ""
+                )))
+                throw AgentError.cancelled
+            }
             throw AgentError.harnessIOFailed(underlying: error)
         }
 
@@ -63,35 +77,14 @@ struct HarnessRunner {
             }
         }
 
-        switch process.terminationReason {
-        case .exit where process.terminationStatus == 0:
-            do {
-                try writer.write(.turnEnded(.init(endedAt: endedAt, durationMs: durationMs)))
-            } catch {
-                throw AgentError.transcriptIOFailed(request.storageRoot, underlying: error)
-            }
-
-        case .exit:
-            do {
-                try writer.write(.turnFailed(.init(
-                    endedAt: endedAt, durationMs: durationMs,
-                    errorKind: "harnessFailed", errorMessage: stderrTail
-                )))
-            } catch {}
-            throw AgentError.harnessFailed(exitCode: process.terminationStatus, stderrTail: stderrTail)
-
-        case .uncaughtSignal:
-            do {
-                try writer.write(.turnFailed(.init(
-                    endedAt: endedAt, durationMs: durationMs,
-                    errorKind: "harnessCrashed",
-                    errorMessage: "Terminated by signal \(process.terminationStatus)"
-                )))
-            } catch {}
-            throw AgentError.harnessCrashed(signal: process.terminationStatus, stderrTail: stderrTail)
-
-        @unknown default:
-            throw AgentError.harnessFailed(exitCode: process.terminationStatus, stderrTail: stderrTail)
-        }
+        try handler.classifyTermination(
+            reason: process.terminationReason,
+            status: process.terminationStatus,
+            stderrTail: stderrTail,
+            endedAt: endedAt,
+            durationMs: durationMs,
+            writer: writer,
+            storageRoot: request.storageRoot
+        )
     }
 }

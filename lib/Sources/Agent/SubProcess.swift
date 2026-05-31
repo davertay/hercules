@@ -21,6 +21,10 @@ struct SubProcess {
         process.standardError = stderr
     }
 
+    var processIdentifier: Int32 {
+        process.processIdentifier
+    }
+
     var terminationReason: Process.TerminationReason {
         process.terminationReason
     }
