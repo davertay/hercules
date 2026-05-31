@@ -112,6 +112,89 @@ struct IOTests {
         #expect(tf.errorMessage == tailFromError)
     }
 
+    @Test func startThenSendSucceeds() async throws {
+        let fixture = try fixtureURL("echo-init.sh")
+        let storageRoot = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: storageRoot) }
+
+        let client = withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: fixture)
+        }
+
+        let session = try await client.start(StartRequest(
+            prompt: "hello",
+            worktree: FileManager.default.temporaryDirectory,
+            mode: .write,
+            storageRoot: storageRoot
+        ))
+
+        let resumed = try await client.send(SendRequest(prompt: "follow up", session: session))
+        #expect(resumed.id == session.id)
+
+        let lines = try String(contentsOf: session.transcript, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true)
+
+        var sessionStartedCount = 0
+        var turnStartedCount = 0
+        var turnEndedCount = 0
+        for line in lines {
+            let parsed = try parseTranscriptLine(line.data(using: .utf8)!)
+            if case .hercules(let event) = parsed {
+                switch event {
+                case .sessionStarted: sessionStartedCount += 1
+                case .turnStarted: turnStartedCount += 1
+                case .turnEnded: turnEndedCount += 1
+                case .turnFailed: break
+                }
+            }
+        }
+        #expect(sessionStartedCount == 1)
+        #expect(turnStartedCount == 2)
+        #expect(turnEndedCount == 2)
+    }
+
+    @Test func failingSendLeavesSessionReusable() async throws {
+        let initFixture = try fixtureURL("echo-init.sh")
+        let crashFixture = try fixtureURL("crash.sh")
+        let storageRoot = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: storageRoot) }
+
+        let initClient = withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: initFixture)
+        }
+
+        let session = try await initClient.start(StartRequest(
+            prompt: "hello",
+            worktree: FileManager.default.temporaryDirectory,
+            mode: .write,
+            storageRoot: storageRoot
+        ))
+
+        let transcriptBefore = try String(contentsOf: session.transcript, encoding: .utf8)
+
+        let crashClient = withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: crashFixture)
+        }
+
+        do {
+            _ = try await crashClient.send(SendRequest(prompt: "crash me", session: session))
+            Issue.record("Expected AgentError to be thrown")
+        } catch is AgentError {
+            // expected
+        }
+
+        let transcriptAfterFail = try String(contentsOf: session.transcript, encoding: .utf8)
+        #expect(transcriptAfterFail.hasPrefix(transcriptBefore))
+
+        _ = try await initClient.send(SendRequest(prompt: "retry", session: session))
+    }
+
     @Test func crashThrowsHarnessFailed() async throws {
         let fixture = try fixtureURL("crash.sh")
         let storageRoot = try makeTempDir()

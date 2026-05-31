@@ -1,0 +1,38 @@
+name: Reconcile branches
+
+on:
+  pull_request:
+    types: [closed]
+
+# Share the serial group with claude.yml's implement-issue job. Concurrency
+# groups are repo-wide across workflows, so at most one agent build/merge job
+# runs at a time. This paces API usage against the hourly limits and keeps
+# two jobs from racing on git. See ISSUES.md > Build dispatcher & WIP cap.
+concurrency:
+  group: agent-serial-build
+  cancel-in-progress: false
+
+jobs:
+  reconcile-branches:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.WORKFLOW_PAT }}
+          show_full_output: true
+          prompt: "Read the file .workflow/reconcile-branches.md and follow its steps. PR #${{ github.event.pull_request.number }} just merged to main."
+          claude_args: |
+            --allowedTools "Bash,Read,Edit,Write,Glob,Grep"
+            --max-turns 60
