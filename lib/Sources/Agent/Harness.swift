@@ -1,0 +1,50 @@
+import Foundation
+
+public enum Harness {
+    public enum Operation: Sendable {
+        case start
+        case resume
+    }
+
+    public static func renderArgs(
+        binary: URL,
+        operation: Operation,
+        worktree: URL,
+        mode: AgentMode,
+        inputs: InputBundle?,
+        sessionId: Session.ID
+    ) -> [String] {
+        var args: [String] = [
+            "--print",
+            "--output-format", "stream-json",
+            "--input-format", "text",
+            "--session-id", sessionId.rawValue.uuidString,
+            "--permission-mode", "bypassPermissions",
+            "--setting-sources", "user,project,local",
+            "--verbose",
+            "--include-partial-messages",
+        ]
+
+        if case .resume = operation {
+            args += ["--resume", sessionId.rawValue.uuidString]
+        }
+
+        if mode == .readOnly {
+            args += ["--allowedTools", "Read", "Grep", "Glob", "WebFetch", "WebSearch"]
+        }
+
+        if let inputs {
+            args += ["--add-dir", inputs.root.path]
+        }
+
+        return args
+    }
+
+    static func renderPrompt(prompt: String, inputs: InputBundle?) -> String {
+        guard let inputs, !inputs.relativePaths.isEmpty else {
+            return prompt
+        }
+        let footer = inputs.relativePaths.map { "- \($0)" }.joined(separator: "\n")
+        return "\(prompt)\n\nFiles available (read with your file-read tool):\n\(footer)"
+    }
+}
