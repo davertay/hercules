@@ -1,6 +1,7 @@
 import Darwin
 import Dependencies
 import Foundation
+import os
 
 struct CancellationHandler: Sendable {
     @Dependency(\.continuousClock) var clock
