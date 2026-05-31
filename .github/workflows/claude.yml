@@ -67,13 +67,6 @@ jobs:
             --allowedTools "Bash,Read,Edit,Write,Glob,Grep"
             --max-turns 60
 
-  # Cheap pre-check (no Claude) that gates ci-feedback. Merging any PR makes
-  # reconcile-branches auto-heal open branches; the push re-runs CI on a
-  # blocked PR and posts a fresh ci-result comment, which would otherwise
-  # fire a full ci-feedback Claude run just to early-exit on the blocked
-  # label. The label lives on the *issue*, not the PR, so it can't be read
-  # from the issue_comment payload in an `if:` — we resolve it via gh here.
-  # See ISSUES.md > Blocked → resumed protocol.
   ci-feedback-guard:
     if: >-
       github.event_name == 'issue_comment' &&
