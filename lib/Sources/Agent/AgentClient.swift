@@ -73,6 +73,13 @@ final class LiveAgentClient: Sendable {
             throw AgentError.harnessNotFound(triedPath: binaryURL)
         }
 
+        if let inputs = request.inputs {
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: inputs.root.path, isDirectory: &isDir), isDir.boolValue else {
+                throw AgentError.inputUnreadable(inputs.root, underlying: CocoaError(.fileReadNoSuchFile))
+            }
+        }
+
         let sessionId = Session.ID(rawValue: UUID())
         let dataDir = request.storageRoot.appendingPathComponent(sessionId.rawValue.uuidString)
 
