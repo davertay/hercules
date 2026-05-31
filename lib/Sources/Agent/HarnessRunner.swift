@@ -53,7 +53,9 @@ struct HarnessRunner {
 
         let endedAt = now
         let durationMs = Int(endedAt.timeIntervalSince(startedAt) * 1000)
-        let stderrTail = String(data: errData.suffix(65536), encoding: .utf8) ?? ""
+        var stderrCollector = StderrCollector()
+        stderrCollector.append(errData)
+        let stderrTail = stderrCollector.tail
 
         for chunk in outData.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true) {
             do {
