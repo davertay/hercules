@@ -1,6 +1,6 @@
 ---
 name: ci-feedback
-description: React to CI result comments. On failure, read logs and push a fix (up to 3 attempts); on success, reason per acceptance criterion and swap to `agent:done`. Early-exits if `agent:blocked` is still on the issue.
+description: React to CI result comments. On failure, read logs and push a fix (up to 3 attempts); on success, reason per acceptance criterion and swap to `agent:done`. A cheap `ci-feedback-guard` job skips the run entirely when the linked issue is `agent:blocked`; this skill also re-checks the label as defense-in-depth.
 ---
 
 # /ci-feedback
@@ -24,6 +24,10 @@ protocols, the attempt counter rules, and the blocked → resumed paths.
 2. **Read labels on the issue.** `gh issue view N --json labels`.
    - If `agent:blocked` is present → exit silently. The human hasn't
      finished unblocking yet (race case from State B step 5 in ISSUES.md).
+   - The `ci-feedback-guard` job in `claude.yml` already gates this skill on
+     the same label, so a blocked issue usually never reaches this run. This
+     check stays as defense-in-depth for the narrow window where the label is
+     applied after the guard passed but before this run reads it.
 
 3. **Locate the agent status comment on the PR.**
    - `gh pr view <PR_NUMBER> --comments --json comments` and find the

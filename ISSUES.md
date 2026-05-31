@@ -194,9 +194,16 @@ Branch and PR exist.
 4. `/ci-feedback` fires; first check: is `agent:blocked` still present? No →
    proceeds normally. Attempt counter resets because a human commit was
    detected since the last agent commit.
-5. Race case: if CI lands before the human removed the label, `/ci-feedback`
-   early-exits silently; the human pushes one more commit (or removes the
-   label and pushes a no-op) to re-trigger.
+5. Race case: if CI lands before the human removed the label, the
+   `ci-feedback-guard` job sees `agent:blocked` and skips the `ci-feedback`
+   Claude run entirely (and `/ci-feedback` itself re-checks as a backstop);
+   the human pushes one more commit (or removes the label and pushes a no-op)
+   to re-trigger once unblocked.
+
+While an issue carries `agent:blocked`, its branch is also left out of
+`/reconcile-branches` auto-heal — no `main` merge is pushed into it, so a
+later merge of an unrelated PR can't re-run CI on the blocked branch and spin
+up `ci-feedback` only to bail. The human re-merges `main` as part of step 1.
 
 ## Status comment template
 
@@ -293,6 +300,12 @@ sender filter so it runs whether the closer is human or brucebruiser.
 `reconcile-branches` triggers on `pull_request.closed` (merged only) and has
 no sender filter. It can't loop: its pushes land on `agent/issue-N` branches
 (firing CI → `/ci-feedback`, the intended cascade), and its only label write
-is the terminal `agent:blocked`, which has no workflow listener. The
+is the terminal `agent:blocked`, which has no workflow listener. It skips
+branches whose issue is already `agent:blocked` — a parked branch shouldn't be
+auto-healed, since the push would re-run CI and wake `ci-feedback` only for it
+to bail on the same label. The `ci-feedback-guard` job is the second line of
+defense: it resolves the PR's linked issue and skips the `ci-feedback` Claude
+run whenever that issue is `agent:blocked`, so any other path that lands a
+`<!-- ci-result -->` comment on a blocked PR also costs nothing. The
 dispatcher's `agent:ready` re-label can't loop either — once a build starts it
 swaps the issue to `agent:in-progress`, removing the trigger label.
