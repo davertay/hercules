@@ -53,7 +53,7 @@ struct HarnessRunner {
                 return try await process.waitUntilExit()
             }
         } catch {
-            if handler.weCancelled {
+            if handler.weCancelled || error is CancellationError {
                 let endedAt = now
                 let durationMs = Int(endedAt.timeIntervalSince(startedAt) * 1000)
                 try? writer.write(.turnFailed(.init(

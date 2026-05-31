@@ -17,7 +17,7 @@ struct CancellationHandler: Sendable {
         operation: @Sendable () async throws -> T
     ) async throws -> T {
         let capturedClock = clock
-        return try await withTaskCancellationHandler {
+        let result = try await withTaskCancellationHandler {
             try await operation()
         } onCancel: {
             weCancelledFlag.withLock { $0 = true }
@@ -27,6 +27,12 @@ struct CancellationHandler: Sendable {
                 Darwin.kill(processIdentifier, SIGKILL)
             }
         }
+        // onCancel runs on `self` (this struct copy); check the flag here where
+        // we know it was set, before returning to callers that hold other copies.
+        if weCancelledFlag.withLock({ $0 }) {
+            throw CancellationError()
+        }
+        return result
     }
 
     func classifyTermination(
