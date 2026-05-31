@@ -7,7 +7,10 @@ description: After a PR merges to main, merge the updated main into every other 
 
 **Where:** workflow (`reconcile-branches.yml`).
 **Trigger:** `pull_request: [closed]`, filtered to
-`pull_request.merged == true && base.ref == 'main'`.
+`pull_request.merged == true && base.ref == 'main'`; **also**
+`workflow_dispatch` for a manual re-run (heal a backlog, or retry after a
+previous run hit its turn budget). Both paths run the same steps over every
+open agent branch.
 **Concurrency:** shares the `agent-serial-build` group with
 `/implement-issue` — never runs alongside a build.
 
@@ -64,15 +67,20 @@ the branch *as it would land*.
       - Post a comment on the PR summarising what conflicted and how you
         resolved it, plus any assumption you had to make.
 
-   e. **Unresolvable** (genuine semantic clash you can't safely reconcile —
-      e.g. both sides redefined the same contract incompatibly):
+   e. **Escalate instead of grinding** — abort and hand off to a human when a
+      branch is either *unresolvable* (a genuine semantic clash, e.g. both
+      sides redefined the same contract incompatibly) **or** *too costly to
+      resolve safely in this run* (a sprawling conflict across many files where
+      a confident, correct resolution would burn a large share of the budget).
+      Keep each branch to a **bounded effort** — reconciling the other branches
+      matters more than forcing one hard one through here:
       - `git merge --abort`.
       - Swap the issue's label `agent:in-progress`/`agent:done` →
         `agent:blocked`.
-      - Post a comment on the PR: "Conflicts with `main` after #<merged PR>
-        need manual resolution — escalating." List the conflicted files.
-      - Move on to the next branch; one unresolvable branch must not block the
-        others.
+      - Post a comment on the PR: "Conflicts with `main` need manual
+        resolution — escalating." List the conflicted files and why
+        (unresolvable vs. deferred for budget).
+      - Move on to the next branch; one hard branch must not block the others.
 
 4. **Done.** Do **not** run the dispatcher here — a merge frees a WIP slot, and
    `/promote-waiting` (which also fires on this close) owns dispatching the
@@ -85,7 +93,17 @@ the branch *as it would land*.
 - Process branches independently. A failure on one (conflict, push reject)
   is isolated; continue with the rest.
 - Idempotent: a branch already up to date with `main` merges as a no-op
-  ("Already up to date") and is skipped — safe to re-run on every merge.
-- This job runs Claude, so it shares the `agent-serial-build` serial group.
-  Each invocation handles all branches in one session; with the WIP cap at 3
-  that's at most 2 branches per merge.
+  ("Already up to date") and is skipped — safe to re-run on every merge, and
+  safe to re-run via `workflow_dispatch`. A retry is cheap because every branch
+  reconciled by the prior run is now a no-op, so the budget goes to whatever
+  was left unfinished.
+- This job runs Claude in one session for all branches, sharing the
+  `agent-serial-build` serial group. With the WIP cap at 3 that's at most 2
+  branches per merge — comfortably within budget. The ascending-order pass
+  exists so that if a run *does* run long (e.g. a one-off backlog with many
+  open PRs), the lowest/most-foundational issues are reconciled first and the
+  rest can be picked up by a `workflow_dispatch` retry.
+- **Budget awareness.** The session has a finite turn budget. Don't sink it all
+  into one hard conflict — apply step 3e and escalate. Finishing the easy
+  branches and flagging the hard one beats blowing the budget mid-resolution
+  and leaving *everything* after it untouched.
