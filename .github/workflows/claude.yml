@@ -67,10 +67,49 @@ jobs:
             --allowedTools "Bash,Read,Edit,Write,Glob,Grep"
             --max-turns 60
 
-  ci-feedback:
+  # Cheap pre-check (no Claude) that gates ci-feedback. Merging any PR makes
+  # reconcile-branches auto-heal open branches; the push re-runs CI on a
+  # blocked PR and posts a fresh ci-result comment, which would otherwise
+  # fire a full ci-feedback Claude run just to early-exit on the blocked
+  # label. The label lives on the *issue*, not the PR, so it can't be read
+  # from the issue_comment payload in an `if:` — we resolve it via gh here.
+  # See ISSUES.md > Blocked → resumed protocol.
+  ci-feedback-guard:
     if: >-
       github.event_name == 'issue_comment' &&
       contains(github.event.comment.body, '<!-- ci-result -->')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      blocked: ${{ steps.check.outputs.blocked }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          branch=$(gh pr view "$PR" --repo "$REPO" --json headRefName -q .headRefName)
+          if [[ ! "$branch" =~ ^agent/issue-([0-9]+)$ ]]; then
+            echo "PR #$PR head '$branch' is not an agent branch; ci-feedback will no-op."
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          issue="${BASH_REMATCH[1]}"
+          if gh issue view "$issue" --repo "$REPO" --json labels \
+               -q '.labels[].name' | grep -qx 'agent:blocked'; then
+            echo "Issue #$issue is agent:blocked — skipping ci-feedback."
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  ci-feedback:
+    needs: ci-feedback-guard
+    if: needs.ci-feedback-guard.outputs.blocked == 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: write
