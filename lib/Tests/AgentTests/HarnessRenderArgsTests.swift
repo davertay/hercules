@@ -37,4 +37,46 @@ struct HarnessRenderArgsTests {
         #expect(!args.contains("--resume"))
         #expect(!args.contains("--allowedTools"))
     }
+
+    @Test func startReadOnlyNoInputs() {
+        let args = Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            worktree: worktree,
+            mode: .readOnly,
+            inputs: nil,
+            sessionId: sessionId
+        )
+
+        withSnapshotTesting(record: .missing) {
+            assertSnapshot(of: args, as: .customDump)
+        }
+
+        #expect(args.contains("--allowedTools"))
+        let allowedIdx = args.firstIndex(of: "--allowedTools")!
+        #expect(args[allowedIdx + 1] == "Read")
+        #expect(args[allowedIdx + 2] == "Grep")
+        #expect(args[allowedIdx + 3] == "Glob")
+        #expect(args[allowedIdx + 4] == "WebFetch")
+        #expect(args[allowedIdx + 5] == "WebSearch")
+        #expect(!args.contains("--resume"))
+    }
+
+    @Test func resumeReadOnlyNoInputs() {
+        let args = Harness.renderArgs(
+            binary: binary,
+            operation: .resume,
+            worktree: worktree,
+            mode: .readOnly,
+            inputs: nil,
+            sessionId: sessionId
+        )
+
+        withSnapshotTesting(record: .missing) {
+            assertSnapshot(of: args, as: .customDump)
+        }
+
+        #expect(args.contains("--allowedTools"))
+        #expect(args.contains("--resume"))
+    }
 }
