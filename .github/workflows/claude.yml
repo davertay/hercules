@@ -18,6 +18,7 @@ jobs:
       github.event.label.name == 'agent:queued' &&
       github.event.sender.login != 'brucebruiser'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       issues: write
@@ -48,6 +49,7 @@ jobs:
     concurrency:
       group: agent-serial-build
       cancel-in-progress: false
+    timeout-minutes: 30
     permissions:
       contents: write
       issues: write
@@ -67,11 +69,45 @@ jobs:
             --allowedTools "Bash,Read,Edit,Write,Glob,Grep"
             --max-turns 60
 
-  ci-feedback:
+  ci-feedback-guard:
     if: >-
       github.event_name == 'issue_comment' &&
       contains(github.event.comment.body, '<!-- ci-result -->')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    timeout-minutes: 5
+    outputs:
+      blocked: ${{ steps.check.outputs.blocked }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          branch=$(gh pr view "$PR" --repo "$REPO" --json headRefName -q .headRefName)
+          if [[ ! "$branch" =~ ^agent/issue-([0-9]+)$ ]]; then
+            echo "PR #$PR head '$branch' is not an agent branch; ci-feedback will no-op."
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          issue="${BASH_REMATCH[1]}"
+          if gh issue view "$issue" --repo "$REPO" --json labels \
+               -q '.labels[].name' | grep -qx 'agent:blocked'; then
+            echo "Issue #$issue is agent:blocked — skipping ci-feedback."
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  ci-feedback:
+    needs: ci-feedback-guard
+    if: needs.ci-feedback-guard.outputs.blocked == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
       issues: write
@@ -96,6 +132,7 @@ jobs:
       github.event_name == 'issues' &&
       github.event.action == 'closed'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       issues: write

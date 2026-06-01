@@ -35,6 +35,13 @@ the branch *as it would land*.
    affect correctness, since each branch merges `origin/main` independently,
    but ascending order makes runs deterministic and predictable.) If none →
    exit.
+   - **Skip blocked branches.** For each candidate, read the linked issue's
+     labels (`gh issue view N --json labels`); if `agent:blocked` is present,
+     drop it from the list. A blocked branch is parked awaiting a human — don't
+     merge `main` into it. Pushing would re-run CI and fire `/ci-feedback`,
+     which then burns a full run only to early-exit on the same label. The
+     human re-merges `main` as part of unblocking (see
+     [ISSUES.md](../ISSUES.md) > Blocked → resumed protocol).
 
 2. **Fetch.** `git fetch origin main` so `origin/main` is the freshly merged
    tip.

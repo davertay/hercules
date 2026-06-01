@@ -151,19 +151,28 @@ struct HarnessRunner {
 
         let endedAt = now
         let durationMs = Int(endedAt.timeIntervalSince(startedAt) * 1000)
-        let stderrTail = String(data: errData.suffix(65536), encoding: .utf8) ?? ""
+        var stderrCollector = StderrCollector()
+        stderrCollector.append(errData)
+        let stderrTail = stderrCollector.tail
 
-        for chunk in outData.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true) {
-            do {
-                try writer.writeLine(Data(chunk))
-            } catch {
-                throw AgentError.transcriptIOFailed(request.storageRoot, underlying: error)
+        var lastMalformedLine: (raw: String, error: any Error)?
+        for line in StreamParser().parse(outData) {
+            switch line {
+            case .wellFormed(let data):
+                do {
+                    try writer.writeLine(data)
+                } catch {
+                    throw AgentError.transcriptIOFailed(request.storageRoot, underlying: error)
+                }
+            case .malformed(let raw, let error):
+                lastMalformedLine = (raw: raw, error: error)
             }
         }
 
         try handler.classifyTermination(
             reason: process.terminationReason,
             status: process.terminationStatus,
+            lastMalformedLine: lastMalformedLine,
             stderrTail: stderrTail,
             endedAt: endedAt,
             durationMs: durationMs,

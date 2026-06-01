@@ -19,10 +19,12 @@ public struct StartRequest: Sendable {
 public struct SendRequest: Sendable {
     public let prompt: String
     public let session: Session
+    public let inputs: InputBundle?
 
-    public init(prompt: String, session: Session) {
+    public init(prompt: String, session: Session, inputs: InputBundle? = nil) {
         self.prompt = prompt
         self.session = session
+        self.inputs = inputs
     }
 }
 

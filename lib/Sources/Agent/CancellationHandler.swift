@@ -40,6 +40,7 @@ struct CancellationHandler: Sendable {
     func classifyTermination(
         reason: Process.TerminationReason,
         status: Int32,
+        lastMalformedLine: (raw: String, error: any Error)? = nil,
         stderrTail: String,
         endedAt: Date,
         durationMs: Int,
@@ -61,6 +62,15 @@ struct CancellationHandler: Sendable {
                 throw AgentError.transcriptIOFailed(storageRoot, underlying: error)
             }
         case .exit:
+            if let malformed = lastMalformedLine {
+                do {
+                    try writer.write(.turnFailed(.init(
+                        endedAt: endedAt, durationMs: durationMs,
+                        errorKind: "malformedStream", errorMessage: malformed.raw
+                    )))
+                } catch {}
+                throw AgentError.malformedStream(line: malformed.raw, underlying: malformed.error)
+            }
             do {
                 try writer.write(.turnFailed(.init(
                     endedAt: endedAt, durationMs: durationMs,

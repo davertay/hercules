@@ -60,6 +60,160 @@ struct IOTests {
         }
     }
 
+    @Test func malformedLineWithCleanExitSucceeds() async throws {
+        let fixture = try fixtureURL("malformed.sh")
+        let storageRoot = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: storageRoot) }
+
+        let client = withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: fixture)
+        }
+
+        let request = StartRequest(
+            prompt: "hello",
+            worktree: FileManager.default.temporaryDirectory,
+            mode: .write,
+            storageRoot: storageRoot
+        )
+
+        let session = try await client.start(request)
+
+        let lines = try String(contentsOf: session.transcript, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true)
+        let lastLine = String(lines.last!)
+        let parsedLast = try parseTranscriptLine(lastLine.data(using: .utf8)!)
+        if case .hercules(.turnEnded) = parsedLast {} else {
+            Issue.record("Expected hercules.turn.ended as last line, got: \(lastLine)")
+        }
+
+        let hasPassthrough = lines.dropFirst().dropLast().contains { line in
+            if case .harness = (try? parseTranscriptLine(line.data(using: .utf8)!)) { return true }
+            return false
+        }
+        #expect(hasPassthrough, "Transcript should contain the valid passthrough event")
+    }
+
+    @Test func malformedLineWithFailedExitThrowsMalformedStream() async throws {
+        let fixture = try fixtureURL("malformed-fail.sh")
+        let storageRoot = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: storageRoot) }
+
+        let client = withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: fixture)
+        }
+
+        let request = StartRequest(
+            prompt: "hello",
+            worktree: FileManager.default.temporaryDirectory,
+            mode: .write,
+            storageRoot: storageRoot
+        )
+
+        do {
+            _ = try await client.start(request)
+            Issue.record("Expected AgentError.malformedStream to be thrown")
+        } catch let err as AgentError {
+            guard case .malformedStream(let line, _) = err else {
+                Issue.record("Expected .malformedStream, got \(err)")
+                return
+            }
+            #expect(line.contains("not valid json"))
+        }
+    }
+
+    @Test func largeStderrCarries64KBTail() async throws {
+        let fixture = try fixtureURL("large-stderr.sh")
+        let storageRoot = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: storageRoot) }
+
+        let client = withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: fixture)
+        }
+
+        let request = StartRequest(
+            prompt: "hello",
+            worktree: FileManager.default.temporaryDirectory,
+            mode: .write,
+            storageRoot: storageRoot
+        )
+
+        var tailFromError = ""
+        do {
+            _ = try await client.start(request)
+            Issue.record("Expected AgentError.harnessFailed to be thrown")
+            return
+        } catch let err as AgentError {
+            guard case .harnessFailed(let exitCode, let stderrTail) = err else {
+                Issue.record("Expected .harnessFailed, got \(err)")
+                return
+            }
+            #expect(exitCode == 1)
+            #expect(stderrTail.count == 65536)
+            #expect(stderrTail.allSatisfy { $0 == "Y" })
+            tailFromError = stderrTail
+        }
+
+        let sessionDirs = try FileManager.default.contentsOfDirectory(
+            at: storageRoot, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
+        )
+        let transcriptURL = try #require(sessionDirs.first).appendingPathComponent("transcript.jsonl")
+        let lines = try String(contentsOf: transcriptURL, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true)
+
+        var turnFailed: HerculesEvent.TurnFailed?
+        for line in lines {
+            if case .hercules(.turnFailed(let tf)) = try parseTranscriptLine(Data(line.utf8)) {
+                turnFailed = tf
+            }
+        }
+        let tf = try #require(turnFailed)
+        #expect(tf.errorKind == "harnessFailed")
+        #expect(tf.errorMessage == tailFromError)
+    }
+
+    @Test func inputUnreadableThrownBeforeDataDir() async throws {
+        let fixture = try fixtureURL("echo-init.sh")
+        let storageRoot = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: storageRoot) }
+
+        let client = withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: fixture)
+        }
+
+        let missingDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let bundle = InputBundle(root: missingDir, relativePaths: ["file.txt"])
+
+        let request = StartRequest(
+            prompt: "hello",
+            worktree: FileManager.default.temporaryDirectory,
+            mode: .write,
+            inputs: bundle,
+            storageRoot: storageRoot
+        )
+
+        do {
+            _ = try await client.start(request)
+            Issue.record("Expected AgentError.inputUnreadable to be thrown")
+        } catch let err as AgentError {
+            guard case .inputUnreadable(let url, _) = err else {
+                Issue.record("Expected .inputUnreadable, got \(err)")
+                return
+            }
+            #expect(url == missingDir)
+            let contents = try FileManager.default.contentsOfDirectory(at: storageRoot, includingPropertiesForKeys: nil)
+            #expect(contents.isEmpty)
+        }
+    }
+
     @Test func startThenSendSucceeds() async throws {
         let fixture = try fixtureURL("echo-init.sh")
         let storageRoot = try makeTempDir()
