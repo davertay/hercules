@@ -141,11 +141,17 @@ struct HarnessRunner {
         stderrCollector.append(errData)
         let stderrTail = stderrCollector.tail
 
-        for chunk in outData.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true) {
-            do {
-                try writer.writeLine(Data(chunk))
-            } catch {
-                throw AgentError.transcriptIOFailed(request.storageRoot, underlying: error)
+        var lastMalformedLine: (raw: String, error: any Error)?
+        for line in StreamParser().parse(outData) {
+            switch line {
+            case .wellFormed(let data):
+                do {
+                    try writer.writeLine(data)
+                } catch {
+                    throw AgentError.transcriptIOFailed(request.storageRoot, underlying: error)
+                }
+            case .malformed(let raw, let error):
+                lastMalformedLine = (raw: raw, error: error)
             }
         }
 
@@ -158,6 +164,15 @@ struct HarnessRunner {
             }
 
         case .exit:
+            if let malformed = lastMalformedLine {
+                do {
+                    try writer.write(.turnFailed(.init(
+                        endedAt: endedAt, durationMs: durationMs,
+                        errorKind: "malformedStream", errorMessage: malformed.raw
+                    )))
+                } catch {}
+                throw AgentError.malformedStream(line: malformed.raw, underlying: malformed.error)
+            }
             do {
                 try writer.write(.turnFailed(.init(
                     endedAt: endedAt, durationMs: durationMs,
