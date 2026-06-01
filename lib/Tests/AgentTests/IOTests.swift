@@ -60,6 +60,58 @@ struct IOTests {
         }
     }
 
+    @Test func largeStderrCarries64KBTail() async throws {
+        let fixture = try fixtureURL("large-stderr.sh")
+        let storageRoot = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: storageRoot) }
+
+        let client = withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: fixture)
+        }
+
+        let request = StartRequest(
+            prompt: "hello",
+            worktree: FileManager.default.temporaryDirectory,
+            mode: .write,
+            storageRoot: storageRoot
+        )
+
+        var tailFromError = ""
+        do {
+            _ = try await client.start(request)
+            Issue.record("Expected AgentError.harnessFailed to be thrown")
+            return
+        } catch let err as AgentError {
+            guard case .harnessFailed(let exitCode, let stderrTail) = err else {
+                Issue.record("Expected .harnessFailed, got \(err)")
+                return
+            }
+            #expect(exitCode == 1)
+            #expect(stderrTail.count == 65536)
+            #expect(stderrTail.allSatisfy { $0 == "Y" })
+            tailFromError = stderrTail
+        }
+
+        let sessionDirs = try FileManager.default.contentsOfDirectory(
+            at: storageRoot, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
+        )
+        let transcriptURL = try #require(sessionDirs.first).appendingPathComponent("transcript.jsonl")
+        let lines = try String(contentsOf: transcriptURL, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true)
+
+        var turnFailed: HerculesEvent.TurnFailed?
+        for line in lines {
+            if case .hercules(.turnFailed(let tf)) = try parseTranscriptLine(Data(line.utf8)) {
+                turnFailed = tf
+            }
+        }
+        let tf = try #require(turnFailed)
+        #expect(tf.errorKind == "harnessFailed")
+        #expect(tf.errorMessage == tailFromError)
+    }
+
     @Test func inputUnreadableThrownBeforeDataDir() async throws {
         let fixture = try fixtureURL("echo-init.sh")
         let storageRoot = try makeTempDir()
