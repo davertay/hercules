@@ -137,7 +137,9 @@ struct HarnessRunner {
 
         let endedAt = now
         let durationMs = Int(endedAt.timeIntervalSince(startedAt) * 1000)
-        let stderrTail = String(data: errData.suffix(65536), encoding: .utf8) ?? ""
+        var stderrCollector = StderrCollector()
+        stderrCollector.append(errData)
+        let stderrTail = stderrCollector.tail
 
         var lastMalformedLine: (raw: String, error: any Error)?
         for line in StreamParser().parse(outData) {
