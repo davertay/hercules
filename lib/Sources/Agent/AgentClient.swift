@@ -59,7 +59,12 @@ final class LiveAgentClient: Sendable {
             throw AgentError.transcriptIOFailed(session.transcript, underlying: error)
         }
 
-        busySessions.withLock { $0.insert(session.id) }
+        let alreadyBusy = busySessions.withLock { sessions -> Bool in
+            guard !sessions.contains(session.id) else { return true }
+            sessions.insert(session.id)
+            return false
+        }
+        if alreadyBusy { throw AgentError.sessionBusy(id: session.id) }
         defer { busySessions.withLock { $0.remove(session.id) } }
 
         let runner = HarnessRunner(binaryURL: binaryURL)
@@ -100,7 +105,12 @@ final class LiveAgentClient: Sendable {
             throw AgentError.transcriptIOFailed(session.transcript, underlying: error)
         }
 
-        busySessions.withLock { $0.insert(sessionId) }
+        let alreadyBusy = busySessions.withLock { sessions -> Bool in
+            guard !sessions.contains(sessionId) else { return true }
+            sessions.insert(sessionId)
+            return false
+        }
+        if alreadyBusy { throw AgentError.sessionBusy(id: sessionId) }
         defer { busySessions.withLock { $0.remove(sessionId) } }
 
         let runner = HarnessRunner(binaryURL: binaryURL)
