@@ -35,9 +35,14 @@ struct CancellationTests {
             storageRoot: storageRoot
         )
 
+        // SIGTERM alone stops slow.sh; the TestClock (never advanced) keeps the
+        // 5s SIGKILL backstop suspended so it can't fire on the real clock
+        // against a reused PID after the test ends.
+        let testClock = TestClock()
         let task = Task {
             try await withDependencies {
                 $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+                $0.continuousClock = testClock
             } operation: {
                 let client = LiveAgentClient(binaryURL: fixture)
                 return try await client.start(request)
