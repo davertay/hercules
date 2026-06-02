@@ -66,6 +66,17 @@ struct HarnessRunner {
             }
 
         case .exit:
+            // "No conversation found with session ID:" is the stable harness prefix
+            // for an unknown session; it's narrow enough to not misclassify other failures.
+            if stderrTail.contains("No conversation found with session ID:") {
+                do {
+                    try writer.write(.turnFailed(.init(
+                        endedAt: endedAt, durationMs: durationMs,
+                        errorKind: "sessionNotFound", errorMessage: stderrTail
+                    )))
+                } catch {}
+                throw AgentError.sessionNotFound(id: session.id)
+            }
             do {
                 try writer.write(.turnFailed(.init(
                     endedAt: endedAt, durationMs: durationMs,

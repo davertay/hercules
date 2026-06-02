@@ -297,6 +297,54 @@ struct IOTests {
         _ = try await initClient.send(SendRequest(prompt: "retry", session: session))
     }
 
+    @Test func sessionNotFoundThrowsSessionNotFound() async throws {
+        let initFixture = try fixtureURL("echo-init.sh")
+        let notFoundFixture = try fixtureURL("session-not-found.sh")
+        let storageRoot = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: storageRoot) }
+
+        let initClient = withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: initFixture)
+        }
+
+        let session = try await initClient.start(StartRequest(
+            prompt: "hello",
+            worktree: FileManager.default.temporaryDirectory,
+            mode: .write,
+            storageRoot: storageRoot
+        ))
+
+        let notFoundClient = withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+        } operation: {
+            LiveAgentClient(binaryURL: notFoundFixture)
+        }
+
+        do {
+            _ = try await notFoundClient.send(SendRequest(prompt: "follow up", session: session))
+            Issue.record("Expected AgentError.sessionNotFound to be thrown")
+        } catch let err as AgentError {
+            guard case .sessionNotFound(let id) = err else {
+                Issue.record("Expected .sessionNotFound, got \(err)")
+                return
+            }
+            #expect(id == session.id)
+        }
+
+        let lines = try String(contentsOf: session.transcript, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true)
+        var turnFailed: HerculesEvent.TurnFailed?
+        for line in lines {
+            if case .hercules(.turnFailed(let tf)) = try parseTranscriptLine(Data(line.utf8)) {
+                turnFailed = tf
+            }
+        }
+        let tf = try #require(turnFailed)
+        #expect(tf.errorKind == "sessionNotFound")
+    }
+
     @Test func crashThrowsHarnessFailed() async throws {
         let fixture = try fixtureURL("crash.sh")
         let storageRoot = try makeTempDir()
