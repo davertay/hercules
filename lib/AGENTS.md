@@ -30,6 +30,7 @@ swift test --filter "MyFeatureTests/MyTest"
 
 ## Key Patterns
 
+**Code Comments**: Inline code comments are rarely needed, only add them if there is some hidden behaviour or additional information that is not obvious by just reading the code instead. Header docs on public APIs are fine of course. 
 **Standalone modules**: Feature modules do not import each other — only App wires them together.
 **Package.swift**: Targets and dependencies are maintained in alphabetical order.
 **Dependency injection via [swift-dependencies](https://github.com/pointfreeco/swift-dependencies)**: Dependencies like Date and UUID generation are injected via `@Dependency`. Override these in tests using `withDependencies { ... }`.
