@@ -4,12 +4,12 @@
   [2]: "stream-json",
   [3]: "--input-format",
   [4]: "text",
-  [5]: "--session-id",
-  [6]: "00000000-0000-0000-0000-000000000001",
-  [7]: "--permission-mode",
-  [8]: "bypassPermissions",
-  [9]: "--setting-sources",
-  [10]: "user,project,local",
-  [11]: "--verbose",
-  [12]: "--include-partial-messages"
+  [5]: "--permission-mode",
+  [6]: "bypassPermissions",
+  [7]: "--setting-sources",
+  [8]: "user,project,local",
+  [9]: "--verbose",
+  [10]: "--include-partial-messages",
+  [11]: "--session-id",
+  [12]: "00000000-0000-0000-0000-000000000001"
 ]

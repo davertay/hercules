@@ -77,6 +77,7 @@ struct HarnessRenderArgsTests {
         }
 
         #expect(args.contains("--resume"))
+        #expect(!args.contains("--session-id"))
         #expect(args.contains("--allowedTools"))
         #expect(args.contains("--add-dir"))
         let addDirIdx = args.firstIndex(of: "--add-dir")!
@@ -100,6 +101,7 @@ struct HarnessRenderArgsTests {
         #expect(args.contains("--resume"))
         let resumeIdx = args.firstIndex(of: "--resume")!
         #expect(args[args.index(after: resumeIdx)] == sessionId.rawValue.uuidString)
+        #expect(!args.contains("--session-id"))
 
         let startArgs = Harness.renderArgs(
             binary: binary,
@@ -152,5 +154,6 @@ struct HarnessRenderArgsTests {
 
         #expect(args.contains("--allowedTools"))
         #expect(args.contains("--resume"))
+        #expect(!args.contains("--session-id"))
     }
 }
