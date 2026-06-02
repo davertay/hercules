@@ -18,14 +18,16 @@ public enum Harness {
             "--print",
             "--output-format", "stream-json",
             "--input-format", "text",
-            "--session-id", sessionId.rawValue.uuidString,
             "--permission-mode", "bypassPermissions",
             "--setting-sources", "user,project,local",
             "--verbose",
             "--include-partial-messages",
         ]
 
-        if case .resume = operation {
+        switch operation {
+        case .start:
+            args += ["--session-id", sessionId.rawValue.uuidString]
+        case .resume:
             args += ["--resume", sessionId.rawValue.uuidString]
         }
 
