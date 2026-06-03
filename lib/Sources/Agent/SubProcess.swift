@@ -1,161 +1,121 @@
 import Darwin
 import Foundation
-import os
+import Subprocess
+import System
 
+/// Spawns a Harness subprocess via swift-subprocess: writes the prompt to stdin
+/// then closes it, drains stdout in full and stderr capped to a 64 KB tail, and
+/// reports the termination status.
+///
+/// Cancellation is owned by swift-subprocess: the configured teardown sequence
+/// sends `SIGTERM`, waits `teardownGrace`, then sends `SIGKILL` to the harness.
+/// There is no bespoke fd/SIGPIPE/EPIPE/drain/termination plumbing here anymore
+/// — the library handles non-blocking stdio drain and child reaping under
+/// async/await.
 struct SubProcess {
-    private let process: Process
-    private let stdin: Pipe
-    private let stdout: Pipe
-    private let stderr: Pipe
+    let executable: URL
+    let arguments: [String]
+    let workingDirectory: URL
+    /// How long the child is given to exit on `SIGTERM` before `SIGKILL`.
+    let teardownGrace: Duration
 
-    // Bridges Foundation's terminationHandler to async/await. The handler may
-    // fire before or after a caller starts awaiting, so the lock records both
-    // "already terminated" and "someone is waiting" and resolves whichever
-    // happens first.
-    private struct TerminationBox {
-        var terminated = false
-        var continuation: CheckedContinuation<Void, Never>?
+    struct Outcome {
+        let stdout: Data
+        let stderrTail: String
+        let terminationStatus: TerminationStatus
     }
-    private let terminationLock = OSAllocatedUnfairLock(initialState: TerminationBox())
 
-    init(executable: URL, arguments: [String], workingDirectory: URL) {
-        process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.currentDirectoryURL = workingDirectory
-        process.environment = ProcessInfo.processInfo.environment
+    func run(input: String) async throws -> Outcome {
+        var platformOptions = PlatformOptions()
+        // SIGTERM, then SIGKILL after the grace period. swift-subprocess always
+        // appends a final SIGKILL step, so this gives us the SIGTERM → grace →
+        // SIGKILL escalation on task cancellation (and on body failure).
+        platformOptions.teardownSequence = [
+            .gracefulShutDown(allowedDurationToNextStep: teardownGrace)
+        ]
+        // Put the harness in its own process group so we can signal the whole
+        // group (harness + any descendants) without touching our own process.
+        // See the orphan-pipe handling in the cancellation handler below.
+        platformOptions.processGroupID = 0
 
-        stdin = Pipe()
-        stdout = Pipe()
-        stderr = Pipe()
-        process.standardInput = stdin
-        process.standardOutput = stdout
-        process.standardError = stderr
+        let grace = teardownGrace
+        let outcome = try await Subprocess.run(
+            .path(FilePath(executable.path)),
+            arguments: Arguments(arguments),
+            environment: .inherit,
+            workingDirectory: FilePath(workingDirectory.path),
+            platformOptions: platformOptions
+        ) { execution, inputWriter, standardOutput, standardError in
+            let pgid = execution.processIdentifier.value
+            return try await withTaskCancellationHandler {
+                // Drain both pipes concurrently so a payload larger than the pipe
+                // buffer can't wedge the writer.
+                async let outBytes = Self.collect(standardOutput)
+                async let errTail = Self.collectTail(standardError)
 
-        // Two fixups on the raw pipe descriptors:
-        //  - FD_CLOEXEC: Foundation creates pipe fds without it, so a
-        //    concurrently-spawned sibling can inherit our pipe write-ends. A
-        //    leaked write-end keeps the read side from ever seeing EOF until
-        //    that unrelated child exits, serialising parallel work behind the
-        //    longest-lived subprocess. Marking them close-on-exec confines each
-        //    pipe to its own child; dup2 into the child's stdio (fd 0/1/2)
-        //    clears the flag, so the child itself is unaffected.
-        //  - F_SETNOSIGPIPE: a harness that exits before reading the prompt
-        //    leaves us writing to a reader-less pipe. Without this the write
-        //    raises SIGPIPE and kills the whole process; with it the write
-        //    fails with EPIPE instead, which `write(_:close:)` handles.
-        for pipe in [stdin, stdout, stderr] {
-            for fd in [pipe.fileHandleForReading.fileDescriptor, pipe.fileHandleForWriting.fileDescriptor] {
-                let flags = fcntl(fd, F_GETFD)
-                if flags != -1 {
-                    _ = fcntl(fd, F_SETFD, flags | FD_CLOEXEC)
+                do {
+                    _ = try await inputWriter.write(input)
+                } catch let error as SubprocessError where error.isBrokenPipe {
+                    // A harness that exits before consuming the prompt closes its
+                    // stdin read-end, so our write fails with EPIPE. That isn't a
+                    // delivery fault to surface — the child's exit status and
+                    // stderr are the real signal, so swallow it and let
+                    // termination classification report the outcome.
                 }
-                _ = fcntl(fd, F_SETNOSIGPIPE, 1)
+                try? await inputWriter.finish()
+
+                return (stdout: try await outBytes, stderrTail: try await errTail)
+            } onCancel: {
+                reapProcessGroup(pgid, after: grace)
             }
         }
+
+        return Outcome(
+            stdout: outcome.value.stdout,
+            stderrTail: outcome.value.stderrTail,
+            terminationStatus: outcome.terminationStatus
+        )
     }
 
-    var processIdentifier: Int32 {
-        process.processIdentifier
-    }
-
-    var terminationReason: Process.TerminationReason {
-        process.terminationReason
-    }
-
-    var terminationStatus: Int32 {
-        process.terminationStatus
-    }
-
-    func run() throws {
-        process.terminationHandler = { [terminationLock] _ in
-            let continuation = terminationLock.withLock { box -> CheckedContinuation<Void, Never>? in
-                box.terminated = true
-                defer { box.continuation = nil }
-                return box.continuation
-            }
-            continuation?.resume()
+    /// Accumulates a stream's full output into `Data`.
+    private static func collect(_ sequence: AsyncBufferSequence) async throws -> Data {
+        var data = Data()
+        for try await buffer in sequence {
+            buffer.withUnsafeBytes { data.append(contentsOf: $0) }
         }
-        try process.run()
+        return data
     }
 
-    func write(string: String, close: Bool = false) throws {
-        try write(string.data(using: .utf8) ?? Data(), close: close)
+    /// Accumulates a stream's output, keeping only the trailing 64 KB.
+    private static func collectTail(_ sequence: AsyncBufferSequence) async throws -> String {
+        var collector = StderrCollector()
+        for try await buffer in sequence {
+            buffer.withUnsafeBytes { collector.append(Data($0)) }
+        }
+        return collector.tail
     }
+}
 
-    func write(_ data: any DataProtocol, close: Bool = false) throws {
-        do {
-            try stdin.fileHandleForWriting.write(contentsOf: data)
-            if close {
-                try stdin.fileHandleForWriting.close()
-            }
-        } catch {
-            // A harness that exits before consuming the prompt closes its stdin
-            // read-end, so our write fails with EPIPE. That isn't a delivery
-            // fault to surface as harnessIOFailed — the child's exit status and
-            // stderr are the real signal, so swallow the broken pipe and let
-            // waitUntilExit / termination classification report the outcome.
-            guard SubProcess.isBrokenPipe(error) else { throw error }
-            try? stdin.fileHandleForWriting.close()
+/// On cancellation swift-subprocess escalates SIGTERM → grace → SIGKILL on the
+/// harness pid. But a harness descendant that inherits and outlives the
+/// stdout/stderr pipe (e.g. an orphaned background process) keeps the pipe's
+/// write-end open, so our drain would never see EOF and the turn would hang
+/// past the harness's own exit. After the same grace period, SIGKILL the whole
+/// process group to reap any such orphan and let the drain reach EOF.
+private func reapProcessGroup(_ pgid: pid_t, after grace: Duration) {
+    guard pgid > 1 else { return }
+    Task.detached {
+        try? await Task.sleep(for: grace)
+        // `kill(_, 0)` probes liveness; only escalate if the group is still
+        // around, to narrow the window for signalling a recycled pgid.
+        if Darwin.kill(-pgid, 0) == 0 {
+            Darwin.kill(-pgid, SIGKILL)
         }
     }
+}
 
-    private static func isBrokenPipe(_ error: any Error) -> Bool {
-        var nsError = error as NSError
-        while true {
-            if nsError.domain == NSPOSIXErrorDomain, nsError.code == Int(EPIPE) {
-                return true
-            }
-            guard let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError else {
-                return false
-            }
-            nsError = underlying
-        }
-    }
-
-    func waitUntilExit() async throws -> (stdOut: Data, stdErr: Data) {
-        // Fully event-driven: drain both pipes via readabilityHandler and learn
-        // about exit via terminationHandler. Nothing here blocks a thread, so we
-        // neither stall the cooperative concurrency pool nor contend with
-        // Foundation's own dispatch machinery for reaping the child (a blocking
-        // `Process.waitUntilExit()` on a saturated GCD pool can deadlock forever).
-        // Both pipes drain concurrently so a payload larger than the pipe buffer
-        // can't wedge the writer.
-        async let out = drain(stdout.fileHandleForReading)
-        async let err = drain(stderr.fileHandleForReading)
-        let (outData, errData) = await (out, err)
-        await awaitTermination()
-        return (outData, errData)
-    }
-
-    /// Accumulates a pipe's output until EOF, driven by the readable dispatch
-    /// source rather than a blocking read.
-    private func drain(_ handle: FileHandle) async -> Data {
-        let buffer = OSAllocatedUnfairLock(initialState: Data())
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            handle.readabilityHandler = { fileHandle in
-                let chunk = fileHandle.availableData
-                if chunk.isEmpty {
-                    fileHandle.readabilityHandler = nil
-                    continuation.resume()
-                } else {
-                    buffer.withLock { $0.append(chunk) }
-                }
-            }
-        }
-        return buffer.withLock { $0 }
-    }
-
-    /// Suspends until the child has exited and been reaped (terminationStatus
-    /// and terminationReason are valid afterwards).
-    private func awaitTermination() async {
-        await withCheckedContinuation { continuation in
-            let alreadyTerminated = terminationLock.withLock { box -> Bool in
-                if box.terminated { return true }
-                box.continuation = continuation
-                return false
-            }
-            if alreadyTerminated { continuation.resume() }
-        }
+private extension SubprocessError {
+    var isBrokenPipe: Bool {
+        underlyingError?.rawValue == EPIPE
     }
 }

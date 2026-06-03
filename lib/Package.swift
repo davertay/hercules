@@ -13,6 +13,7 @@ let package = Package(
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.12.0"),
         .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.2"),
         .package(url: "https://github.com/pointfreeco/swift-custom-dump", exact: "1.5.0"),
+        .package(url: "https://github.com/swiftlang/swift-subprocess", exact: "0.4.0"),
     ],
     targets: [
         .target(
@@ -20,6 +21,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "DependenciesMacros", package: "swift-dependencies"),
+                .product(name: "Subprocess", package: "swift-subprocess"),
             ]
         ),
         .testTarget(
@@ -30,6 +32,7 @@ let package = Package(
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
                 .product(name: "SnapshotTestingCustomDump", package: "swift-snapshot-testing"),
+                .product(name: "Subprocess", package: "swift-subprocess"),
             ],
             resources: [
                 .copy("Fixtures"),

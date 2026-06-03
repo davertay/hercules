@@ -1,4 +1,3 @@
-import Clocks
 import Dependencies
 import Foundation
 import Testing
@@ -35,14 +34,12 @@ struct CancellationTests {
             storageRoot: storageRoot
         )
 
-        // SIGTERM alone stops slow.sh; the TestClock (never advanced) keeps the
-        // 5s SIGKILL backstop suspended so it can't fire on the real clock
-        // against a reused PID after the test ends.
-        let testClock = TestClock()
+        // slow.sh exits on SIGTERM, so the teardown sequence reaps it well within
+        // the grace period.
         let task = Task {
             try await withDependencies {
                 $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-                $0.continuousClock = testClock
+                $0.harnessTeardownGrace = .milliseconds(200)
             } operation: {
                 let client = LiveAgentClient(binaryURL: fixture)
                 return try await client.start(request)
@@ -76,11 +73,14 @@ struct CancellationTests {
             storageRoot: storageRoot
         )
 
-        let testClock = TestClock()
+        // ignore-sigterm.sh traps SIGTERM, so the grace period elapses and the
+        // teardown escalates to SIGKILL. Its orphaned `sleep` (which inherits the
+        // stdout/stderr pipes) must also be reaped, otherwise the drain can't see
+        // EOF and the turn hangs.
         let task = Task {
             try await withDependencies {
                 $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-                $0.continuousClock = testClock
+                $0.harnessTeardownGrace = .milliseconds(200)
             } operation: {
                 let client = LiveAgentClient(binaryURL: fixture)
                 return try await client.start(request)
@@ -90,11 +90,6 @@ struct CancellationTests {
         // Give ignore-sigterm.sh time to start, then cancel.
         try await Task.sleep(nanoseconds: 200_000_000)
         task.cancel()
-
-        // Allow the cancellation handler to create the SIGKILL Task and
-        // have it suspended on testClock before we advance time.
-        try await Task.sleep(nanoseconds: 100_000_000)
-        await testClock.advance(by: .seconds(5))
 
         do {
             _ = try await task.value
