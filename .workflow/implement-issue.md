@@ -14,11 +14,22 @@ status comment template.
 
 ## Steps
 
-1. **Race check.** `gh api repos/{owner}/{repo}/branches/agent/issue-N` (or
-   `git ls-remote --heads origin agent/issue-N`). If the branch already
-   exists → remove `agent:ready`, add `agent:blocked`, post a comment:
-   "Branch `agent/issue-N` already exists from a prior run; manual
-   intervention needed." Exit.
+1. **Race check.** Determine whether `agent/issue-N` already exists on the
+   remote. **Test the *output*, never the exit code** — `git ls-remote` exits
+   `0` even when no ref matches (it only fails if the remote is unreachable),
+   so `ls-remote ... && echo exists` is always-true and will falsely block
+   every issue. Use one of:
+
+   ```bash
+   # output non-empty ⇒ branch exists
+   if [ -n "$(git ls-remote --heads origin agent/issue-N)" ]; then exists; fi
+   # or: 404 ⇒ branch absent (gh api exits non-zero on 404)
+   gh api repos/{owner}/{repo}/branches/agent/issue-N >/dev/null 2>&1 && exists
+   ```
+
+   If the branch already exists → remove `agent:ready`, add `agent:blocked`,
+   post a comment: "Branch `agent/issue-N` already exists from a prior run;
+   manual intervention needed." Exit.
 
    (State A resume never hits this path because the branch wasn't created.
    This catches rare race / error cases.)
