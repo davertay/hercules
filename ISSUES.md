@@ -80,7 +80,9 @@ Steps:
 3. **Find the next build.** The **lowest-numbered** open issue labelled
    `agent:ready` that has **no** branch yet: `gh issue list --label
    agent:ready --state open --json number`, sorted ascending by issue number;
-   for each, `git ls-remote --heads origin agent/issue-N` — the first with no
+   for each, check `git ls-remote --heads origin agent/issue-N` — **test the
+   output, not the exit code** (`ls-remote` exits `0` with empty output when
+   the branch is absent; `[ -z "$(...)" ]` means no branch). The first with no
    branch is next. (No branch = not yet built; one that already has a branch is
    mid-build or done.) Ascending issue order keeps pickup deterministic and
    tends to build earlier/dependency issues first.
