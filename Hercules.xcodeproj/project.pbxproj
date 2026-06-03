@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		63E241352FC38FCB00A63DA3 /* HerculesApp in Frameworks */ = {isa = PBXBuildFile; productRef = 63E241342FC38FCB00A63DA3 /* HerculesApp */; };
+		63E241362FC38FCC00A63DA3 /* TestChat in Frameworks */ = {isa = PBXBuildFile; productRef = 63E241372FC38FCC00A63DA3 /* TestChat */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +59,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				63E241352FC38FCB00A63DA3 /* HerculesApp in Frameworks */,
+				63E241362FC38FCC00A63DA3 /* TestChat in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -128,6 +130,7 @@
 			name = Hercules;
 			packageProductDependencies = (
 				63E241342FC38FCB00A63DA3 /* HerculesApp */,
+				63E241372FC38FCC00A63DA3 /* TestChat */,
 			);
 			productName = Hercules;
 			productReference = 639E40F02FC388F8008C2BF2 /* Hercules.app */;
@@ -570,6 +573,10 @@
 		63E241342FC38FCB00A63DA3 /* HerculesApp */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = HerculesApp;
+		};
+		63E241372FC38FCC00A63DA3 /* TestChat */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TestChat;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

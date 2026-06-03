@@ -7,6 +7,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .library(name: "HerculesApp", targets: ["HerculesApp"]),
+        .library(name: "TestChat", targets: ["TestChat"]),
     ],
     dependencies: [
         .package(url: "https://github.com/pointfreeco/swift-clocks", exact: "1.0.6"),
@@ -49,6 +50,9 @@ let package = Package(
             dependencies: [
                 "HerculesApp",
             ]
+        ),
+        .target(
+            name: "TestChat"
         ),
     ],
     swiftLanguageModes: [.v6]
