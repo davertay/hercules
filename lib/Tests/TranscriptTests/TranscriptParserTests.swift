@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import Agent
+@testable import Transcript
 
 @Suite("TranscriptParser")
 struct TranscriptParserTests {

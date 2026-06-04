@@ -12,7 +12,7 @@ public func parseTranscriptLine(_ data: Data) throws -> TranscriptLine {
 }
 
 extension JSONDecoder {
-    static let transcript: JSONDecoder = {
+    public static let transcript: JSONDecoder = {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601WithMilliseconds
         return d
@@ -20,7 +20,7 @@ extension JSONDecoder {
 }
 
 extension JSONEncoder {
-    static let transcript: JSONEncoder = {
+    public static let transcript: JSONEncoder = {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601WithMilliseconds
         return e

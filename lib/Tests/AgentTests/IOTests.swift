@@ -1,6 +1,7 @@
 import Dependencies
 import Foundation
 import Testing
+import Transcript
 
 @testable import Agent
 
