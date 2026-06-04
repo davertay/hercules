@@ -8,7 +8,7 @@ public struct TestChatCommands: Commands {
 
     public var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("New Test Chat…") {
+            Button("New Test Chat") {
                 let panel = NSOpenPanel()
                 panel.canChooseFiles = false
                 panel.canChooseDirectories = true
