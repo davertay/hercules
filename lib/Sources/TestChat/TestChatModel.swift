@@ -41,11 +41,6 @@ public final class TestChatModel {
         self.worktree = worktree
     }
 
-    isolated deinit {
-        runTask?.cancel()
-        runTask = nil
-    }
-
     var windowTitle: String {
         "Test Chat: \(worktree.lastPathComponent)"
     }
