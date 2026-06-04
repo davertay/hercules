@@ -21,6 +21,11 @@ public final class TestChatModel {
 
     public let worktree: URL
 
+    var isRunning = false
+    var draftText = ""
+
+    private var runTask: Task<Void, Never>?
+
     var messages: [ChatMessage] = [
         ChatMessage(
             role: .user,
@@ -31,16 +36,22 @@ public final class TestChatModel {
             text: "Here is a **stub reply** demonstrating markdown:\n\n- **Bold** and _italic_ text render correctly.\n- `Code spans` are supported.\n\nThis is placeholder data. No real agent has been invoked."
         ),
     ]
-    var isRunning = false
-    var draftText = ""
-    private var runTask: Task<Void, Never>?
 
     public init(worktree: URL) {
         self.worktree = worktree
     }
 
-    public var windowTitle: String {
+    isolated deinit {
+        runTask?.cancel()
+        runTask = nil
+    }
+
+    var windowTitle: String {
         "Test Chat: \(worktree.lastPathComponent)"
+    }
+
+    var isSendDisabled: Bool {
+        draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunning
     }
 
     func submit() {
@@ -54,7 +65,8 @@ public final class TestChatModel {
             guard !Task.isCancelled else { return }
             self.messages.append(ChatMessage(
                 role: .assistant,
-                text: "**Placeholder reply** to:\n\n> \(prompt)\n\n_No real agent was invoked. All content is stub data._"
+                text: "**Placeholder reply** to:\n\n> \(prompt)\n\n_No real agent was invoked. All content is stub data._",
+                isError: prompt.contains("error")
             ))
             self.isRunning = false
         }
@@ -62,12 +74,5 @@ public final class TestChatModel {
 
     func tearDown() {
         runTask?.cancel()
-    }
-}
-
-extension TestChatWindowData {
-    @MainActor
-    public func toModel() -> TestChatModel {
-        TestChatModel(worktree: worktree)
     }
 }
