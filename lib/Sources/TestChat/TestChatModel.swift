@@ -22,26 +22,31 @@ public final class TestChatModel {
         }
     }
 
-    public let worktree: URL
+    @ObservationIgnored
+    @Dependency(\.agentClient) var agentClient: AgentClient
+
     private let storageRoot: URL
-    private let agentClient: AgentClient
-
-    var isRunning = false
-    var draftText = ""
-
     private var session: Session?
     private var runTask: Task<Void, Never>?
 
+    var isRunning = false
+    var draftText = ""
     var messages: [ChatMessage] = []
+
+    public let worktree: URL
 
     public init(worktree: URL) {
         self.worktree = worktree
         self.storageRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
-        @Dependency(\.agentClient) var agentClient
-        self.agentClient = agentClient
         try? FileManager.default.createDirectory(at: storageRoot, withIntermediateDirectories: true)
     }
+
+    // Requires Swift 6.2
+    // isolated deinit {
+    //     runTask?.cancel()
+    //     runTask = nil
+    // }
 
     var windowTitle: String {
         "Test Chat: \(worktree.lastPathComponent)"
