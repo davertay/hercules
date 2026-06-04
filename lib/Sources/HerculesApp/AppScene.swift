@@ -1,5 +1,7 @@
 import SwiftUI
+#if DEBUG
 import TestChat
+#endif
 
 public struct AppScene: Scene {
     @Bindable var model: AppModel
@@ -9,23 +11,23 @@ public struct AppScene: Scene {
     }
 
     public var body: some Scene {
+        #if DEBUG
         WindowGroup {
             AppLaunchView(model: model)
         }
         .commands {
-            if model.testChatEnabled {
-                TestChatCommands()
-            } else {
-                EmptyCommands()
-            }
+            TestChatCommands()
         }
 
-        if model.testChatEnabled {
-            WindowGroup(for: URL.self) { $url in
-                if let url {
-                    TestChatView(model: TestChatModel(worktree: url))
-                }
+        WindowGroup(for: URL.self) { $url in
+            if let url {
+                TestChatView(model: TestChatModel(worktree: url))
             }
         }
+        #else
+        WindowGroup {
+            AppLaunchView(model: model)
+        }
+        #endif
     }
 }
