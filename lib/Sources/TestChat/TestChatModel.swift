@@ -27,7 +27,7 @@ public final class TestChatModel {
 
     private let storageRoot: URL
     private var session: Session?
-    private var runTask: Task<Void, Never>?
+    var runTask: Task<Void, Never>?
 
     var isRunning = false
     var draftText = ""
