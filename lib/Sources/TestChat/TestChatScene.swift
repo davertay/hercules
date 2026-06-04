@@ -23,3 +23,10 @@ public struct TestChatScene: Scene {
         }
     }
 }
+
+extension TestChatWindowData {
+    @MainActor
+    public func toModel() -> TestChatModel {
+        TestChatModel(worktree: worktree)
+    }
+}
