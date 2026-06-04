@@ -12,20 +12,7 @@ public struct AppScene: Scene {
         WindowGroup {
             AppLaunchView(model: model)
         }
-        .commands {
-            if model.testChatEnabled {
-                TestChatCommands()
-            } else {
-                EmptyCommands()
-            }
-        }
 
-        if model.testChatEnabled {
-            WindowGroup(for: URL.self) { $url in
-                if let url {
-                    TestChatView(model: TestChatModel(worktree: url))
-                }
-            }
-        }
+        TestChatScene(isEnabled: model.testChatEnabled)
     }
 }

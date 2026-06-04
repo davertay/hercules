@@ -18,6 +18,6 @@ struct MainApp: App {
     }
 
     var body: some Scene {
-        AppScene($model)
+        AppScene(model: model)
     }
 }

@@ -66,7 +66,7 @@ final class LiveAgentClient: Sendable {
             return false
         }
         if alreadyBusy { throw AgentError.sessionBusy(id: session.id) }
-        defer { busySessions.withLock { $0.remove(session.id) } }
+        defer { _ = busySessions.withLock { $0.remove(session.id) } }
 
         let runner = HarnessRunner(binaryURL: binaryURL)
         try await runner.run(request: request, writer: writer)
@@ -112,7 +112,7 @@ final class LiveAgentClient: Sendable {
             return false
         }
         if alreadyBusy { throw AgentError.sessionBusy(id: sessionId) }
-        defer { busySessions.withLock { $0.remove(sessionId) } }
+        defer { _ = busySessions.withLock { $0.remove(sessionId) } }
 
         let runner = HarnessRunner(binaryURL: binaryURL)
         try await runner.run(request: request, sessionId: sessionId, writer: writer)

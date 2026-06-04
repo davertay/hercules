@@ -14,7 +14,7 @@ public struct TestChatCommands: Commands {
                 panel.canChooseDirectories = true
                 panel.allowsMultipleSelection = false
                 if panel.runModal() == .OK, let url = panel.url {
-                    openWindow(value: url)
+                    openWindow(value: TestChatWindowData(worktree: url))
                 }
             }
         }
