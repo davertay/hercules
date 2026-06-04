@@ -5,7 +5,7 @@ import Observation
 public final class AppModel {
     public let testChatEnabled: Bool
 
-    public init(let testChatEnabled: Bool = false) {
+    public init(testChatEnabled: Bool = false) {
         self.testChatEnabled = testChatEnabled
     }
 }
