@@ -4,5 +4,6 @@ xcuserdata/
 *.dSYM.zip
 *.dSYM
 .build/
+build/
 .swiftpm
 .claude/worktrees

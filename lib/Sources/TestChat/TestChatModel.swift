@@ -1,5 +1,8 @@
+import Agent
+import Dependencies
 import Foundation
 import Observation
+import Transcript
 
 @MainActor
 @Observable
@@ -19,27 +22,31 @@ public final class TestChatModel {
         }
     }
 
-    public let worktree: URL
+    @ObservationIgnored
+    @Dependency(\.agentClient) var agentClient: AgentClient
+
+    private let storageRoot: URL
+    private var session: Session?
+    private var runTask: Task<Void, Never>?
 
     var isRunning = false
     var draftText = ""
+    var messages: [ChatMessage] = []
 
-    private var runTask: Task<Void, Never>?
-
-    var messages: [ChatMessage] = [
-        ChatMessage(
-            role: .user,
-            text: "What can you tell me about this folder?"
-        ),
-        ChatMessage(
-            role: .assistant,
-            text: "Here is a **stub reply** demonstrating markdown:\n\n- **Bold** and _italic_ text render correctly.\n- `Code spans` are supported.\n\nThis is placeholder data. No real agent has been invoked."
-        ),
-    ]
+    public let worktree: URL
 
     public init(worktree: URL) {
         self.worktree = worktree
+        self.storageRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: storageRoot, withIntermediateDirectories: true)
     }
+
+    // Requires Swift 6.2
+    // isolated deinit {
+    //     runTask?.cancel()
+    //     runTask = nil
+    // }
 
     var windowTitle: String {
         "Test Chat: \(worktree.lastPathComponent)"
@@ -56,18 +63,61 @@ public final class TestChatModel {
         messages.append(ChatMessage(role: .user, text: prompt))
         isRunning = true
         runTask = Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            guard !Task.isCancelled else { return }
-            self.messages.append(ChatMessage(
-                role: .assistant,
-                text: "**Placeholder reply** to:\n\n> \(prompt)\n\n_No real agent was invoked. All content is stub data._",
-                isError: prompt.contains("error")
-            ))
-            self.isRunning = false
+            do {
+                let completedSession: Session
+                if let existing = session {
+                    completedSession = try await agentClient.send(
+                        SendRequest(prompt: prompt, session: existing)
+                    )
+                } else {
+                    completedSession = try await agentClient.start(
+                        StartRequest(
+                            prompt: prompt,
+                            worktree: worktree,
+                            mode: .readOnly,
+                            storageRoot: storageRoot
+                        )
+                    )
+                    session = completedSession
+                }
+                messages = rebuildMessages(from: completedSession.transcript)
+            } catch {
+                messages.append(ChatMessage(
+                    role: .assistant,
+                    text: error.localizedDescription,
+                    isError: true
+                ))
+            }
+            isRunning = false
         }
     }
 
     func tearDown() {
         runTask?.cancel()
+        try? FileManager.default.removeItem(at: storageRoot)
+    }
+
+    private func rebuildMessages(from transcriptURL: URL) -> [ChatMessage] {
+        guard let contents = try? Data(contentsOf: transcriptURL) else { return messages }
+        var rebuilt: [ChatMessage] = []
+        for lineData in contents.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true) {
+            guard let line = try? parseTranscriptLine(Data(lineData)) else { continue }
+            switch line {
+            case .hercules(let event):
+                switch event {
+                case .sessionStarted, .turnEnded:
+                    break
+                case .turnStarted(let ts):
+                    rebuilt.append(ChatMessage(role: .user, text: ts.userPrompt))
+                case .turnFailed(let tf):
+                    rebuilt.append(ChatMessage(role: .assistant, text: tf.errorMessage, isError: true))
+                }
+            case .harness(let rawJSON):
+                if let result = decodeHarnessResult(rawJSON) {
+                    rebuilt.append(ChatMessage(role: .assistant, text: result.text, isError: result.isError))
+                }
+            }
+        }
+        return rebuilt
     }
 }

@@ -43,7 +43,8 @@ final class LiveAgentClient: Sendable {
                 return candidate
             }
         }
-        return URL(fileURLWithPath: "/usr/local/bin/claude")
+        // HACK: use a config settings screen to have the user input a path
+        return URL(fileURLWithPath: "/Users/admin/.local/bin/claude")
     }
 
     func send(_ request: SendRequest) async throws -> Session {
