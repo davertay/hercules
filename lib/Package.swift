@@ -44,6 +44,7 @@ let package = Package(
             name: "HerculesApp",
             dependencies: [
                 "Agent",
+                "TestChat",
             ]
         ),
         .testTarget(
@@ -51,6 +52,9 @@ let package = Package(
             dependencies: [
                 "HerculesApp",
             ]
+        ),
+        .target(
+            name: "TestChat"
         ),
         .target(
             name: "Transcript"

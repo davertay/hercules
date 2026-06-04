@@ -3,5 +3,9 @@ import Observation
 @MainActor
 @Observable
 public final class AppModel {
-    public init() {}
+    public let testChatEnabled: Bool
+
+    public init(testChatEnabled: Bool = false) {
+        self.testChatEnabled = testChatEnabled
+    }
 }
