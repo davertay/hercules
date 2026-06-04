@@ -1,6 +1,7 @@
 import Foundation
 import Subprocess
 import Testing
+import Transcript
 
 @testable import Agent
 

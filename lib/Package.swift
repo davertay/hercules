@@ -20,6 +20,7 @@ let package = Package(
         .target(
             name: "Agent",
             dependencies: [
+                "Transcript",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "DependenciesMacros", package: "swift-dependencies"),
                 .product(name: "Subprocess", package: "swift-subprocess"),
@@ -29,6 +30,7 @@ let package = Package(
             name: "AgentTests",
             dependencies: [
                 "Agent",
+                "Transcript",
                 .product(name: "Clocks", package: "swift-clocks"),
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
@@ -53,6 +55,15 @@ let package = Package(
         ),
         .target(
             name: "TestChat"
+        ),
+        .target(
+            name: "Transcript"
+        ),
+        .testTarget(
+            name: "TranscriptTests",
+            dependencies: [
+                "Transcript",
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]

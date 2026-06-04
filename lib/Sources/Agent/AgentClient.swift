@@ -2,6 +2,7 @@ import Dependencies
 import DependenciesMacros
 import Foundation
 import os
+import Transcript
 
 @DependencyClient
 public struct AgentClient: Sendable {
