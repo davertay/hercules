@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-import Transcript
+import Store
 
 @Suite("ResultDecoder")
 struct ResultDecoderTests {

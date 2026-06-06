@@ -1,5 +1,5 @@
 import Foundation
-import Transcript
+import Store
 
 public enum Harness {
     public enum Operation: Sendable {
