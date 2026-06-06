@@ -25,9 +25,10 @@ public final class TestChatModel {
     @ObservationIgnored
     @Dependency(\.agentClient) var agentClient: AgentClient
 
-    private let storageRoot: URL
+    @ObservationIgnored
+    private let teardown: TeardownHandle
+
     private var session: Session?
-    private var runTask: Task<Void, Never>?
 
     var isRunning = false
     var draftText = ""
@@ -37,16 +38,14 @@ public final class TestChatModel {
 
     public init(worktree: URL) {
         self.worktree = worktree
-        self.storageRoot = FileManager.default.temporaryDirectory
+        let storageRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: storageRoot, withIntermediateDirectories: true)
+        self.teardown = TeardownHandle(storageRoot: storageRoot)
     }
 
-    // Requires Swift 6.2
-    // isolated deinit {
-    //     runTask?.cancel()
-    //     runTask = nil
-    // }
+    // Exposed internally so tests can observe cleanup without publishing it as API.
+    var storageRoot: URL { teardown.storageRoot }
 
     var windowTitle: String {
         "Test Chat: \(worktree.lastPathComponent)"
@@ -62,7 +61,7 @@ public final class TestChatModel {
         draftText = ""
         messages.append(ChatMessage(role: .user, text: prompt))
         isRunning = true
-        runTask = Task {
+        teardown.runTask = Task {
             do {
                 let completedSession: Session
                 if let existing = session {
@@ -75,7 +74,7 @@ public final class TestChatModel {
                             prompt: prompt,
                             worktree: worktree,
                             mode: .readOnly,
-                            storageRoot: storageRoot
+                            storageRoot: teardown.storageRoot
                         )
                     )
                     session = completedSession
@@ -93,8 +92,8 @@ public final class TestChatModel {
     }
 
     func tearDown() {
-        runTask?.cancel()
-        try? FileManager.default.removeItem(at: storageRoot)
+        teardown.runTask?.cancel()
+        try? FileManager.default.removeItem(at: teardown.storageRoot)
     }
 
     private func rebuildMessages(from transcriptURL: URL) -> [ChatMessage] {
@@ -119,5 +118,24 @@ public final class TestChatModel {
             }
         }
         return rebuilt
+    }
+}
+
+// Holds cleanup state so that deinit can cancel the in-flight task and remove
+// the storage directory even if tearDown() was never called (missed signal).
+// @unchecked Sendable: mutation is confined to @MainActor; deinit runs after
+// the last strong reference drops, at which point no @MainActor code can reach
+// these fields.
+private final class TeardownHandle: @unchecked Sendable {
+    var runTask: Task<Void, Never>?
+    let storageRoot: URL
+
+    init(storageRoot: URL) {
+        self.storageRoot = storageRoot
+    }
+
+    deinit {
+        runTask?.cancel()
+        try? FileManager.default.removeItem(at: storageRoot)
     }
 }
