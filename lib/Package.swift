@@ -61,6 +61,13 @@ let package = Package(
                 .product(name: "Dependencies", package: "swift-dependencies"),
             ]
         ),
+        .testTarget(
+            name: "TestChatTests",
+            dependencies: [
+                "TestChat",
+                .product(name: "Dependencies", package: "swift-dependencies"),
+            ]
+        ),
         .target(
             name: "Transcript"
         ),
