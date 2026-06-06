@@ -1,5 +1,5 @@
 import Foundation
-import Transcript
+import Store
 
 public struct StartRequest: Sendable {
     public let prompt: String

@@ -1,7 +1,7 @@
 import Dependencies
 import Foundation
 import Subprocess
-import Transcript
+import Store
 
 struct HarnessRunner {
     @Dependency(\.date.now) var now

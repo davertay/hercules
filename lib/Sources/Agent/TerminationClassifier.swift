@@ -1,6 +1,6 @@
 import Foundation
 import Subprocess
-import Transcript
+import Store
 
 /// Maps a Harness's termination status to a transcript event and, on failure,
 /// an `AgentError`. Cancellation is detected by the caller (via `Task`); the

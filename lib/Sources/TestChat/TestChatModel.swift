@@ -2,7 +2,7 @@ import Agent
 import Dependencies
 import Foundation
 import Observation
-import Transcript
+import Store
 
 @MainActor
 @Observable

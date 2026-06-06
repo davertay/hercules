@@ -1,5 +1,5 @@
 import Foundation
-import Transcript
+import Store
 
 public enum AgentError: Error, Sendable {
     case harnessNotFound(triedPath: URL)
