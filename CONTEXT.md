@@ -10,9 +10,31 @@ to do work on the user's behalf, and presents their output to the user.
 **Workflow**:
 A stream of work applied to a repo — a refactor, a new feature, a debugging campaign. The
 top-level unit of organisation in the app; deleting a Workflow deletes all its on-disk state in
-one go. A Workflow bundles one **Worktree** and one or more **Sessions** under a single root
-directory (`~/.hercules/workflows/<workflow-id>/`).
+one go. A Workflow bundles one **Worktree**, one or more **Sessions**, the Phases' document
+**Artifacts**, and a single per-Workflow SQLite database under one root directory
+(`~/.hercules/workflows/<workflow-id>/`).
 _Avoid_: Project (overloaded with Xcode/Swift project), task, job.
+
+**Phase**:
+One of the five named stages a Workflow moves through — Design, PRD, Allocate, Execute,
+Validate. Each Phase consumes the prior Phase's output and produces its own; the set is fixed
+and ordered. The left-hand sidebar of a Workflow window lists the Phases.
+_Avoid_: Step (reads as atomic, and clashes with the per-issue units inside Execute), Stage.
+
+**Artifact**:
+A Phase's durable output, consumed as the next Phase's input. Document Artifacts (the Design
+summary, the PRD) are markdown files in the Workflow directory; structured Artifacts (the Allocate
+Issue tickets) are rows in the Workflow's database. A Phase is unlocked once the Artifact it
+consumes exists.
+_Avoid_: Output, result, deliverable.
+
+**Skill**:
+A prompt document shipped in the app bundle that defines a Phase's agent behavior — grill-me for
+Design, to-prd for PRD, to-issues for Allocate. Injected into the Harness as an appended system
+prompt (`--append-system-prompt-file`) so it is always in force for that Phase's Session; the
+skill's own directory is also exposed to the Harness (`--add-dir`) so the agent can read the
+supporting files and scripts the skill references.
+_Avoid_: Prompt (too generic), template, persona (reserve for the Validate review personas).
 
 **Worktree**:
 The git working tree the Workflow operates in. Created by the app (commonly as a `git worktree`
@@ -48,10 +70,11 @@ Harness subprocess invocation. A Session is an ordered series of Turns.
 _Avoid_: Message (a Turn contains multiple messages — user, assistant, tool calls), round, exchange.
 
 **Transcript**:
-The append-only file (one per Session) where Turn results are written as JSONL — a mix of
-stream-json events passed through from the Harness verbatim and `hercules.*` framing lines
-written by the Agent module (turn start, turn end, turn failed). Lives in the Session's data
-directory, outside the Worktree, so it doesn't pollute `git status`.
+The durable, query-able record of a Session's conversation — one row per content block (assistant
+text, tool call, tool result, thinking) plus a per-Turn summary — held in the Workflow's SQLite
+database and projected live from the Harness's stream-json as the Turn runs, so the UI streams
+content in by observing the database. (The earlier append-only `transcript.jsonl` per Session,
+ADR 0002, is demoted to at most an Agent-internal debug spool.)
 _Avoid_: Log, history, output.
 
 **AgentMode**:

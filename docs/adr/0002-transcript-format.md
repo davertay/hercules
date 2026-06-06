@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0003
+---
+
 # Transcript file format: passthrough stream-json + Hercules framing lines
 
 Each Session has one Transcript file (`transcript.jsonl`) in its data directory. The file is

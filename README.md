@@ -1,2 +1,3 @@
-# hercules
-Agentic Coworking
+# Hercules
+
+Work hand-in-claw with your agents.
