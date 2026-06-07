@@ -1,6 +1,6 @@
 ### Hercules App Library
 
-App module contains the root level scene. One module per major feature.
+HerculesApp module contains the root level scene. One module per major feature or infrastructure chunk.
 
 ### Commands
 
@@ -30,7 +30,7 @@ swift test --filter "MyFeatureTests/MyTest"
 
 ## Key Patterns
 
-**Code Comments**: Inline code comments are rarely needed, only add them if there is some hidden behaviour or additional information that is not obvious by just reading the code instead. Header docs on public APIs are fine of course. 
+**Code Comments**: Inline code comments are rarely needed, code is documentation. If a comment is warranted keep it as brief as possible. Header docs on public APIs are fine of course. 
 **Standalone modules**: Feature modules represent single features, like a window that composes other features together, or a rich UI view with a lot of functionality. Infrastructure modules are used by both feature and other infrastructure modules. App module is the top level that holds the Scene and other top level concepts and is imported into the main app and ties everything else together.
 **Package.swift**: Targets and dependencies are maintained in alphabetical order.
 **Dependency injection via [swift-dependencies](https://github.com/pointfreeco/swift-dependencies)**: Dependencies like Date and UUID generation are injected via `@Dependency`. Override these in tests using `withDependencies { ... }`.
