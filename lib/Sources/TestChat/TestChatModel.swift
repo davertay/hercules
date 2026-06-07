@@ -30,8 +30,6 @@ public final class TestChatModel {
     private let teardown: TeardownHandle
 
     @ObservationIgnored
-    private let database: (any DatabaseWriter)?
-    @ObservationIgnored
     private let workflowID = UUID()
 
     private var session: Session?
@@ -47,11 +45,10 @@ public final class TestChatModel {
         let storageRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: storageRoot, withIntermediateDirectories: true)
-        self.teardown = TeardownHandle(storageRoot: storageRoot)
 
-        // One disposable Workflow database under the temp root, removed wholesale on close.
+        // One disposable Workflow database under the temp root. The connection is owned by the
+        // TeardownHandle so it can be closed before the directory is unlinked on close.
         let database = try? openWorkflowDatabase(at: storageRoot)
-        self.database = database
         if let database {
             let now = Date()
             let workflowID = workflowID
@@ -62,7 +59,14 @@ public final class TestChatModel {
                 .execute(db)
             }
         }
+        self.teardown = TeardownHandle(storageRoot: storageRoot, database: database)
     }
+
+    private var database: (any DatabaseWriter)? { teardown.database }
+
+    // Exposed internally so tests can assert the connection is closed before the storage is
+    // removed (it must be, or libsqlite3 warns "vnode unlinked while in use").
+    var databaseForTesting: (any DatabaseWriter)? { teardown.database }
 
     // Exposed internally so tests can observe cleanup without publishing it as API.
     var storageRoot: URL { teardown.storageRoot }
@@ -117,8 +121,7 @@ public final class TestChatModel {
     }
 
     func tearDown() {
-        teardown.runTask?.cancel()
-        try? FileManager.default.removeItem(at: teardown.storageRoot)
+        teardown.cleanup()
     }
 
     /// Reconstructs the conversation from the Workflow database: one user bubble per Turn's prompt,
@@ -150,13 +153,25 @@ public final class TestChatModel {
 private final class TeardownHandle: @unchecked Sendable {
     var runTask: Task<Void, Never>?
     let storageRoot: URL
+    let database: (any DatabaseWriter)?
 
-    init(storageRoot: URL) {
+    init(storageRoot: URL, database: (any DatabaseWriter)?) {
         self.storageRoot = storageRoot
+        self.database = database
+    }
+
+    // Close the SQLite connection *before* unlinking the directory. Otherwise libsqlite3
+    // reports "vnode unlinked while in use" because the open file descriptors (db, -wal, -shm)
+    // outlive the file. Idempotent: a second cleanup() finds the connection already closed and
+    // the directory already gone.
+    func cleanup() {
+        runTask?.cancel()
+        runTask = nil
+        try? database?.close()
+        try? FileManager.default.removeItem(at: storageRoot)
     }
 
     deinit {
-        runTask?.cancel()
-        try? FileManager.default.removeItem(at: storageRoot)
+        cleanup()
     }
 }
