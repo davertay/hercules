@@ -18,4 +18,12 @@ public enum Phase: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .validate: "Validate"
         }
     }
+
+    /// The Phase whose Artifact this Phase consumes — the one that must complete before this Phase
+    /// unlocks. The first Phase (Design) consumes the repo, not another Phase's Artifact, so it has
+    /// no predecessor and is always unlocked.
+    public var predecessor: Phase? {
+        guard let index = Self.allCases.firstIndex(of: self), index > 0 else { return nil }
+        return Self.allCases[index - 1]
+    }
 }
