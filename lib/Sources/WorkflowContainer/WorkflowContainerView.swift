@@ -18,7 +18,14 @@ public struct WorkflowContainerView: View {
         } detail: {
             switch selectedPhase {
             case .design:
-                DesignView()
+                if let designModel = model.designModel {
+                    DesignView(model: designModel)
+                } else {
+                    ContentUnavailableView(
+                        "Workflow store unavailable",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                }
             case .some(let phase):
                 PhasePlaceholderView(phase: phase)
             case .none:
