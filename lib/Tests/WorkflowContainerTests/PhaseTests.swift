@@ -16,6 +16,15 @@ struct PhaseTests {
     }
 
     @Test
+    func predecessors() {
+        #expect(Phase.design.predecessor == nil)
+        #expect(Phase.prd.predecessor == .design)
+        #expect(Phase.allocate.predecessor == .prd)
+        #expect(Phase.execute.predecessor == .allocate)
+        #expect(Phase.validate.predecessor == .execute)
+    }
+
+    @Test
     @MainActor
     func modelTitleIsRepoFolderName() {
         let model = WorkflowContainerModel(
