@@ -46,10 +46,14 @@ let package = Package(
             ]
         ),
         .target(
+            name: "Design"
+        ),
+        .target(
             name: "HerculesApp",
             dependencies: [
                 "Agent",
                 "TestChat",
+                "WorkflowContainer",
             ]
         ),
         .testTarget(
@@ -88,6 +92,23 @@ let package = Package(
             dependencies: [
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
+                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .target(
+            name: "WorkflowContainer",
+            dependencies: [
+                "Design",
+                "Store",
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .testTarget(
+            name: "WorkflowContainerTests",
+            dependencies: [
+                "WorkflowContainer",
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
             ]
