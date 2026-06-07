@@ -135,6 +135,8 @@ public struct ContentBlockRow: Identifiable, Equatable, Sendable {
     public var role: String
     public var kind: String
     public var text: String
+    /// The invoked tool's name, set only on `tool_use` blocks; `nil` for every other kind.
+    public var toolName: String?
     public var createdAt: Date
     public var updatedAt: Date
     public var isDeleted: Bool
@@ -146,6 +148,7 @@ public struct ContentBlockRow: Identifiable, Equatable, Sendable {
         role: String,
         kind: String,
         text: String = "",
+        toolName: String? = nil,
         createdAt: Date,
         updatedAt: Date,
         isDeleted: Bool = false
@@ -156,6 +159,7 @@ public struct ContentBlockRow: Identifiable, Equatable, Sendable {
         self.role = role
         self.kind = kind
         self.text = text
+        self.toolName = toolName
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDeleted = isDeleted

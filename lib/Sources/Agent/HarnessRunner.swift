@@ -82,7 +82,7 @@ struct HarnessRunner {
         }
 
         let sink = OSAllocatedUnfairLock(
-            initialState: LineSink(projector: TextProjector(database: database, turnID: turnID))
+            initialState: LineSink(projector: StreamProjector(database: database, turnID: turnID))
         )
 
         let args = Harness.renderArgs(
