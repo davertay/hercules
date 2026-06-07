@@ -37,6 +37,7 @@ public final class WorkflowContainerModel {
                 DesignModel(
                     worktree: URL(fileURLWithPath: data.repoPath),
                     workflowID: data.id,
+                    workflowDirectory: data.directory,
                     database: database
                 )
             }
