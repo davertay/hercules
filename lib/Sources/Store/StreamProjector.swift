@@ -26,18 +26,33 @@ public final class StreamProjector {
         var persisted: Bool
     }
 
-    /// Blocks keyed by their absolute position within the Turn. A Turn spans multiple messages
-    /// (assistant text/tool calls, then user tool results, then more assistant content), and the
-    /// Harness restarts its content-block `index` at 0 for each one, so positions are tracked
-    /// Turn-wide rather than per message.
+    /// A streamed block's identity. The Harness restarts its content-block `index` at 0 for each
+    /// assistant message, so an index alone isn't unique within a Turn — it's paired with the
+    /// ordinal of the message it belongs to.
+    private struct StreamKey: Hashable {
+        var messageOrdinal: Int
+        var index: Int
+    }
+
+    /// Every projected block keyed by its absolute, Turn-wide position.
     private var blocks: [Int: Block] = [:]
 
-    /// Next free absolute position. Advances past each consolidated message's blocks.
+    /// Maps a streamed block to its absolute position so its deltas, its stop, and the consolidated
+    /// `assistant` message that supersedes it all reconcile onto the same row instead of minting
+    /// duplicates.
+    private var positionByStreamKey: [StreamKey: Int] = [:]
+
+    /// Next free absolute position. Allocated in arrival order so positions stay monotonic across the
+    /// assistant messages and the interleaved tool-result messages that make up a Turn.
     private var nextPosition = 0
 
-    /// Base position for the message currently streaming; `nil` between messages. Set lazily on the
-    /// first streamed event of a message so positions stay contiguous even without a `message_start`.
-    private var liveBase: Int?
+    /// Which assistant message is currently streaming. Bumped when a `content_block_start` reuses an
+    /// index already seen in this message — the Harness's only signal that a new message has begun.
+    private var messageOrdinal = 0
+
+    /// How many of the current message's blocks the consolidated `assistant` events have reconciled.
+    /// The Harness emits that message one block at a time, so each maps to the next index in order.
+    private var reconciledCount = 0
 
     public init(database: any DatabaseWriter, turnID: UUID) {
         @Dependency(\.uuid) var uuid
@@ -52,10 +67,16 @@ public final class StreamProjector {
         guard let event = Self.decode(line) else { return }
         switch event {
         case let .contentBlockStart(index, kind, role, toolName):
-            let position = base() + index
-            blocks[position] = Block(
-                id: uuid(), role: role, kind: kind, toolName: toolName, text: "", persisted: false
-            )
+            let position = streamPosition(forIndex: index, isStart: true)
+            if blocks[position] == nil {
+                blocks[position] = Block(
+                    id: uuid(), role: role, kind: kind, toolName: toolName, text: "", persisted: false
+                )
+            } else {
+                blocks[position]?.role = role
+                blocks[position]?.kind = kind
+                blocks[position]?.toolName = toolName
+            }
 
         case let .textDelta(index, text):
             append(index: index, text: text, defaultKind: "text")
@@ -67,31 +88,51 @@ public final class StreamProjector {
             append(index: index, text: partialJSON, defaultKind: "tool_use")
 
         case let .contentBlockStop(index):
-            persist(base() + index)
+            persist(streamPosition(forIndex: index, isStart: false))
 
         case let .assistantMessage(decoded):
-            let messageBase = base()
-            reconcile(decoded, base: messageBase)
-            nextPosition = messageBase + decoded.count
-            liveBase = nil
+            // The Harness sends the consolidated message one block at a time; each supersedes the
+            // next streamed block of the current message, in order.
+            for block in decoded {
+                let position = streamPosition(forIndex: reconciledCount, isStart: false)
+                reconciledCount += 1
+                upsert(position: position, block: block)
+            }
 
         case let .toolResults(decoded):
-            reconcile(decoded, base: nextPosition)
-            nextPosition += decoded.count
+            // Tool results are their own blocks, appended after the assistant content that called
+            // them; they never reuse a streamed index.
+            for block in decoded {
+                upsert(position: allocatePosition(), block: block)
+            }
 
         case let .result(finalAnswer, isError, durationMs, costUSD):
             finalize(finalAnswer: finalAnswer, isError: isError, durationMs: durationMs, costUSD: costUSD)
         }
     }
 
-    /// The base position for the currently-streaming message, set lazily on first use.
-    private func base() -> Int {
-        if liveBase == nil { liveBase = nextPosition }
-        return liveBase!
+    /// The absolute position for the streamed block at `index` in the current message, allocating one
+    /// on first sight. A `content_block_start` whose index was already seen in this message means the
+    /// Harness restarted indices for a new assistant message, so the ordinal advances first.
+    private func streamPosition(forIndex index: Int, isStart: Bool) -> Int {
+        if isStart, positionByStreamKey[StreamKey(messageOrdinal: messageOrdinal, index: index)] != nil {
+            messageOrdinal += 1
+            reconciledCount = 0
+        }
+        let key = StreamKey(messageOrdinal: messageOrdinal, index: index)
+        if let position = positionByStreamKey[key] { return position }
+        let position = allocatePosition()
+        positionByStreamKey[key] = position
+        return position
+    }
+
+    private func allocatePosition() -> Int {
+        defer { nextPosition += 1 }
+        return nextPosition
     }
 
     private func append(index: Int, text: String, defaultKind: String) {
-        let position = base() + index
+        let position = streamPosition(forIndex: index, isStart: false)
         if blocks[position] == nil {
             blocks[position] = Block(
                 id: uuid(), role: "assistant", kind: defaultKind, toolName: nil, text: "", persisted: false
@@ -100,24 +141,21 @@ public final class StreamProjector {
         blocks[position]?.text += text
     }
 
-    /// Overwrites the streamed (or absent) blocks with the authoritative consolidated message,
-    /// inserting any block that never streamed.
-    private func reconcile(_ decodedBlocks: [DecodedBlock], base: Int) {
-        for (offset, decoded) in decodedBlocks.enumerated() {
-            let position = base + offset
-            if blocks[position] == nil {
-                blocks[position] = Block(
-                    id: uuid(), role: decoded.role, kind: decoded.kind,
-                    toolName: decoded.toolName, text: decoded.text, persisted: false
-                )
-            } else {
-                blocks[position]?.role = decoded.role
-                blocks[position]?.kind = decoded.kind
-                blocks[position]?.toolName = decoded.toolName
-                blocks[position]?.text = decoded.text
-            }
-            persist(position)
+    /// Overwrites (or inserts) the block at `position` with the authoritative consolidated block,
+    /// covering blocks that never streamed.
+    private func upsert(position: Int, block decoded: DecodedBlock) {
+        if blocks[position] == nil {
+            blocks[position] = Block(
+                id: uuid(), role: decoded.role, kind: decoded.kind,
+                toolName: decoded.toolName, text: decoded.text, persisted: false
+            )
+        } else {
+            blocks[position]?.role = decoded.role
+            blocks[position]?.kind = decoded.kind
+            blocks[position]?.toolName = decoded.toolName
+            blocks[position]?.text = decoded.text
         }
+        persist(position)
     }
 
     private func persist(_ position: Int) {
@@ -129,6 +167,7 @@ public final class StreamProjector {
                     try ContentBlockRow
                         .find(block.id)
                         .update {
+                            $0.role = block.role
                             $0.kind = block.kind
                             $0.toolName = block.toolName
                             $0.text = block.text

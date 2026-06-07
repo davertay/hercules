@@ -197,6 +197,51 @@ struct StreamProjectorTests {
         #expect(blocks.map(\.role) == ["assistant", "assistant", "user", "assistant"])
     }
 
+    /// The real Harness wire format: a separate consolidated `assistant` message per block (each
+    /// `count == 1`), parallel `tool_use` blocks, and the `tool_result` user messages interleaved
+    /// before `message_stop`. The old `messageBase + decoded.count` math collided positions here,
+    /// producing duplicate `(turnID, position)` rows that crashed the chat's ForEach.
+    @Test func perBlockConsolidatedMessagesAndParallelToolsGetUniquePositions() throws {
+        let (database, turnID) = try Self.seededWorkflow()
+        let projector = StreamProjector(database: database, turnID: turnID)
+
+        // First assistant message: thinking + two parallel Read tool calls.
+        projector.ingest(Self.streamEvent(#"{"type":"message_start","message":{"role":"assistant"}}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Reading both."}}"#))
+        projector.ingest(Self.line(#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Reading both."}]}}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_stop","index":0}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"Read","input":{}}}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"file_path\":\"a\"}"}}"#))
+        projector.ingest(Self.line(#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"a"}}]}}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_stop","index":1}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_2","name":"Read","input":{}}}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"file_path\":\"b\"}"}}"#))
+        projector.ingest(Self.line(#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_2","name":"Read","input":{"file_path":"b"}}]}}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_stop","index":2}"#))
+        // Tool results arrive interleaved, before message_stop.
+        projector.ingest(Self.line(#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"A"}]}}"#))
+        projector.ingest(Self.line(#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_2","content":"B"}]}}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"message_stop"}"#))
+        // Second assistant message: the answer — stream index restarts at 0.
+        projector.ingest(Self.streamEvent(#"{"type":"message_start","message":{"role":"assistant"}}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Done."}}"#))
+        projector.ingest(Self.line(#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done."}]}}"#))
+        projector.ingest(Self.streamEvent(#"{"type":"content_block_stop","index":0}"#))
+
+        let blocks = try database.read { db in
+            try ContentBlockRow.order(by: \.position).fetchAll(db)
+        }
+        // No duplicate (turnID, position) rows, and everything in arrival order.
+        #expect(blocks.map(\.position) == [0, 1, 2, 3, 4, 5])
+        #expect(Set(blocks.map(\.position)).count == blocks.count)
+        #expect(blocks.map(\.kind) == ["thinking", "tool_use", "tool_use", "tool_result", "tool_result", "text"])
+        #expect(blocks.map(\.role) == ["assistant", "assistant", "assistant", "user", "user", "assistant"])
+        #expect(blocks.map(\.text) == ["Reading both.", #"{"file_path":"a"}"#, #"{"file_path":"b"}"#, "A", "B", "Done."])
+        #expect(blocks.map(\.toolName) == [nil, "Read", "Read", nil, nil, nil])
+    }
+
     // MARK: - Helpers
 
     private static func line(_ json: String) -> Data { Data(json.utf8) }
