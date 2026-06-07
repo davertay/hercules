@@ -50,7 +50,7 @@ public struct DesignView: View {
                         DesignMessageBubble(
                             message: DesignModel.Message(
                                 id: "error",
-                                role: .assistant,
+                                kind: .assistant,
                                 text: errorText,
                                 isError: true
                             )
@@ -128,14 +128,27 @@ private struct DesignMessageBubble: View {
     let message: DesignModel.Message
 
     var body: some View {
+        switch message.kind {
+        case .user, .assistant:
+            chatBubble
+        case .thinking:
+            ThinkingRow(text: message.text)
+        case .toolUse:
+            ToolCallRow(name: message.toolName ?? "tool", input: message.text)
+        case .toolResult:
+            ToolResultRow(text: message.text)
+        }
+    }
+
+    private var chatBubble: some View {
         HStack(alignment: .top) {
-            if message.role == .user { Spacer(minLength: 60) }
+            if message.kind == .user { Spacer(minLength: 60) }
             bubbleContent
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(bubbleBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
-            if message.role == .assistant { Spacer(minLength: 60) }
+            if message.kind == .assistant { Spacer(minLength: 60) }
         }
     }
 
@@ -151,7 +164,7 @@ private struct DesignMessageBubble: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             }
-        } else if message.role == .assistant {
+        } else if message.kind == .assistant {
             renderedMarkdown(message.text)
                 .textSelection(.enabled)
         } else {
@@ -162,10 +175,10 @@ private struct DesignMessageBubble: View {
     }
 
     private var bubbleBackground: Color {
-        switch (message.role, message.isError) {
+        switch (message.kind, message.isError) {
         case (_, true): return Color(.controlBackgroundColor)
         case (.user, _): return .accentColor
-        case (.assistant, _): return Color(.controlBackgroundColor)
+        default: return Color(.controlBackgroundColor)
         }
     }
 
@@ -177,6 +190,74 @@ private struct DesignMessageBubble: View {
             return Text(attributed)
         }
         return Text(text)
+    }
+}
+
+/// The agent's thinking, shown as a subdued italic aside distinct from its spoken text.
+private struct ThinkingRow: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "brain")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.callout)
+                .italic()
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+/// One step in the live tool-call timeline: the tool's name and the JSON input it was invoked with.
+private struct ToolCallRow: View {
+    let name: String
+    let input: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "wrench.and.screwdriver")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.callout.weight(.semibold).monospaced())
+                if !input.isEmpty {
+                    Text(input)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(.controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// A tool's result, rendered monospaced and truncated so a long read/search doesn't flood the chat.
+private struct ToolResultRow: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "arrow.turn.down.right")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(8)
+                .textSelection(.enabled)
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 8)
     }
 }
 

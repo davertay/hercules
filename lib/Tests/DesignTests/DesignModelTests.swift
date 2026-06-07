@@ -56,10 +56,65 @@ struct DesignModelTests {
 
         #expect(
             model.messages == [
-                DesignModel.Message(id: "\(UUID(-10).uuidString)/user", role: .user, text: "hello", isError: false),
-                DesignModel.Message(id: "\(UUID(-10).uuidString)/assistant", role: .assistant, text: "Hi there", isError: false),
-                DesignModel.Message(id: "\(UUID(-20).uuidString)/user", role: .user, text: "more", isError: false),
-                DesignModel.Message(id: "\(UUID(-20).uuidString)/assistant", role: .assistant, text: "Turn failed.", isError: true),
+                DesignModel.Message(id: "\(UUID(-10).uuidString)/user", kind: .user, text: "hello"),
+                DesignModel.Message(id: "\(UUID(-10).uuidString)/0", kind: .assistant, text: "Hi there"),
+                DesignModel.Message(id: "\(UUID(-20).uuidString)/user", kind: .user, text: "more"),
+                DesignModel.Message(id: "\(UUID(-20).uuidString)/assistant", kind: .assistant, text: "Turn failed.", isError: true),
+            ]
+        )
+    }
+
+    @Test
+    func toolCallTimelineRendersThinkingToolUseAndToolResultDistinctly() async throws {
+        let database = try Self.makeDatabase()
+        let sessionID = UUID(-2)
+        try Self.seedSession(database, sessionID: sessionID)
+        try await database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-10), sessionID: sessionID, userPrompt: "find it",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try ContentBlockRow.insert {
+                ContentBlockRow(
+                    id: UUID(-11), turnID: UUID(-10), position: 0, role: "assistant", kind: "thinking",
+                    text: "Let me look.", createdAt: fixedDate, updatedAt: fixedDate
+                )
+                ContentBlockRow(
+                    id: UUID(-12), turnID: UUID(-10), position: 1, role: "assistant", kind: "tool_use",
+                    text: #"{"path":"README.md"}"#, toolName: "Read", createdAt: fixedDate, updatedAt: fixedDate
+                )
+                ContentBlockRow(
+                    id: UUID(-13), turnID: UUID(-10), position: 2, role: "user", kind: "tool_result",
+                    text: "file contents", createdAt: fixedDate, updatedAt: fixedDate
+                )
+                ContentBlockRow(
+                    id: UUID(-14), turnID: UUID(-10), position: 3, role: "assistant", kind: "text",
+                    text: "Found it.", createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: Self.makeWorkflowDirectory(), database: database
+            )
+        }
+        try await model.$conversation.load()
+
+        #expect(
+            model.messages == [
+                DesignModel.Message(id: "\(UUID(-10).uuidString)/user", kind: .user, text: "find it"),
+                DesignModel.Message(id: "\(UUID(-10).uuidString)/0", kind: .thinking, text: "Let me look."),
+                DesignModel.Message(id: "\(UUID(-10).uuidString)/1", kind: .toolUse, text: #"{"path":"README.md"}"#, toolName: "Read"),
+                DesignModel.Message(id: "\(UUID(-10).uuidString)/2", kind: .toolResult, text: "file contents"),
+                DesignModel.Message(id: "\(UUID(-10).uuidString)/3", kind: .assistant, text: "Found it."),
             ]
         )
     }

@@ -104,4 +104,13 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         try #sql(#"CREATE INDEX "index_content_block_on_turnID" ON "content_block"("turnID")"#)
             .execute(db)
     }
+
+    migrator.registerMigration("Add toolName to content_block") { db in
+        try #sql(
+            """
+            ALTER TABLE "content_block" ADD COLUMN "toolName" TEXT
+            """
+        )
+        .execute(db)
+    }
 }

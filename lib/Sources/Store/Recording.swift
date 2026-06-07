@@ -26,7 +26,7 @@ public func recordSessionStart(
     }
 }
 
-/// Inserts the `turn` row a Turn projects into. The live `TextProjector` finalizes this same row
+/// Inserts the `turn` row a Turn projects into. The live `StreamProjector` finalizes this same row
 /// from the Harness's `result` event; on failure the Agent flags it via `recordFailure`.
 public func recordTurnStart(
     in database: any DatabaseWriter,

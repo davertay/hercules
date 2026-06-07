@@ -13,11 +13,23 @@ import Store
 @Observable
 public final class DesignModel {
     public struct Message: Identifiable, Equatable, Sendable {
-        public enum Role: Sendable { case user, assistant }
+        /// What a chat row renders: the user's prompt, the assistant's text, or — new in the live
+        /// tool-call timeline — the agent's thinking, a tool invocation, or a tool's result.
+        public enum Kind: Equatable, Sendable { case user, assistant, thinking, toolUse, toolResult }
         public let id: String
-        public let role: Role
+        public let kind: Kind
         public let text: String
+        /// The invoked tool's name; set only on `.toolUse` rows.
+        public let toolName: String?
         public let isError: Bool
+
+        public init(id: String, kind: Kind, text: String, toolName: String? = nil, isError: Bool = false) {
+            self.id = id
+            self.kind = kind
+            self.text = text
+            self.toolName = toolName
+            self.isError = isError
+        }
     }
 
     @ObservationIgnored
@@ -74,8 +86,9 @@ public final class DesignModel {
         self.database = database
     }
 
-    /// The conversation reconstructed from the database: one user bubble per Turn's prompt followed
-    /// by that Turn's assistant text (the Turn's text content-blocks, in order).
+    /// The conversation reconstructed from the database: one user bubble per Turn's prompt, then that
+    /// Turn's content blocks in order — assistant text, thinking, tool calls, and tool results — so
+    /// the chat shows a live tool-call timeline as the Turn runs.
     public var messages: [Message] {
         let turns = conversation.turns.sorted { $0.createdAt < $1.createdAt }
         let blocksByTurn = Dictionary(grouping: conversation.blocks) { $0.turnID }
@@ -83,23 +96,42 @@ public final class DesignModel {
         var result: [Message] = []
         for turn in turns {
             result.append(
-                Message(id: "\(turn.id.uuidString)/user", role: .user, text: turn.userPrompt, isError: false)
+                Message(id: "\(turn.id.uuidString)/user", kind: .user, text: turn.userPrompt)
             )
-            let assistantText = (blocksByTurn[turn.id] ?? [])
-                .sorted { $0.position < $1.position }
-                .map(\.text)
-                .joined(separator: "\n\n")
-            if !assistantText.isEmpty {
+            let blocks = (blocksByTurn[turn.id] ?? []).sorted { $0.position < $1.position }
+            var hasAssistantText = false
+            for block in blocks {
+                guard let message = Self.message(for: block, isError: turn.isError) else { continue }
+                if message.kind == .assistant { hasAssistantText = true }
+                result.append(message)
+            }
+            // Surface a bare failure only when the errored Turn produced no assistant text to carry it.
+            if !hasAssistantText, turn.isError {
                 result.append(
-                    Message(id: "\(turn.id.uuidString)/assistant", role: .assistant, text: assistantText, isError: turn.isError)
-                )
-            } else if turn.isError {
-                result.append(
-                    Message(id: "\(turn.id.uuidString)/assistant", role: .assistant, text: "Turn failed.", isError: true)
+                    Message(id: "\(turn.id.uuidString)/assistant", kind: .assistant, text: "Turn failed.", isError: true)
                 )
             }
         }
         return result
+    }
+
+    /// Maps one content block to its chat row, or `nil` to skip it (empty text/thinking).
+    private static func message(for block: ContentBlockRow, isError: Bool) -> Message? {
+        let id = "\(block.turnID.uuidString)/\(block.position)"
+        switch block.kind {
+        case "text":
+            guard !block.text.isEmpty else { return nil }
+            return Message(id: id, kind: .assistant, text: block.text, isError: isError)
+        case "thinking":
+            guard !block.text.isEmpty else { return nil }
+            return Message(id: id, kind: .thinking, text: block.text)
+        case "tool_use":
+            return Message(id: id, kind: .toolUse, text: block.text, toolName: block.toolName)
+        case "tool_result":
+            return Message(id: id, kind: .toolResult, text: block.text)
+        default:
+            return nil
+        }
     }
 
     public var isIntake: Bool {
