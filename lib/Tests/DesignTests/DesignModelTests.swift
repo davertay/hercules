@@ -121,6 +121,46 @@ struct DesignModelTests {
     }
 
     @Test
+    func askUserQuestionToolUsePreservesQuestionsJSONAndToolName() async throws {
+        let questionsJSON = #"{"questions":[{"header":"Approach","multiSelect":false,"options":[{"description":"A custom view","label":"Custom view"},{"description":"Standard panel","label":"Standard panel"}],"question":"What kind of screen?"}]}"#
+
+        let database = try Self.makeDatabase()
+        let sessionID = UUID(-2)
+        try Self.seedSession(database, sessionID: sessionID)
+        try await database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-10), sessionID: sessionID, userPrompt: "hi",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try ContentBlockRow.insert {
+                ContentBlockRow(
+                    id: UUID(-11), turnID: UUID(-10), position: 0, role: "assistant", kind: "tool_use",
+                    text: questionsJSON, toolName: "AskUserQuestion",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: Self.makeWorkflowDirectory(), database: database
+            )
+        }
+        try await model.$conversation.load()
+
+        let askMsg = try #require(model.messages.first { $0.toolName == "AskUserQuestion" })
+        #expect(askMsg.kind == .toolUse)
+        #expect(askMsg.text == questionsJSON)
+    }
+
+    @Test
     func isIntakeUntilThereAreMessages() async throws {
         let database = try Self.makeDatabase()
         let model = withDependencies {
