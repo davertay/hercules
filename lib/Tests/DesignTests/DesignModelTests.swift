@@ -1,6 +1,7 @@
 import Agent
 import Dependencies
 import Foundation
+import Material
 import SQLiteData
 import Store
 import Testing
@@ -153,12 +154,12 @@ struct DesignModelTests {
     @Test
     func firstSubmitStartsReadOnlySessionUnderSkill() async throws {
         let database = try Self.makeDatabase()
-        let skillURL = URL(fileURLWithPath: "/bundle/Resources/grill-me/grill-me.md")
+        // The Skill is loaded from the Material bundle at init, not injected.
+        let skill = loadSkill(.grillMe)
         let captured = LockIsolated<StartRequest?>(nil)
 
         let model = withDependencies {
             $0.defaultDatabase = database
-            $0.designSkillFile = skillURL
             $0.agentClient.start = { @Sendable request in
                 captured.setValue(request)
                 return Session(
@@ -185,8 +186,8 @@ struct DesignModelTests {
         #expect(request.mode == .readOnly)
         #expect(request.worktree == URL(fileURLWithPath: "/repo"))
         #expect(request.workflowID == UUID(-1))
-        #expect(request.skillFiles == [skillURL])
-        #expect(request.addDirs == [skillURL.deletingLastPathComponent()])
+        #expect(request.skillFiles == [skill.fileUrl])
+        #expect(request.addDirs == [skill.folderUrl])
         #expect(model.draftText.isEmpty)
         #expect(!model.isRunning)
         #expect(model.errorText == nil)

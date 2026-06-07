@@ -1,6 +1,7 @@
 import Agent
 import Dependencies
 import Foundation
+import Material
 import Observation
 import SQLiteData
 import Store
@@ -36,9 +37,6 @@ public final class DesignModel {
     @Dependency(\.agentClient) private var agentClient
 
     @ObservationIgnored
-    @Dependency(\.designSkillFile) private var skillFile
-
-    @ObservationIgnored
     @Dependency(\.uuid) private var uuid
 
     @ObservationIgnored
@@ -65,8 +63,10 @@ public final class DesignModel {
     var conversation = ConversationRequest.Value()
 
     /// Pinned once the first Turn completes so follow-ups resume rather than start a new Session.
-    @ObservationIgnored
     private var session: Session?
+
+    @ObservationIgnored
+    private let skill: SkillResource
 
     @ObservationIgnored
     var runTask: Task<Void, Never>?
@@ -84,6 +84,7 @@ public final class DesignModel {
         self.workflowID = workflowID
         self.workflowDirectory = workflowDirectory
         self.database = database
+        self.skill = loadSkill(.grillMe)
     }
 
     /// The conversation reconstructed from the database: one user bubble per Turn's prompt, then that
@@ -142,8 +143,6 @@ public final class DesignModel {
         draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunning
     }
 
-    /// Whether the "Generate Design Summary" action applies: the conversation is underway, so a
-    /// Session exists to resume with the finalization instruction.
     public var isGenerateSummaryAvailable: Bool {
         session != nil
     }
@@ -155,10 +154,6 @@ public final class DesignModel {
         errorText = nil
         summarySavedURL = nil
         isRunning = true
-
-        let skillFiles = skillFile.map { [$0] } ?? []
-        // Expose the Skill's own directory so the agent can read the files it references (ADR 0004).
-        let addDirs = skillFile.map { [$0.deletingLastPathComponent()] } ?? []
 
         runTask = Task { [self] in
             do {
@@ -174,8 +169,8 @@ public final class DesignModel {
                             mode: .readOnly,
                             database: database,
                             workflowID: workflowID,
-                            skillFiles: skillFiles,
-                            addDirs: addDirs
+                            skillFiles: [skill.fileUrl],
+                            addDirs: [skill.folderUrl]
                         )
                     )
                 }

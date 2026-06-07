@@ -49,6 +49,7 @@ let package = Package(
             name: "Design",
             dependencies: [
                 "Agent",
+                "Material",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
@@ -58,6 +59,7 @@ let package = Package(
             name: "DesignTests",
             dependencies: [
                 "Design",
+                "Material",
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
@@ -71,9 +73,6 @@ let package = Package(
                 "Design",
                 "TestChat",
                 "WorkflowContainer",
-            ],
-            resources: [
-                .copy("Resources"),
             ]
         ),
         .testTarget(
@@ -83,20 +82,9 @@ let package = Package(
             ]
         ),
         .target(
-            name: "TestChat",
-            dependencies: [
-                "Agent",
-                "Store",
-                .product(name: "Dependencies", package: "swift-dependencies"),
-                .product(name: "SQLiteData", package: "sqlite-data"),
-            ]
-        ),
-        .testTarget(
-            name: "TestChatTests",
-            dependencies: [
-                "TestChat",
-                .product(name: "Dependencies", package: "swift-dependencies"),
-                .product(name: "SQLiteData", package: "sqlite-data"),
+            name: "Material",
+            resources: [
+                .copy("Resources"),
             ]
         ),
         .target(
@@ -113,6 +101,23 @@ let package = Package(
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .target(
+            name: "TestChat",
+            dependencies: [
+                "Agent",
+                "Store",
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .testTarget(
+            name: "TestChatTests",
+            dependencies: [
+                "TestChat",
+                .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
             ]
         ),
