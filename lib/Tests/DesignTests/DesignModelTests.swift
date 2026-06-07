@@ -47,7 +47,10 @@ struct DesignModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            DesignModel(worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1), database: database)
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: Self.makeWorkflowDirectory(), database: database
+            )
         }
         try await model.$conversation.load()
 
@@ -67,7 +70,10 @@ struct DesignModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            DesignModel(worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1), database: database)
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: Self.makeWorkflowDirectory(), database: database
+            )
         }
         #expect(model.isIntake)
 
@@ -109,7 +115,10 @@ struct DesignModelTests {
                 )
             }
         } operation: {
-            DesignModel(worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1), database: database)
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: Self.makeWorkflowDirectory(), database: database
+            )
         }
 
         model.draftText = "What are we building?"
@@ -146,7 +155,10 @@ struct DesignModelTests {
                 return request.session
             }
         } operation: {
-            DesignModel(worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1), database: database)
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: Self.makeWorkflowDirectory(), database: database
+            )
         }
 
         model.draftText = "first"
@@ -171,7 +183,10 @@ struct DesignModelTests {
                 throw AgentError.harnessNotFound(triedPath: URL(fileURLWithPath: "/no/claude"))
             }
         } operation: {
-            DesignModel(worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1), database: database)
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: Self.makeWorkflowDirectory(), database: database
+            )
         }
 
         model.draftText = "hi"
@@ -182,12 +197,159 @@ struct DesignModelTests {
         #expect(!model.isRunning)
     }
 
+    // MARK: - Generating the design summary
+
+    @Test
+    func generateSummaryIsUnavailableUntilSessionStarts() async throws {
+        let database = try Self.makeDatabase()
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.start = { @Sendable request in
+                Session(id: Session.ID(rawValue: UUID(100)), worktree: request.worktree, mode: request.mode)
+            }
+        } operation: {
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: Self.makeWorkflowDirectory(), database: database
+            )
+        }
+        #expect(!model.isGenerateSummaryAvailable)
+
+        model.draftText = "kick off"
+        model.submit()
+        await model.runTask?.value
+
+        #expect(model.isGenerateSummaryAvailable)
+    }
+
+    @Test
+    func generateSummaryWritesArtifactAndCompletesPhase() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        let sessionID = UUID(100)
+        try Self.seedSession(database, sessionID: sessionID)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                Session(id: Session.ID(rawValue: sessionID), worktree: request.worktree, mode: request.mode)
+            }
+            $0.agentClient.send = { @Sendable request in
+                try await request.database.write { db in
+                    try TurnRow.insert {
+                        TurnRow(
+                            id: UUID(200), sessionID: sessionID, userPrompt: request.prompt,
+                            finalAnswer: "# Design\n\nThe plan.", createdAt: fixedDate, updatedAt: fixedDate
+                        )
+                    }
+                    .execute(db)
+                }
+                return request.session
+            }
+        } operation: {
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: workflowDirectory, database: database
+            )
+        }
+
+        model.draftText = "kick off"
+        model.submit()
+        await model.runTask?.value
+
+        model.generateSummary()
+        await model.runTask?.value
+
+        let summaryURL = workflowDirectory
+            .appending(path: "phases/design", directoryHint: .isDirectory)
+            .appending(path: "summary.md")
+        #expect(model.summarySavedURL == summaryURL)
+        #expect(try String(contentsOf: summaryURL, encoding: .utf8) == "# Design\n\nThe plan.")
+        #expect(model.errorText == nil)
+        #expect(!model.isRunning)
+
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("design") }.fetchOne(db)
+        }
+        #expect(phase?.workflowID == UUID(-1))
+        #expect(phase?.status == "complete")
+        #expect(phase?.artifactPath == summaryURL.path)
+    }
+
+    @Test
+    func reRunningSummaryOverwritesFileAndUpdatesSamePhaseRow() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        let sessionID = UUID(100)
+        try Self.seedSession(database, sessionID: sessionID)
+        let calls = LockIsolated(0)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                Session(id: Session.ID(rawValue: sessionID), worktree: request.worktree, mode: request.mode)
+            }
+            $0.agentClient.send = { @Sendable request in
+                let n = calls.withValue { value -> Int in
+                    defer { value += 1 }
+                    return value
+                }
+                try await request.database.write { db in
+                    try TurnRow.insert {
+                        TurnRow(
+                            id: UUID(200 + n), sessionID: sessionID, userPrompt: request.prompt,
+                            finalAnswer: n == 0 ? "# First" : "# Second",
+                            createdAt: fixedDate.addingTimeInterval(TimeInterval(n)), updatedAt: fixedDate
+                        )
+                    }
+                    .execute(db)
+                }
+                return request.session
+            }
+        } operation: {
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: workflowDirectory, database: database
+            )
+        }
+
+        model.draftText = "kick off"
+        model.submit()
+        await model.runTask?.value
+
+        model.generateSummary()
+        await model.runTask?.value
+        model.generateSummary()
+        await model.runTask?.value
+
+        let summaryURL = workflowDirectory
+            .appending(path: "phases/design", directoryHint: .isDirectory)
+            .appending(path: "summary.md")
+        #expect(try String(contentsOf: summaryURL, encoding: .utf8) == "# Second")
+
+        let designPhases = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("design") }.fetchAll(db)
+        }
+        #expect(designPhases.count == 1)
+        #expect(designPhases.first?.status == "complete")
+        #expect(designPhases.first?.artifactPath == summaryURL.path)
+    }
+
     // MARK: - Helpers
 
     private static func makeDatabase() throws -> any DatabaseWriter {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("DesignTests-\(UUID().uuidString)", isDirectory: true)
         return try openWorkflowDatabase(at: dir)
+    }
+
+    private static func makeWorkflowDirectory() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("DesignTests-WF-\(UUID().uuidString)", isDirectory: true)
     }
 
     private static func seedSession(_ database: any DatabaseWriter, sessionID: UUID) throws {

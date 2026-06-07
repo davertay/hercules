@@ -27,6 +27,12 @@ public final class DesignModel {
     @Dependency(\.designSkillFile) private var skillFile
 
     @ObservationIgnored
+    @Dependency(\.uuid) private var uuid
+
+    @ObservationIgnored
+    @Dependency(\.date.now) private var now
+
+    @ObservationIgnored
     private let database: any DatabaseWriter
 
     @ObservationIgnored
@@ -34,6 +40,11 @@ public final class DesignModel {
 
     @ObservationIgnored
     private let workflowID: UUID
+
+    /// The Workflow's root directory (`~/.hercules/workflows/<id>/`); the Design summary Artifact is
+    /// written beneath it at `phases/design/summary.md`.
+    @ObservationIgnored
+    private let workflowDirectory: URL
 
     /// Live view of the Workflow's Turns and their text content-blocks. Updates as the Harness
     /// streams, which is what makes the assistant's reply appear before the Turn ends.
@@ -52,10 +63,14 @@ public final class DesignModel {
     public var isRunning = false
     /// Set only for failures that never reach the database (e.g. the Harness binary is missing).
     public var errorText: String?
+    /// The saved summary's location once a finalization Turn has written it. Drives the saved
+    /// confirmation (with its Reveal in Finder button); cleared when new chat activity starts.
+    public var summarySavedURL: URL?
 
-    public init(worktree: URL, workflowID: UUID, database: any DatabaseWriter) {
+    public init(worktree: URL, workflowID: UUID, workflowDirectory: URL, database: any DatabaseWriter) {
         self.worktree = worktree
         self.workflowID = workflowID
+        self.workflowDirectory = workflowDirectory
         self.database = database
     }
 
@@ -95,11 +110,18 @@ public final class DesignModel {
         draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunning
     }
 
+    /// Whether the "Generate Design Summary" action applies: the conversation is underway, so a
+    /// Session exists to resume with the finalization instruction.
+    public var isGenerateSummaryAvailable: Bool {
+        session != nil
+    }
+
     public func submit() {
         let prompt = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty, !isRunning else { return }
         draftText = ""
         errorText = nil
+        summarySavedURL = nil
         isRunning = true
 
         let skillFiles = skillFile.map { [$0] } ?? []
@@ -129,6 +151,93 @@ public final class DesignModel {
                 errorText = error.localizedDescription
             }
             isRunning = false
+        }
+    }
+
+    /// The canned instruction the finalization Turn resumes the Session with.
+    static let finalizationPrompt = "Produce the complete design summary now as a markdown document."
+
+    /// Resumes the Session with the finalization instruction, then writes that Turn's final answer to
+    /// `phases/design/summary.md` and flips the Design `phase` row to complete with the Artifact path.
+    /// Re-running overwrites the file and updates the same row.
+    public func generateSummary() {
+        guard let session, !isRunning else { return }
+        errorText = nil
+        summarySavedURL = nil
+        isRunning = true
+
+        runTask = Task { [self] in
+            do {
+                _ = try await agentClient.send(
+                    SendRequest(prompt: Self.finalizationPrompt, session: session, database: database)
+                )
+                let url = try writeSummary(finalAnswer(forSession: session.id.rawValue))
+                try recordDesignComplete(artifactPath: url.path)
+                summarySavedURL = url
+            } catch {
+                errorText = error.localizedDescription
+            }
+            isRunning = false
+        }
+    }
+
+    /// The final answer of the Session's most recent Turn — the finalization Turn just projected.
+    private func finalAnswer(forSession sessionID: UUID) throws -> String {
+        let turn = try database.read { db in
+            try TurnRow
+                .where { $0.sessionID.eq(sessionID) }
+                .order { $0.createdAt.desc() }
+                .fetchOne(db)
+        }
+        return turn?.finalAnswer ?? ""
+    }
+
+    /// Writes the summary markdown to `phases/design/summary.md` under the Workflow directory,
+    /// creating the intermediate directories and overwriting any existing file.
+    private func writeSummary(_ markdown: String) throws -> URL {
+        let url = workflowDirectory
+            .appending(path: "phases/design", directoryHint: .isDirectory)
+            .appending(path: "summary.md")
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try markdown.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    /// Flips the Design `phase` row to complete with the Artifact path, inserting the row the first
+    /// time and updating it on a re-run.
+    private func recordDesignComplete(artifactPath: String) throws {
+        let timestamp = now
+        try database.write { db in
+            let existing = try PhaseRow
+                .where { $0.workflowID.eq(workflowID) }
+                .where { $0.kind.eq("design") }
+                .fetchOne(db)
+            if let existing {
+                try PhaseRow
+                    .find(existing.id)
+                    .update {
+                        $0.status = "complete"
+                        $0.artifactPath = #bind(artifactPath)
+                        $0.updatedAt = timestamp
+                    }
+                    .execute(db)
+            } else {
+                try PhaseRow.insert {
+                    PhaseRow(
+                        id: uuid(),
+                        workflowID: workflowID,
+                        kind: "design",
+                        status: "complete",
+                        artifactPath: artifactPath,
+                        createdAt: timestamp,
+                        updatedAt: timestamp
+                    )
+                }
+                .execute(db)
+            }
         }
     }
 }
