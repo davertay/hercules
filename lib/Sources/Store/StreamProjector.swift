@@ -96,6 +96,25 @@ public final class TextProjector {
         blocks[index]?.persisted = true
     }
 
+    /// Flags the Turn as errored when the Harness fails before — or instead of — emitting a
+    /// `result` event (non-zero exit, crash, cancellation). Leaves `finalAnswer` untouched; the
+    /// diagnostic detail travels with the `AgentError` the Agent throws.
+    public func recordFailure(durationMs: Int?) {
+        let now = date.now
+        withErrorReporting {
+            try database.write { db in
+                try TurnRow
+                    .find(turnID)
+                    .update {
+                        $0.isError = true
+                        $0.durationMs = durationMs
+                        $0.updatedAt = now
+                    }
+                    .execute(db)
+            }
+        }
+    }
+
     private func finalize(finalAnswer: String?, isError: Bool, durationMs: Int?, costUSD: Double?) {
         let now = date.now
         withErrorReporting {

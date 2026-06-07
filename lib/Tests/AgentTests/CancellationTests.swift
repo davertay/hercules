@@ -1,10 +1,15 @@
 import Dependencies
+import DependenciesTestSupport
 import Foundation
 import Testing
 
 @testable import Agent
 
-@Suite("Cancellation — integration")
+@Suite(
+    "Cancellation — integration",
+    .dependency(\.uuid, .incrementing),
+    .dependency(\.date, .constant(Date(timeIntervalSinceReferenceDate: 1_234_567_890)))
+)
 struct CancellationTests {
     private func fixtureURL(_ name: String) throws -> URL {
         let url = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Fixtures")
@@ -15,23 +20,17 @@ struct CancellationTests {
         return url
     }
 
-    private func makeTempDir() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
     @Test func cancelDuringSlowProcessThrowsCancelled() async throws {
         let fixture = try fixtureURL("slow.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
         let request = StartRequest(
             prompt: "hello",
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
-            storageRoot: storageRoot
+            database: database,
+            workflowID: workflowID
         )
 
         // slow.sh exits on SIGTERM, so the teardown sequence reaps it well within
@@ -63,14 +62,15 @@ struct CancellationTests {
 
     @Test func cancelIgnoringSigtermFiresSigkillAndThrowsCancelled() async throws {
         let fixture = try fixtureURL("ignore-sigterm.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
         let request = StartRequest(
             prompt: "hello",
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
-            storageRoot: storageRoot
+            database: database,
+            workflowID: workflowID
         )
 
         // ignore-sigterm.sh traps SIGTERM, so the grace period elapses and the

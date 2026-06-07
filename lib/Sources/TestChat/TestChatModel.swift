@@ -2,6 +2,7 @@ import Agent
 import Dependencies
 import Foundation
 import Observation
+import SQLiteData
 import Store
 
 @MainActor
@@ -28,6 +29,11 @@ public final class TestChatModel {
     @ObservationIgnored
     private let teardown: TeardownHandle
 
+    @ObservationIgnored
+    private let database: (any DatabaseWriter)?
+    @ObservationIgnored
+    private let workflowID = UUID()
+
     private var session: Session?
 
     var isRunning = false
@@ -42,6 +48,20 @@ public final class TestChatModel {
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: storageRoot, withIntermediateDirectories: true)
         self.teardown = TeardownHandle(storageRoot: storageRoot)
+
+        // One disposable Workflow database under the temp root, removed wholesale on close.
+        let database = try? openWorkflowDatabase(at: storageRoot)
+        self.database = database
+        if let database {
+            let now = Date()
+            let workflowID = workflowID
+            try? database.write { db in
+                try WorkflowRow.insert {
+                    WorkflowRow(id: workflowID, repoPath: worktree.path, createdAt: now, updatedAt: now)
+                }
+                .execute(db)
+            }
+        }
     }
 
     // Exposed internally so tests can observe cleanup without publishing it as API.
@@ -58,6 +78,10 @@ public final class TestChatModel {
     func submit() {
         let prompt = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty, !isRunning else { return }
+        guard let database else {
+            messages.append(ChatMessage(role: .assistant, text: "Workflow store unavailable.", isError: true))
+            return
+        }
         draftText = ""
         messages.append(ChatMessage(role: .user, text: prompt))
         isRunning = true
@@ -66,7 +90,7 @@ public final class TestChatModel {
                 let completedSession: Session
                 if let existing = session {
                     completedSession = try await agentClient.send(
-                        SendRequest(prompt: prompt, session: existing)
+                        SendRequest(prompt: prompt, session: existing, database: database)
                     )
                 } else {
                     completedSession = try await agentClient.start(
@@ -74,12 +98,13 @@ public final class TestChatModel {
                             prompt: prompt,
                             worktree: worktree,
                             mode: .readOnly,
-                            storageRoot: teardown.storageRoot
+                            database: database,
+                            workflowID: workflowID
                         )
                     )
                     session = completedSession
                 }
-                messages = rebuildMessages(from: completedSession.transcript)
+                messages = rebuildMessages(for: completedSession.id, database: database)
             } catch {
                 messages.append(ChatMessage(
                     role: .assistant,
@@ -96,28 +121,24 @@ public final class TestChatModel {
         try? FileManager.default.removeItem(at: teardown.storageRoot)
     }
 
-    private func rebuildMessages(from transcriptURL: URL) -> [ChatMessage] {
-        guard let contents = try? Data(contentsOf: transcriptURL) else { return messages }
+    /// Reconstructs the conversation from the Workflow database: one user bubble per Turn's prompt,
+    /// paired with that Turn's final answer (or an error marker for a failed Turn).
+    private func rebuildMessages(for sessionID: Session.ID, database: any DatabaseWriter) -> [ChatMessage] {
+        let turns = (try? database.read { db in try TurnRow.fetchAll(db) }) ?? []
+        let ordered = turns
+            .filter { $0.sessionID == sessionID.rawValue }
+            .sorted { $0.createdAt < $1.createdAt }
+
         var rebuilt: [ChatMessage] = []
-        for lineData in contents.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true) {
-            guard let line = try? parseTranscriptLine(Data(lineData)) else { continue }
-            switch line {
-            case .hercules(let event):
-                switch event {
-                case .sessionStarted, .turnEnded:
-                    break
-                case .turnStarted(let ts):
-                    rebuilt.append(ChatMessage(role: .user, text: ts.userPrompt))
-                case .turnFailed(let tf):
-                    rebuilt.append(ChatMessage(role: .assistant, text: tf.errorMessage, isError: true))
-                }
-            case .harness(let rawJSON):
-                if let result = decodeHarnessResult(rawJSON) {
-                    rebuilt.append(ChatMessage(role: .assistant, text: result.text, isError: result.isError))
-                }
+        for turn in ordered {
+            rebuilt.append(ChatMessage(role: .user, text: turn.userPrompt))
+            if let answer = turn.finalAnswer, !answer.isEmpty {
+                rebuilt.append(ChatMessage(role: .assistant, text: answer, isError: turn.isError))
+            } else if turn.isError {
+                rebuilt.append(ChatMessage(role: .assistant, text: "Turn failed.", isError: true))
             }
         }
-        return rebuilt
+        return rebuilt.isEmpty ? messages : rebuilt
     }
 }
 

@@ -1,10 +1,15 @@
 import Dependencies
+import DependenciesTestSupport
 import Foundation
 import Testing
 
 @testable import Agent
 
-@Suite("Concurrency — session overlap")
+@Suite(
+    "Concurrency — session overlap",
+    .dependency(\.uuid, .incrementing),
+    .dependency(\.date, .constant(Date(timeIntervalSinceReferenceDate: 1_234_567_890)))
+)
 struct ConcurrencyTests {
     private func fixtureURL(_ name: String) throws -> URL {
         let url = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Fixtures")
@@ -15,11 +20,12 @@ struct ConcurrencyTests {
         return url
     }
 
-    private func makeTempDir() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
+    private func client(_ fixture: URL) -> LiveAgentClient {
+        withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1_234_567_890)
+        } operation: {
+            LiveAgentClient(binaryURL: fixture)
+        }
     }
 
     // Two simultaneous sends on the same Session: the second throws .sessionBusy,
@@ -27,31 +33,22 @@ struct ConcurrencyTests {
     @Test func sameSesssionOverlapRejectsSecond() async throws {
         let echoFixture = try fixtureURL("echo-init.sh")
         let slowFixture = try fixtureURL("slow.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
-        let echoClient = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1_234_567_890)
-        } operation: {
-            LiveAgentClient(binaryURL: echoFixture)
-        }
-
-        let session = try await echoClient.start(StartRequest(
+        let session = try await client(echoFixture).start(StartRequest(
             prompt: "hello",
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
-            storageRoot: storageRoot
+            database: database,
+            workflowID: workflowID
         ))
 
-        let slowClient = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1_234_567_890)
-        } operation: {
-            LiveAgentClient(binaryURL: slowFixture)
-        }
+        let slowClient = client(slowFixture)
 
         // First send: acquires lock and runs slow.sh (sleeps 30s).
         let firstTask = Task {
-            try await slowClient.send(SendRequest(prompt: "first", session: session))
+            try await slowClient.send(SendRequest(prompt: "first", session: session, database: database))
         }
 
         // Give slow.sh time to start and acquire the lock before the second send.
@@ -59,7 +56,7 @@ struct ConcurrencyTests {
 
         // Second send on the same session must throw .sessionBusy immediately.
         do {
-            _ = try await slowClient.send(SendRequest(prompt: "second", session: session))
+            _ = try await slowClient.send(SendRequest(prompt: "second", session: session, database: database))
             Issue.record("Expected AgentError.sessionBusy to be thrown")
         } catch let err as AgentError {
             guard case .sessionBusy(let id) = err else {
@@ -80,30 +77,28 @@ struct ConcurrencyTests {
     // without either throwing .sessionBusy.
     @Test func differentSessionsProceedInParallel() async throws {
         let echoFixture = try fixtureURL("echo-init.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
-        let client = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1_234_567_890)
-        } operation: {
-            LiveAgentClient(binaryURL: echoFixture)
-        }
+        let client = client(echoFixture)
 
         let session1 = try await client.start(StartRequest(
             prompt: "hello",
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
-            storageRoot: storageRoot
+            database: database,
+            workflowID: workflowID
         ))
         let session2 = try await client.start(StartRequest(
             prompt: "world",
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
-            storageRoot: storageRoot
+            database: database,
+            workflowID: workflowID
         ))
 
-        async let r1 = client.send(SendRequest(prompt: "a", session: session1))
-        async let r2 = client.send(SendRequest(prompt: "b", session: session2))
+        async let r1 = client.send(SendRequest(prompt: "a", session: session1, database: database))
+        async let r2 = client.send(SendRequest(prompt: "b", session: session2, database: database))
 
         let (result1, result2) = try await (r1, r2)
         #expect(result1.id == session1.id)
@@ -115,31 +110,22 @@ struct ConcurrencyTests {
     @Test func failedSendReleasesLock() async throws {
         let echoFixture = try fixtureURL("echo-init.sh")
         let crashFixture = try fixtureURL("crash.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
-        let echoClient = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1_234_567_890)
-        } operation: {
-            LiveAgentClient(binaryURL: echoFixture)
-        }
-
-        let session = try await echoClient.start(StartRequest(
+        let session = try await client(echoFixture).start(StartRequest(
             prompt: "hello",
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
-            storageRoot: storageRoot
+            database: database,
+            workflowID: workflowID
         ))
 
         // Use the crash client for both sends so they share the same busySessions.
-        let crashClient = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1_234_567_890)
-        } operation: {
-            LiveAgentClient(binaryURL: crashFixture)
-        }
+        let crashClient = client(crashFixture)
 
         do {
-            _ = try await crashClient.send(SendRequest(prompt: "first", session: session))
+            _ = try await crashClient.send(SendRequest(prompt: "first", session: session, database: database))
             Issue.record("Expected AgentError to be thrown by crash fixture")
         } catch is AgentError {
             // expected — harnessFailed from crash.sh
@@ -149,7 +135,7 @@ struct ConcurrencyTests {
         // It will fail with .harnessFailed (crash.sh again), but that proves the
         // lock was correctly released by the defer in the first send.
         do {
-            _ = try await crashClient.send(SendRequest(prompt: "second", session: session))
+            _ = try await crashClient.send(SendRequest(prompt: "second", session: session, database: database))
         } catch let err as AgentError {
             if case .sessionBusy = err {
                 Issue.record("Session lock was not released after failed send: \(err)")

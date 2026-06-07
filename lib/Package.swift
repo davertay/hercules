@@ -24,6 +24,7 @@ let package = Package(
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "DependenciesMacros", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
                 .product(name: "Subprocess", package: "swift-subprocess"),
             ]
         ),
@@ -34,8 +35,10 @@ let package = Package(
                 "Store",
                 .product(name: "Clocks", package: "swift-clocks"),
                 .product(name: "CustomDump", package: "swift-custom-dump"),
+                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
                 .product(name: "SnapshotTestingCustomDump", package: "swift-snapshot-testing"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
                 .product(name: "Subprocess", package: "swift-subprocess"),
             ],
             resources: [
@@ -61,6 +64,7 @@ let package = Package(
                 "Agent",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
             ]
         ),
         .testTarget(

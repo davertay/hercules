@@ -20,12 +20,15 @@ struct SubProcess {
     let teardownGrace: Duration
 
     struct Outcome {
-        let stdout: Data
         let stderrTail: String
         let terminationStatus: TerminationStatus
     }
 
-    func run(input: String) async throws -> Outcome {
+    /// Runs the Harness, delivering each complete NDJSON line of stdout to `onStdoutLine` as it
+    /// arrives (live streaming, per ADR 0003) rather than buffering the whole output. `onStdoutLine`
+    /// is invoked serially from the stdout drain task; callers that mutate shared state from it must
+    /// guard that state.
+    func run(input: String, onStdoutLine: @escaping @Sendable (Data) -> Void) async throws -> Outcome {
         var platformOptions = PlatformOptions()
         // SIGTERM, then SIGKILL after the grace period. swift-subprocess always
         // appends a final SIGKILL step, so this gives us the SIGTERM → grace →
@@ -50,7 +53,7 @@ struct SubProcess {
             return try await withTaskCancellationHandler {
                 // Drain both pipes concurrently so a payload larger than the pipe
                 // buffer can't wedge the writer.
-                async let outBytes = Self.collect(standardOutput)
+                async let outDone: Void = Self.streamLines(standardOutput, onLine: onStdoutLine)
                 async let errTail = Self.collectTail(standardError)
 
                 do {
@@ -64,26 +67,35 @@ struct SubProcess {
                 }
                 try? await inputWriter.finish()
 
-                return (stdout: try await outBytes, stderrTail: try await errTail)
+                try await outDone
+                return try await errTail
             } onCancel: {
                 reapProcessGroup(pgid, after: grace)
             }
         }
 
         return Outcome(
-            stdout: outcome.value.stdout,
-            stderrTail: outcome.value.stderrTail,
+            stderrTail: outcome.value,
             terminationStatus: outcome.terminationStatus
         )
     }
 
-    /// Accumulates a stream's full output into `Data`.
-    private static func collect(_ sequence: AsyncBufferSequence) async throws -> Data {
-        var data = Data()
-        for try await buffer in sequence {
-            buffer.withUnsafeBytes { data.append(contentsOf: $0) }
+    /// Splits a stream into NDJSON lines across buffer boundaries, delivering each non-empty line
+    /// (newline stripped) to `onLine`. A trailing line without a final newline is delivered at EOF.
+    private static func streamLines(
+        _ sequence: AsyncBufferSequence,
+        onLine: @Sendable (Data) -> Void
+    ) async throws {
+        var buffer = Data()
+        for try await chunk in sequence {
+            chunk.withUnsafeBytes { buffer.append(contentsOf: $0) }
+            while let newline = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+                let line = buffer[buffer.startIndex..<newline]
+                if !line.isEmpty { onLine(Data(line)) }
+                buffer.removeSubrange(buffer.startIndex...newline)
+            }
         }
-        return data
+        if !buffer.isEmpty { onLine(Data(buffer)) }
     }
 
     /// Accumulates a stream's output, keeping only the trailing 64 KB.

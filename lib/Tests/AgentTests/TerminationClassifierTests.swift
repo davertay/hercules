@@ -7,47 +7,29 @@ import Store
 
 @Suite("TerminationClassifier — unit")
 struct TerminationClassifierTests {
-    private func makeWriter() throws -> (TranscriptWriter, URL) {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        let writer = try TranscriptWriter(url: tempDir.appendingPathComponent("t.jsonl"))
-        return (writer, tempDir)
-    }
+    private let sessionId = Session.ID(rawValue: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!)
 
-    @Test func cleanExitWritesTurnEnded() throws {
-        let (writer, tempDir) = try makeWriter()
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
+    @Test func cleanExitDoesNotRecordFailure() throws {
+        var recordedDuration: Int?
         try TerminationClassifier().classify(
             status: .exited(0),
+            sessionId: sessionId,
             stderrTail: "",
-            endedAt: Date(),
             durationMs: 0,
-            writer: writer,
-            storageRoot: tempDir
+            recordFailure: { recordedDuration = $0 }
         )
-
-        let lines = try String(contentsOf: tempDir.appendingPathComponent("t.jsonl"), encoding: .utf8)
-            .split(separator: "\n", omittingEmptySubsequences: true)
-        let parsed = try parseTranscriptLine(Data(String(lines.last!).utf8))
-        if case .hercules(.turnEnded) = parsed {} else {
-            Issue.record("Expected hercules.turn.ended, got: \(String(lines.last!))")
-        }
+        #expect(recordedDuration == nil)
     }
 
-    @Test func nonZeroExitThrowsHarnessFailed() throws {
-        let (writer, tempDir) = try makeWriter()
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
+    @Test func nonZeroExitThrowsHarnessFailedAndRecordsFailure() throws {
+        var recordedDuration: Int?
         do {
             try TerminationClassifier().classify(
                 status: .exited(2),
+                sessionId: sessionId,
                 stderrTail: "boom",
-                endedAt: Date(),
-                durationMs: 0,
-                writer: writer,
-                storageRoot: tempDir
+                durationMs: 42,
+                recordFailure: { recordedDuration = $0 }
             )
             Issue.record("Expected throw")
         } catch let err as AgentError {
@@ -58,22 +40,19 @@ struct TerminationClassifierTests {
             #expect(exitCode == 2)
             #expect(tail == "boom")
         }
+        #expect(recordedDuration == 42)
     }
 
     @Test func nonZeroExitWithMalformedLineThrowsMalformedStream() throws {
-        let (writer, tempDir) = try makeWriter()
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
         struct Dummy: Error {}
         do {
             try TerminationClassifier().classify(
                 status: .exited(1),
+                sessionId: sessionId,
                 lastMalformedLine: (raw: "not json", error: Dummy()),
                 stderrTail: "",
-                endedAt: Date(),
                 durationMs: 0,
-                writer: writer,
-                storageRoot: tempDir
+                recordFailure: { _ in }
             )
             Issue.record("Expected throw")
         } catch let err as AgentError {
@@ -85,18 +64,33 @@ struct TerminationClassifierTests {
         }
     }
 
-    @Test func signalTerminationThrowsHarnessCrashed() throws {
-        let (writer, tempDir) = try makeWriter()
-        defer { try? FileManager.default.removeItem(at: tempDir) }
+    @Test func sessionNotFoundStderrThrowsSessionNotFound() throws {
+        do {
+            try TerminationClassifier().classify(
+                status: .exited(1),
+                sessionId: sessionId,
+                stderrTail: "No conversation found with session ID: abc",
+                durationMs: 0,
+                recordFailure: { _ in }
+            )
+            Issue.record("Expected throw")
+        } catch let err as AgentError {
+            guard case .sessionNotFound(let id) = err else {
+                Issue.record("Expected .sessionNotFound, got \(err)")
+                return
+            }
+            #expect(id == sessionId)
+        }
+    }
 
+    @Test func signalTerminationThrowsHarnessCrashed() throws {
         do {
             try TerminationClassifier().classify(
                 status: .signaled(15),
+                sessionId: sessionId,
                 stderrTail: "",
-                endedAt: Date(),
                 durationMs: 0,
-                writer: writer,
-                storageRoot: tempDir
+                recordFailure: { _ in }
             )
             Issue.record("Expected throw")
         } catch let err as AgentError {

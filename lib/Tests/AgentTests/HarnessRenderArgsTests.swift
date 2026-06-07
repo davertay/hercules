@@ -157,4 +157,44 @@ struct HarnessRenderArgsTests {
         #expect(args.contains("--resume"))
         #expect(!args.contains("--session-id"))
     }
+
+    @Test func skillFilesRenderOneAppendSystemPromptFileEach() {
+        let skillA = URL(fileURLWithPath: "/skills/grill-me.md")
+        let skillB = URL(fileURLWithPath: "/skills/to-prd.md")
+        let args = Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            worktree: worktree,
+            mode: .write,
+            inputs: nil,
+            skillFiles: [skillA, skillB],
+            sessionId: sessionId
+        )
+
+        let flagCount = args.filter { $0 == "--append-system-prompt-file" }.count
+        #expect(flagCount == 2)
+        let firstIdx = args.firstIndex(of: "--append-system-prompt-file")!
+        #expect(args[firstIdx + 1] == skillA.path)
+        #expect(args.contains(skillB.path))
+    }
+
+    @Test func addDirsRenderMultipleAddDirAlongsideInputs() {
+        let inputs = InputBundle(root: inputsRoot, relativePaths: ["a.txt"])
+        let dir1 = URL(fileURLWithPath: "/skills/grill-me")
+        let dir2 = URL(fileURLWithPath: "/extra")
+        let args = Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            worktree: worktree,
+            mode: .write,
+            inputs: inputs,
+            addDirs: [dir1, dir2],
+            sessionId: sessionId
+        )
+
+        let addDirValues = args.indices
+            .filter { args[$0] == "--add-dir" }
+            .map { args[$0 + 1] }
+        #expect(addDirValues == [inputsRoot.path, dir1.path, dir2.path])
+    }
 }

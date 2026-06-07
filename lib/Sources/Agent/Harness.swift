@@ -13,6 +13,8 @@ public enum Harness {
         worktree: URL,
         mode: AgentMode,
         inputs: InputBundle?,
+        skillFiles: [URL] = [],
+        addDirs: [URL] = [],
         sessionId: Session.ID
     ) -> [String] {
         var args: [String] = [
@@ -38,6 +40,14 @@ public enum Harness {
 
         if let inputs {
             args += ["--add-dir", inputs.root.path]
+        }
+
+        for dir in addDirs {
+            args += ["--add-dir", dir.path]
+        }
+
+        for file in skillFiles {
+            args += ["--append-system-prompt-file", file.path]
         }
 
         return args

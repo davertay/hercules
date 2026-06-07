@@ -1,52 +1,37 @@
 import Foundation
-import Subprocess
 import Store
+import Subprocess
 
-/// Maps a Harness's termination status to a transcript event and, on failure,
-/// an `AgentError`. Cancellation is detected by the caller (via `Task`); the
-/// SIGTERM → SIGKILL escalation lives in `SubProcess`'s teardown sequence.
+/// Maps a Harness's termination status to an `AgentError` on failure, and flags the Turn's row via
+/// `recordFailure` when the Harness fails before — or instead of — projecting a `result` event.
+/// A clean exit is a no-op: the live projector already finalized the Turn from its `result` event.
+/// Cancellation is detected by the caller (via `Task`); the SIGTERM → SIGKILL escalation lives in
+/// `SubProcess`'s teardown sequence.
 struct TerminationClassifier {
     func classify(
         status: TerminationStatus,
+        sessionId: Session.ID,
         lastMalformedLine: (raw: String, error: any Error)? = nil,
         stderrTail: String,
-        endedAt: Date,
         durationMs: Int,
-        writer: TranscriptWriter,
-        storageRoot: URL
+        recordFailure: (Int) -> Void
     ) throws {
         switch status {
         case .exited(let code) where code == 0:
-            do {
-                try writer.write(.turnEnded(.init(endedAt: endedAt, durationMs: durationMs)))
-            } catch {
-                throw AgentError.transcriptIOFailed(storageRoot, underlying: error)
-            }
+            return
         case .exited(let code):
+            recordFailure(durationMs)
             if let malformed = lastMalformedLine {
-                do {
-                    try writer.write(.turnFailed(.init(
-                        endedAt: endedAt, durationMs: durationMs,
-                        errorKind: "malformedStream", errorMessage: malformed.raw
-                    )))
-                } catch {}
                 throw AgentError.malformedStream(line: malformed.raw, underlying: malformed.error)
             }
-            do {
-                try writer.write(.turnFailed(.init(
-                    endedAt: endedAt, durationMs: durationMs,
-                    errorKind: "harnessFailed", errorMessage: stderrTail
-                )))
-            } catch {}
+            // "No conversation found with session ID:" is the stable harness prefix for an unknown
+            // session; it's narrow enough to not misclassify other failures.
+            if stderrTail.contains("No conversation found with session ID:") {
+                throw AgentError.sessionNotFound(id: sessionId)
+            }
             throw AgentError.harnessFailed(exitCode: code, stderrTail: stderrTail)
         case .signaled(let signal):
-            do {
-                try writer.write(.turnFailed(.init(
-                    endedAt: endedAt, durationMs: durationMs,
-                    errorKind: "harnessCrashed",
-                    errorMessage: "Terminated by signal \(signal)"
-                )))
-            } catch {}
+            recordFailure(durationMs)
             throw AgentError.harnessCrashed(signal: signal, stderrTail: stderrTail)
         }
     }
