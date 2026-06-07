@@ -14,7 +14,7 @@ let package = Package(
         .package(url: "https://github.com/pointfreeco/swift-custom-dump", exact: "1.5.0"),
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.12.0"),
         .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.2"),
-        .package(url: "https://github.com/pointfreeco/swift-structured-queries", from: "0.1.0"),
+        .package(url: "https://github.com/pointfreeco/swift-structured-queries", exact: "0.31.1"),
         .package(url: "https://github.com/swiftlang/swift-subprocess", exact: "0.4.0"),
     ],
     targets: [
@@ -72,6 +72,7 @@ let package = Package(
             dependencies: [
                 "TestChat",
                 .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
             ]
         ),
         .target(
