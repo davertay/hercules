@@ -1,146 +1,117 @@
 import Dependencies
 import Foundation
-import Subprocess
+import os
+import SQLiteData
 import Store
+import Subprocess
 
 struct HarnessRunner {
     @Dependency(\.date.now) var now
+    @Dependency(\.uuid) var uuid
     @Dependency(\.harnessTeardownGrace) var teardownGrace
     let binaryURL: URL
 
-    func run(request: SendRequest, writer: TranscriptWriter) async throws {
+    func run(request: SendRequest) async throws {
         let session = request.session
-        let startedAt = now
-
-        do {
-            try writer.write(.turnStarted(.init(
-                userPrompt: request.prompt,
-                attachedFiles: [],
-                startedAt: startedAt
-            )))
-        } catch {
-            throw AgentError.transcriptIOFailed(session.dataDir, underlying: error)
-        }
-
-        let args = Harness.renderArgs(
-            binary: binaryURL,
+        try await runTurn(
+            database: request.database,
+            sessionId: session.id,
+            prompt: request.prompt,
             operation: .resume,
             worktree: session.worktree,
             mode: session.mode,
-            inputs: nil,
-            sessionId: session.id
+            inputs: request.inputs,
+            skillFiles: session.skillFiles,
+            addDirs: session.addDirs
         )
-
-        let process = SubProcess(
-            executable: binaryURL,
-            arguments: args,
-            workingDirectory: session.worktree,
-            teardownGrace: teardownGrace
-        )
-
-        let outcome: SubProcess.Outcome
-        do {
-            let promptString = Harness.renderPrompt(prompt: request.prompt, inputs: nil)
-            outcome = try await process.run(input: promptString)
-        } catch {
-            throw AgentError.harnessIOFailed(underlying: error)
-        }
-
-        let endedAt = now
-        let durationMs = Int(endedAt.timeIntervalSince(startedAt) * 1000)
-        let stderrTail = outcome.stderrTail
-
-        for chunk in outcome.stdout.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true) {
-            do {
-                try writer.writeLine(Data(chunk))
-            } catch {
-                throw AgentError.transcriptIOFailed(session.dataDir, underlying: error)
-            }
-        }
-
-        switch outcome.terminationStatus {
-        case .exited(let code) where code == 0:
-            do {
-                try writer.write(.turnEnded(.init(endedAt: endedAt, durationMs: durationMs)))
-            } catch {
-                throw AgentError.transcriptIOFailed(session.dataDir, underlying: error)
-            }
-
-        case .exited(let code):
-            // "No conversation found with session ID:" is the stable harness prefix
-            // for an unknown session; it's narrow enough to not misclassify other failures.
-            if stderrTail.contains("No conversation found with session ID:") {
-                do {
-                    try writer.write(.turnFailed(.init(
-                        endedAt: endedAt, durationMs: durationMs,
-                        errorKind: "sessionNotFound", errorMessage: stderrTail
-                    )))
-                } catch {}
-                throw AgentError.sessionNotFound(id: session.id)
-            }
-            do {
-                try writer.write(.turnFailed(.init(
-                    endedAt: endedAt, durationMs: durationMs,
-                    errorKind: "harnessFailed", errorMessage: stderrTail
-                )))
-            } catch {}
-            throw AgentError.harnessFailed(exitCode: code, stderrTail: stderrTail)
-
-        case .signaled(let signal):
-            do {
-                try writer.write(.turnFailed(.init(
-                    endedAt: endedAt, durationMs: durationMs,
-                    errorKind: "harnessCrashed",
-                    errorMessage: "Terminated by signal \(signal)"
-                )))
-            } catch {}
-            throw AgentError.harnessCrashed(signal: signal, stderrTail: stderrTail)
-        }
     }
 
-    func run(request: StartRequest, sessionId: Session.ID, writer: TranscriptWriter) async throws {
-        let startedAt = now
-
+    func run(request: StartRequest, sessionId: Session.ID) async throws {
         do {
-            try writer.write(.sessionStarted(.init(
-                sessionId: sessionId,
-                worktree: request.worktree,
+            try recordSessionStart(
+                in: request.database,
+                sessionID: sessionId.rawValue,
+                workflowID: request.workflowID,
+                worktreePath: request.worktree.path,
                 mode: request.mode,
-                attachedFiles: request.inputs?.relativePaths ?? [],
-                startedAt: startedAt
-            )))
-            try writer.write(.turnStarted(.init(
-                userPrompt: request.prompt,
-                attachedFiles: request.inputs?.relativePaths ?? [],
-                startedAt: startedAt
-            )))
+                at: now
+            )
         } catch {
-            throw AgentError.transcriptIOFailed(request.storageRoot, underlying: error)
+            throw AgentError.storeWriteFailed(underlying: error)
         }
 
-        let args = Harness.renderArgs(
-            binary: binaryURL,
+        try await runTurn(
+            database: request.database,
+            sessionId: sessionId,
+            prompt: request.prompt,
             operation: .start,
             worktree: request.worktree,
             mode: request.mode,
             inputs: request.inputs,
+            skillFiles: request.skillFiles,
+            addDirs: request.addDirs
+        )
+    }
+
+    /// Runs a single Turn: inserts its `turn` row, spawns the Harness, projects its stdout into the
+    /// Store live, and classifies the termination — flagging the row and throwing on failure.
+    private func runTurn(
+        database: any DatabaseWriter,
+        sessionId: Session.ID,
+        prompt: String,
+        operation: Harness.Operation,
+        worktree: URL,
+        mode: AgentMode,
+        inputs: InputBundle?,
+        skillFiles: [URL],
+        addDirs: [URL]
+    ) async throws {
+        let startedAt = now
+        let turnID = uuid()
+
+        do {
+            try recordTurnStart(
+                in: database,
+                turnID: turnID,
+                sessionID: sessionId.rawValue,
+                userPrompt: prompt,
+                at: startedAt
+            )
+        } catch {
+            throw AgentError.storeWriteFailed(underlying: error)
+        }
+
+        let sink = OSAllocatedUnfairLock(
+            initialState: LineSink(projector: TextProjector(database: database, turnID: turnID))
+        )
+
+        let args = Harness.renderArgs(
+            binary: binaryURL,
+            operation: operation,
+            worktree: worktree,
+            mode: mode,
+            inputs: inputs,
+            skillFiles: skillFiles,
+            addDirs: addDirs,
             sessionId: sessionId
         )
 
         let process = SubProcess(
             executable: binaryURL,
             arguments: args,
-            workingDirectory: request.worktree,
+            workingDirectory: worktree,
             teardownGrace: teardownGrace
         )
 
         let outcome: SubProcess.Outcome
         do {
-            let promptString = Harness.renderPrompt(prompt: request.prompt, inputs: request.inputs)
-            outcome = try await process.run(input: promptString)
+            let promptString = Harness.renderPrompt(prompt: prompt, inputs: inputs)
+            outcome = try await process.run(input: promptString) { line in
+                sink.withLock { $0.ingest(line) }
+            }
         } catch {
             if Task.isCancelled || error is CancellationError {
-                throw cancelled(startedAt: startedAt, writer: writer)
+                throw cancelled(startedAt: startedAt, sink: sink)
             }
             throw AgentError.harnessIOFailed(underlying: error)
         }
@@ -149,46 +120,25 @@ struct HarnessRunner {
         // `.signaled` status rather than throwing; check the task to tell a
         // cancellation apart from a genuine crash.
         if Task.isCancelled {
-            throw cancelled(startedAt: startedAt, writer: writer)
+            throw cancelled(startedAt: startedAt, sink: sink)
         }
 
-        let endedAt = now
-        let durationMs = Int(endedAt.timeIntervalSince(startedAt) * 1000)
-        let stderrTail = outcome.stderrTail
-
-        var lastMalformedLine: (raw: String, error: any Error)?
-        for line in StreamParser().parse(outcome.stdout) {
-            switch line {
-            case .wellFormed(let data):
-                do {
-                    try writer.writeLine(data)
-                } catch {
-                    throw AgentError.transcriptIOFailed(request.storageRoot, underlying: error)
-                }
-            case .malformed(let raw, let error):
-                lastMalformedLine = (raw: raw, error: error)
-            }
-        }
+        let durationMs = Int(now.timeIntervalSince(startedAt) * 1000)
 
         try TerminationClassifier().classify(
             status: outcome.terminationStatus,
-            lastMalformedLine: lastMalformedLine,
-            stderrTail: stderrTail,
-            endedAt: endedAt,
+            sessionId: sessionId,
+            lastMalformedLine: sink.withLock { $0.lastMalformedLine },
+            stderrTail: outcome.stderrTail,
             durationMs: durationMs,
-            writer: writer,
-            storageRoot: request.storageRoot
+            recordFailure: { ms in sink.withLock { $0.recordFailure(durationMs: ms) } }
         )
     }
 
-    /// Records a cancelled turn in the transcript and returns the error to throw.
-    private func cancelled(startedAt: Date, writer: TranscriptWriter) -> AgentError {
-        let endedAt = now
-        let durationMs = Int(endedAt.timeIntervalSince(startedAt) * 1000)
-        try? writer.write(.turnFailed(.init(
-            endedAt: endedAt, durationMs: durationMs,
-            errorKind: "cancelled", errorMessage: ""
-        )))
+    /// Flags the Turn as failed and returns the error to throw on cancellation.
+    private func cancelled(startedAt: Date, sink: OSAllocatedUnfairLock<LineSink>) -> AgentError {
+        let durationMs = Int(now.timeIntervalSince(startedAt) * 1000)
+        sink.withLock { $0.recordFailure(durationMs: durationMs) }
         return AgentError.cancelled
     }
 }

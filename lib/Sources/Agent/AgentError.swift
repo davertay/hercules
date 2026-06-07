@@ -8,9 +8,8 @@ public enum AgentError: Error, Sendable {
     case harnessIOFailed(underlying: any Error)
     case sessionNotFound(id: Session.ID)
     case malformedStream(line: String, underlying: any Error)
-    case transcriptIOFailed(URL, underlying: any Error)
+    case storeWriteFailed(underlying: any Error)
     case inputUnreadable(URL, underlying: any Error)
-    case dataDirectoryExists(URL)
     case sessionBusy(id: Session.ID)
     case cancelled
 }
@@ -30,12 +29,10 @@ extension AgentError: LocalizedError {
             "Session not found \(id)"
         case .malformedStream(line: let line, underlying: let underlying):
             "Malformed stream at '\(line)' caused by: \(underlying.localizedDescription)"
-        case .transcriptIOFailed(_, underlying: let underlying):
-            "Transcript I/O failed caused by: \(underlying.localizedDescription)"
+        case .storeWriteFailed(underlying: let underlying):
+            "Store write failed caused by: \(underlying.localizedDescription)"
         case .inputUnreadable(_, underlying: let underlying):
             "Input unreadable caused by: \(underlying.localizedDescription)"
-        case .dataDirectoryExists(let url):
-            "Data directory already exists at \(url.relativePath)"
         case .sessionBusy(id: let id):
             "Session busy \(id)"
         case .cancelled:

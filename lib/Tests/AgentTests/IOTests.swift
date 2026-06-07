@@ -1,11 +1,17 @@
 import Dependencies
+import DependenciesTestSupport
 import Foundation
-import Testing
+import SQLiteData
 import Store
+import Testing
 
 @testable import Agent
 
-@Suite("IO — substituted binary")
+@Suite(
+    "IO — substituted binary",
+    .dependency(\.uuid, .incrementing),
+    .dependency(\.date, .constant(Date(timeIntervalSinceReferenceDate: 1_234_567_890)))
+)
 struct IOTests {
     private func fixtureURL(_ name: String) throws -> URL {
         let url = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Fixtures")
@@ -16,106 +22,94 @@ struct IOTests {
         return url
     }
 
-    private func makeTempDir() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
-    @Test func echoInitSucceeds() async throws {
-        let fixture = try fixtureURL("echo-init.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
-
-        let client = withDependencies {
-          $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
+    private func client(_ fixture: URL) -> LiveAgentClient {
+        withDependencies {
+            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
         } operation: {
             LiveAgentClient(binaryURL: fixture)
         }
+    }
 
-        let request = StartRequest(
-            prompt: "hello",
+    private func startRequest(prompt: String = "hello", database: any DatabaseWriter, workflowID: UUID) -> StartRequest {
+        StartRequest(
+            prompt: prompt,
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
-            storageRoot: storageRoot
+            database: database,
+            workflowID: workflowID
         )
+    }
 
-        let session = try await client.start(request)
+    @Test func streamedTextIsProjectedIntoDatabase() async throws {
+        let fixture = try fixtureURL("stream-text.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
-        #expect(FileManager.default.fileExists(atPath: session.transcript.path))
-        let lines = try String(contentsOf: session.transcript, encoding: .utf8)
-            .split(separator: "\n", omittingEmptySubsequences: true)
-        #expect(lines.count >= 3)
+        let session = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
 
-        let firstLine = try #require(lines.first.map(String.init))
-        let parsed = try parseTranscriptLine(firstLine.data(using: .utf8)!)
-        if case .hercules(.sessionStarted) = parsed {} else {
-            Issue.record("Expected hercules.session.started as first line, got: \(firstLine)")
-        }
+        let sessions = try await database.read { db in try SessionRow.fetchAll(db) }
+        #expect(sessions.map(\.id) == [session.id.rawValue])
 
-        let lastLine = String(lines.last!)
-        let parsedLast = try parseTranscriptLine(lastLine.data(using: .utf8)!)
-        if case .hercules(.turnEnded) = parsedLast {} else {
-            Issue.record("Expected hercules.turn.ended as last line, got: \(lastLine)")
-        }
+        let turns = try await database.read { db in try TurnRow.fetchAll(db) }
+        let turn = try #require(turns.first)
+        #expect(turns.count == 1)
+        #expect(turn.sessionID == session.id.rawValue)
+        #expect(turn.userPrompt == "hello")
+        #expect(turn.finalAnswer == "Hello, world")
+        #expect(turn.isError == false)
+        #expect(turn.durationMs == 1234)
+        #expect(turn.costUSD == 0.25)
+
+        let blocks = try await database.read { db in try ContentBlockRow.fetchAll(db) }
+        let block = try #require(blocks.first)
+        #expect(blocks.count == 1)
+        #expect(block.turnID == turn.id)
+        #expect(block.kind == "text")
+        #expect(block.text == "Hello, world")
+    }
+
+    @Test func echoInitWritesSessionAndTurnRows() async throws {
+        let fixture = try fixtureURL("echo-init.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let session = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
+
+        let sessions = try await database.read { db in try SessionRow.fetchAll(db) }
+        let sessionRow = try #require(sessions.first)
+        #expect(sessionRow.id == session.id.rawValue)
+        #expect(sessionRow.mode == "write")
+
+        let turns = try await database.read { db in try TurnRow.fetchAll(db) }
+        let turn = try #require(turns.first)
+        #expect(turn.userPrompt == "hello")
+        // init-only stream emits no content blocks and no result event.
+        #expect(turn.finalAnswer == nil)
+        #expect(turn.isError == false)
+        let blocks = try await database.read { db in try ContentBlockRow.fetchAll(db) }
+        #expect(blocks.isEmpty)
     }
 
     @Test func malformedLineWithCleanExitSucceeds() async throws {
         let fixture = try fixtureURL("malformed.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
-        let client = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-        } operation: {
-            LiveAgentClient(binaryURL: fixture)
-        }
+        // A malformed line on a clean exit is ignored, not fatal.
+        _ = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
 
-        let request = StartRequest(
-            prompt: "hello",
-            worktree: FileManager.default.temporaryDirectory,
-            mode: .write,
-            storageRoot: storageRoot
-        )
-
-        let session = try await client.start(request)
-
-        let lines = try String(contentsOf: session.transcript, encoding: .utf8)
-            .split(separator: "\n", omittingEmptySubsequences: true)
-        let lastLine = String(lines.last!)
-        let parsedLast = try parseTranscriptLine(lastLine.data(using: .utf8)!)
-        if case .hercules(.turnEnded) = parsedLast {} else {
-            Issue.record("Expected hercules.turn.ended as last line, got: \(lastLine)")
-        }
-
-        let hasPassthrough = lines.dropFirst().dropLast().contains { line in
-            if case .harness = (try? parseTranscriptLine(line.data(using: .utf8)!)) { return true }
-            return false
-        }
-        #expect(hasPassthrough, "Transcript should contain the valid passthrough event")
+        let turns = try await database.read { db in try TurnRow.fetchAll(db) }
+        let turn = try #require(turns.first)
+        #expect(turn.isError == false)
     }
 
     @Test func malformedLineWithFailedExitThrowsMalformedStream() async throws {
         let fixture = try fixtureURL("malformed-fail.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
-
-        let client = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-        } operation: {
-            LiveAgentClient(binaryURL: fixture)
-        }
-
-        let request = StartRequest(
-            prompt: "hello",
-            worktree: FileManager.default.temporaryDirectory,
-            mode: .write,
-            storageRoot: storageRoot
-        )
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
         do {
-            _ = try await client.start(request)
+            _ = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
             Issue.record("Expected AgentError.malformedStream to be thrown")
         } catch let err as AgentError {
             guard case .malformedStream(let line, _) = err else {
@@ -124,29 +118,18 @@ struct IOTests {
             }
             #expect(line.contains("not valid json"))
         }
+
+        let turns = try await database.read { db in try TurnRow.fetchAll(db) }
+        #expect(turns.first?.isError == true)
     }
 
-    @Test func largeStderrCarries64KBTail() async throws {
+    @Test func largeStderrCarries64KBTailAndFlagsTurn() async throws {
         let fixture = try fixtureURL("large-stderr.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
-        let client = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-        } operation: {
-            LiveAgentClient(binaryURL: fixture)
-        }
-
-        let request = StartRequest(
-            prompt: "hello",
-            worktree: FileManager.default.temporaryDirectory,
-            mode: .write,
-            storageRoot: storageRoot
-        )
-
-        var tailFromError = ""
         do {
-            _ = try await client.start(request)
+            _ = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
             Issue.record("Expected AgentError.harnessFailed to be thrown")
             return
         } catch let err as AgentError {
@@ -157,37 +140,16 @@ struct IOTests {
             #expect(exitCode == 1)
             #expect(stderrTail.count == 65536)
             #expect(stderrTail.allSatisfy { $0 == "Y" })
-            tailFromError = stderrTail
         }
 
-        let sessionDirs = try FileManager.default.contentsOfDirectory(
-            at: storageRoot, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
-        )
-        let transcriptURL = try #require(sessionDirs.first).appendingPathComponent("transcript.jsonl")
-        let lines = try String(contentsOf: transcriptURL, encoding: .utf8)
-            .split(separator: "\n", omittingEmptySubsequences: true)
-
-        var turnFailed: HerculesEvent.TurnFailed?
-        for line in lines {
-            if case .hercules(.turnFailed(let tf)) = try parseTranscriptLine(Data(line.utf8)) {
-                turnFailed = tf
-            }
-        }
-        let tf = try #require(turnFailed)
-        #expect(tf.errorKind == "harnessFailed")
-        #expect(tf.errorMessage == tailFromError)
+        let turns = try await database.read { db in try TurnRow.fetchAll(db) }
+        #expect(turns.first?.isError == true)
     }
 
-    @Test func inputUnreadableThrownBeforeDataDir() async throws {
+    @Test func inputUnreadableThrownBeforeAnyRow() async throws {
         let fixture = try fixtureURL("echo-init.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
-
-        let client = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-        } operation: {
-            LiveAgentClient(binaryURL: fixture)
-        }
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
         let missingDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -198,11 +160,12 @@ struct IOTests {
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
             inputs: bundle,
-            storageRoot: storageRoot
+            database: database,
+            workflowID: workflowID
         )
 
         do {
-            _ = try await client.start(request)
+            _ = try await client(fixture).start(request)
             Issue.record("Expected AgentError.inputUnreadable to be thrown")
         } catch let err as AgentError {
             guard case .inputUnreadable(let url, _) = err else {
@@ -210,121 +173,61 @@ struct IOTests {
                 return
             }
             #expect(url == missingDir)
-            let contents = try FileManager.default.contentsOfDirectory(at: storageRoot, includingPropertiesForKeys: nil)
-            #expect(contents.isEmpty)
+            let sessions = try await database.read { db in try SessionRow.fetchAll(db) }
+            #expect(sessions.isEmpty)
         }
     }
 
-    @Test func startThenSendSucceeds() async throws {
+    @Test func startThenSendWritesTwoTurns() async throws {
         let fixture = try fixtureURL("echo-init.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
-        let client = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-        } operation: {
-            LiveAgentClient(binaryURL: fixture)
-        }
-
-        let session = try await client.start(StartRequest(
-            prompt: "hello",
-            worktree: FileManager.default.temporaryDirectory,
-            mode: .write,
-            storageRoot: storageRoot
-        ))
-
-        let resumed = try await client.send(SendRequest(prompt: "follow up", session: session))
+        let client = client(fixture)
+        let session = try await client.start(startRequest(database: database, workflowID: workflowID))
+        let resumed = try await client.send(SendRequest(prompt: "follow up", session: session, database: database))
         #expect(resumed.id == session.id)
 
-        let lines = try String(contentsOf: session.transcript, encoding: .utf8)
-            .split(separator: "\n", omittingEmptySubsequences: true)
-
-        var sessionStartedCount = 0
-        var turnStartedCount = 0
-        var turnEndedCount = 0
-        for line in lines {
-            let parsed = try parseTranscriptLine(line.data(using: .utf8)!)
-            if case .hercules(let event) = parsed {
-                switch event {
-                case .sessionStarted: sessionStartedCount += 1
-                case .turnStarted: turnStartedCount += 1
-                case .turnEnded: turnEndedCount += 1
-                case .turnFailed: break
-                }
-            }
-        }
-        #expect(sessionStartedCount == 1)
-        #expect(turnStartedCount == 2)
-        #expect(turnEndedCount == 2)
+        let sessions = try await database.read { db in try SessionRow.fetchAll(db) }
+        #expect(sessions.count == 1)
+        let turns = try await database.read { db in try TurnRow.fetchAll(db) }
+        #expect(turns.count == 2)
+        #expect(Set(turns.map(\.userPrompt)) == ["hello", "follow up"])
+        #expect(turns.allSatisfy { $0.sessionID == session.id.rawValue })
     }
 
     @Test func failingSendLeavesSessionReusable() async throws {
         let initFixture = try fixtureURL("echo-init.sh")
         let crashFixture = try fixtureURL("crash.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
-        let initClient = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-        } operation: {
-            LiveAgentClient(binaryURL: initFixture)
-        }
-
-        let session = try await initClient.start(StartRequest(
-            prompt: "hello",
-            worktree: FileManager.default.temporaryDirectory,
-            mode: .write,
-            storageRoot: storageRoot
-        ))
-
-        let transcriptBefore = try String(contentsOf: session.transcript, encoding: .utf8)
-
-        let crashClient = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-        } operation: {
-            LiveAgentClient(binaryURL: crashFixture)
-        }
+        let session = try await client(initFixture).start(startRequest(database: database, workflowID: workflowID))
 
         do {
-            _ = try await crashClient.send(SendRequest(prompt: "crash me", session: session))
+            _ = try await client(crashFixture).send(SendRequest(prompt: "crash me", session: session, database: database))
             Issue.record("Expected AgentError to be thrown")
         } catch is AgentError {
             // expected
         }
 
-        let transcriptAfterFail = try String(contentsOf: session.transcript, encoding: .utf8)
-        #expect(transcriptAfterFail.hasPrefix(transcriptBefore))
+        // The session remains usable for a subsequent Turn.
+        _ = try await client(initFixture).send(SendRequest(prompt: "retry", session: session, database: database))
 
-        _ = try await initClient.send(SendRequest(prompt: "retry", session: session))
+        let turns = try await database.read { db in try TurnRow.fetchAll(db) }
+        #expect(turns.count == 3)
     }
 
     @Test func sessionNotFoundThrowsSessionNotFound() async throws {
         let initFixture = try fixtureURL("echo-init.sh")
         let notFoundFixture = try fixtureURL("session-not-found.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
-        let initClient = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-        } operation: {
-            LiveAgentClient(binaryURL: initFixture)
-        }
-
-        let session = try await initClient.start(StartRequest(
-            prompt: "hello",
-            worktree: FileManager.default.temporaryDirectory,
-            mode: .write,
-            storageRoot: storageRoot
-        ))
-
-        let notFoundClient = withDependencies {
-            $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-        } operation: {
-            LiveAgentClient(binaryURL: notFoundFixture)
-        }
+        let session = try await client(initFixture).start(startRequest(database: database, workflowID: workflowID))
 
         do {
-            _ = try await notFoundClient.send(SendRequest(prompt: "follow up", session: session))
+            _ = try await client(notFoundFixture).send(SendRequest(prompt: "follow up", session: session, database: database))
             Issue.record("Expected AgentError.sessionNotFound to be thrown")
         } catch let err as AgentError {
             guard case .sessionNotFound(let id) = err else {
@@ -333,39 +236,15 @@ struct IOTests {
             }
             #expect(id == session.id)
         }
-
-        let lines = try String(contentsOf: session.transcript, encoding: .utf8)
-            .split(separator: "\n", omittingEmptySubsequences: true)
-        var turnFailed: HerculesEvent.TurnFailed?
-        for line in lines {
-            if case .hercules(.turnFailed(let tf)) = try parseTranscriptLine(Data(line.utf8)) {
-                turnFailed = tf
-            }
-        }
-        let tf = try #require(turnFailed)
-        #expect(tf.errorKind == "sessionNotFound")
     }
 
     @Test func crashThrowsHarnessFailed() async throws {
         let fixture = try fixtureURL("crash.sh")
-        let storageRoot = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: storageRoot) }
-
-        let client = withDependencies {
-          $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
-        } operation: {
-            LiveAgentClient(binaryURL: fixture)
-        }
-
-        let request = StartRequest(
-            prompt: "hello",
-            worktree: FileManager.default.temporaryDirectory,
-            mode: .write,
-            storageRoot: storageRoot
-        )
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
 
         do {
-            _ = try await client.start(request)
+            _ = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
             Issue.record("Expected AgentError.harnessFailed to be thrown")
         } catch let err as AgentError {
             guard case .harnessFailed(let exitCode, let stderrTail) = err else {

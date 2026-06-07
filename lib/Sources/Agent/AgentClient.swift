@@ -54,13 +54,6 @@ final class LiveAgentClient: Sendable {
 
         let session = request.session
 
-        let writer: TranscriptWriter
-        do {
-            writer = try TranscriptWriter(url: session.transcript, append: true)
-        } catch {
-            throw AgentError.transcriptIOFailed(session.transcript, underlying: error)
-        }
-
         let alreadyBusy = busySessions.withLock { sessions -> Bool in
             guard !sessions.contains(session.id) else { return true }
             sessions.insert(session.id)
@@ -70,7 +63,7 @@ final class LiveAgentClient: Sendable {
         defer { _ = busySessions.withLock { $0.remove(session.id) } }
 
         let runner = HarnessRunner(binaryURL: binaryURL)
-        try await runner.run(request: request, writer: writer)
+        try await runner.run(request: request)
 
         return session
     }
@@ -88,24 +81,13 @@ final class LiveAgentClient: Sendable {
         }
 
         let sessionId = Session.ID(rawValue: UUID())
-        let dataDir = request.storageRoot.appendingPathComponent(sessionId.rawValue.uuidString)
-
-        do {
-            try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: false)
-        } catch let e as CocoaError where e.code == .fileWriteFileExists {
-            throw AgentError.dataDirectoryExists(dataDir)
-        } catch {
-            throw AgentError.transcriptIOFailed(dataDir, underlying: error)
-        }
-
-        let session = Session(id: sessionId, worktree: request.worktree, mode: request.mode, dataDir: dataDir)
-
-        let writer: TranscriptWriter
-        do {
-            writer = try TranscriptWriter(url: session.transcript)
-        } catch {
-            throw AgentError.transcriptIOFailed(session.transcript, underlying: error)
-        }
+        let session = Session(
+            id: sessionId,
+            worktree: request.worktree,
+            mode: request.mode,
+            skillFiles: request.skillFiles,
+            addDirs: request.addDirs
+        )
 
         let alreadyBusy = busySessions.withLock { sessions -> Bool in
             guard !sessions.contains(sessionId) else { return true }
@@ -116,7 +98,7 @@ final class LiveAgentClient: Sendable {
         defer { _ = busySessions.withLock { $0.remove(sessionId) } }
 
         let runner = HarnessRunner(binaryURL: binaryURL)
-        try await runner.run(request: request, sessionId: sessionId, writer: writer)
+        try await runner.run(request: request, sessionId: sessionId)
 
         return session
     }
