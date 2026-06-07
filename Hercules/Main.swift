@@ -12,6 +12,7 @@ struct MainApp: App {
     @State var model: AppModel
 
     init() {
+        bootstrapHercules()
         self.model = AppModel(
             testChatEnabled: isDebugBuild
         )
