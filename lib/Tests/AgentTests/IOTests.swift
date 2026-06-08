@@ -68,6 +68,31 @@ struct IOTests {
         #expect(block.text == "Hello, world")
     }
 
+    @Test func askUserQuestionInterruptsTurnAndPausesCleanly() async throws {
+        let fixture = try fixtureURL("ask-user-question.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // The fixture drains its stdin to this file, so we can prove the harness wrote the interrupt.
+        let capture = "/tmp/auq_stdin_capture.log"
+        try? FileManager.default.removeItem(atPath: capture)
+
+        _ = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
+
+        // The harness sent an interrupt control_request on stdin in response to the question.
+        let written = (try? String(contentsOfFile: capture, encoding: .utf8)) ?? ""
+        #expect(written.contains(#""subtype":"interrupt""#))
+
+        // The interrupted result reads as an error, but pausing for a question is a clean stop.
+        let turn = try #require(try await database.read { db in try TurnRow.fetchAll(db) }.first)
+        #expect(turn.isError == false)
+
+        // The question card is projected; the auto-error tool_result is suppressed.
+        let blocks = try await database.read { db in try ContentBlockRow.fetchAll(db) }
+        #expect(blocks.contains { $0.kind == "tool_use" && $0.toolName == "AskUserQuestion" })
+        #expect(!blocks.contains { $0.kind == "tool_result" })
+    }
+
     @Test func echoInitWritesSessionAndTurnRows() async throws {
         let fixture = try fixtureURL("echo-init.sh")
         let (database, workflowID, root) = try WorkflowFixture.make()
