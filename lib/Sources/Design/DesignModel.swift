@@ -1,4 +1,5 @@
 import Agent
+import Chat
 import Dependencies
 import Foundation
 import Material
@@ -6,35 +7,16 @@ import Observation
 import SQLiteData
 import Store
 
-/// Drives the Design Phase chat. The first submit starts a `readOnly` Session under the bundled
-/// grill-me Skill with the repo as cwd; follow-up submits resume that same Session. Nothing about
-/// the conversation is held in memory for display — the chat is rendered purely by observing the
-/// Workflow database, so the assistant's text streams in live as the Agent projects it (ADR 0003).
+/// Drives the Design Phase. The chat itself is owned by a `ChatEngine` configured to start a
+/// `readOnly` Session under the bundled grill-me Skill with the repo as cwd; this model layers the
+/// Design-specific Phase orchestration on top — generating the summary Artifact and recording the
+/// Phase as complete.
 @MainActor
 @Observable
 public final class DesignModel {
-    public struct Message: Identifiable, Equatable, Sendable {
-        /// What a chat row renders: the user's prompt, the assistant's text, or — new in the live
-        /// tool-call timeline — the agent's thinking, a tool invocation, or a tool's result.
-        public enum Kind: Equatable, Sendable { case user, assistant, thinking, toolUse, toolResult }
-        public let id: String
-        public let kind: Kind
-        public let text: String
-        /// The invoked tool's name; set only on `.toolUse` rows.
-        public let toolName: String?
-        public let isError: Bool
-
-        public init(id: String, kind: Kind, text: String, toolName: String? = nil, isError: Bool = false) {
-            self.id = id
-            self.kind = kind
-            self.text = text
-            self.toolName = toolName
-            self.isError = isError
-        }
-    }
-
-    @ObservationIgnored
-    @Dependency(\.agentClient) private var agentClient
+    /// The shared chat engine, configured for Design's Session. Owned here and handed to the chat
+    /// views; Design adds nothing to its conversation rendering.
+    let engine: ChatEngine
 
     @ObservationIgnored
     @Dependency(\.uuid) private var uuid
@@ -46,9 +28,6 @@ public final class DesignModel {
     private let database: any DatabaseWriter
 
     @ObservationIgnored
-    private let worktree: URL
-
-    @ObservationIgnored
     private let workflowID: UUID
 
     /// The Workflow's root directory (`~/.hercules/workflows/<id>/`); the Design summary Artifact is
@@ -56,129 +35,38 @@ public final class DesignModel {
     @ObservationIgnored
     private let workflowDirectory: URL
 
-    /// Live view of the Workflow's Turns and their text content-blocks. Updates as the Harness
-    /// streams, which is what makes the assistant's reply appear before the Turn ends.
-    @ObservationIgnored
-    @Fetch(ConversationRequest(), animation: .default)
-    var conversation = ConversationRequest.Value()
-
-    /// Pinned once the first Turn completes so follow-ups resume rather than start a new Session.
-    private var session: Session?
-
     @ObservationIgnored
     private let skill: SkillResource
 
     @ObservationIgnored
     var runTask: Task<Void, Never>?
 
-    public var draftText = ""
-    public var isRunning = false
-    /// Set only for failures that never reach the database (e.g. the Harness binary is missing).
-    public var errorText: String?
     /// The saved summary's location once a finalization Turn has written it. Drives the saved
     /// confirmation (with its Reveal in Finder button); cleared when new chat activity starts.
     public var summarySavedURL: URL?
 
     public init(worktree: URL, workflowID: UUID, workflowDirectory: URL, database: any DatabaseWriter) {
-        self.worktree = worktree
         self.workflowID = workflowID
         self.workflowDirectory = workflowDirectory
         self.database = database
         self.skill = loadSkill(.grillMe)
+        self.engine = ChatEngine(
+            worktree: worktree,
+            mode: .readOnly,
+            workflowID: workflowID,
+            skillFiles: [skill.fileUrl],
+            addDirs: [skill.folderUrl],
+            database: database
+        )
+        // Dismiss the saved-summary confirmation the moment the user sends a new message.
+        engine.onSend = { [weak self] in self?.summarySavedURL = nil }
     }
 
-    /// The conversation reconstructed from the database: one user bubble per Turn's prompt, then that
-    /// Turn's content blocks in order — assistant text, thinking, tool calls, and tool results — so
-    /// the chat shows a live tool-call timeline as the Turn runs.
-    public var messages: [Message] {
-        let turns = conversation.turns.sorted { $0.createdAt < $1.createdAt }
-        let blocksByTurn = Dictionary(grouping: conversation.blocks) { $0.turnID }
-
-        var result: [Message] = []
-        for turn in turns {
-            result.append(
-                Message(id: "\(turn.id.uuidString)/user", kind: .user, text: turn.userPrompt)
-            )
-            let blocks = (blocksByTurn[turn.id] ?? []).sorted { $0.position < $1.position }
-            var hasAssistantText = false
-            for block in blocks {
-                guard let message = Self.message(for: block, isError: turn.isError) else { continue }
-                if message.kind == .assistant { hasAssistantText = true }
-                result.append(message)
-            }
-            // Surface a bare failure only when the errored Turn produced no assistant text to carry it.
-            if !hasAssistantText, turn.isError {
-                result.append(
-                    Message(id: "\(turn.id.uuidString)/assistant", kind: .assistant, text: "Turn failed.", isError: true)
-                )
-            }
-        }
-        return result
-    }
-
-    /// Maps one content block to its chat row, or `nil` to skip it (empty text/thinking).
-    private static func message(for block: ContentBlockRow, isError: Bool) -> Message? {
-        let id = "\(block.turnID.uuidString)/\(block.position)"
-        switch block.kind {
-        case "text":
-            guard !block.text.isEmpty else { return nil }
-            return Message(id: id, kind: .assistant, text: block.text, isError: isError)
-        case "thinking":
-            guard !block.text.isEmpty else { return nil }
-            return Message(id: id, kind: .thinking, text: block.text)
-        case "tool_use":
-            return Message(id: id, kind: .toolUse, text: block.text, toolName: block.toolName)
-        case "tool_result":
-            return Message(id: id, kind: .toolResult, text: block.text)
-        default:
-            return nil
-        }
-    }
-
-    public var isIntake: Bool {
-        messages.isEmpty && !isRunning && errorText == nil
-    }
-
-    public var isSendDisabled: Bool {
-        draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunning
-    }
+    /// True before any conversation exists — drives the intake prompt instead of the transcript.
+    public var isIntake: Bool { engine.isIntake }
 
     public var isGenerateSummaryAvailable: Bool {
-        session != nil
-    }
-
-    public func submit() {
-        let prompt = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty, !isRunning else { return }
-        draftText = ""
-        errorText = nil
-        summarySavedURL = nil
-        isRunning = true
-
-        runTask = Task { [self] in
-            do {
-                if let existing = session {
-                    session = try await agentClient.send(
-                        SendRequest(prompt: prompt, session: existing, database: database)
-                    )
-                } else {
-                    session = try await agentClient.start(
-                        StartRequest(
-                            prompt: prompt,
-                            worktree: worktree,
-                            mode: .readOnly,
-                            database: database,
-                            workflowID: workflowID,
-                            skillFiles: [skill.fileUrl],
-                            addDirs: [skill.folderUrl]
-                        )
-                    )
-                }
-            } catch {
-                errorText = error.localizedDescription
-            }
-            isRunning = false
-        }
+        engine.session != nil
     }
 
     /// The canned instruction the finalization Turn resumes the Session with.
@@ -188,23 +76,21 @@ public final class DesignModel {
     /// `phases/design/summary.md` and flips the Design `phase` row to complete with the Artifact path.
     /// Re-running overwrites the file and updates the same row.
     public func generateSummary() {
-        guard let session, !isRunning else { return }
-        errorText = nil
+        guard let session = engine.session, !engine.isRunning else { return }
+        engine.errorText = nil
         summarySavedURL = nil
-        isRunning = true
+        engine.isRunning = true
 
         runTask = Task { [self] in
             do {
-                _ = try await agentClient.send(
-                    SendRequest(prompt: Self.finalizationPrompt, session: session, database: database)
-                )
+                try await engine.send(Self.finalizationPrompt)
                 let url = try writeSummary(finalAnswer(forSession: session.id.rawValue))
                 try recordDesignComplete(artifactPath: url.path)
                 summarySavedURL = url
             } catch {
-                errorText = error.localizedDescription
+                engine.errorText = error.localizedDescription
             }
-            isRunning = false
+            engine.isRunning = false
         }
     }
 
@@ -266,21 +152,5 @@ public final class DesignModel {
                 .execute(db)
             }
         }
-    }
-}
-
-/// Reads a Session's Turns and their text content-blocks in one transaction so the two stay
-/// consistent as the Workflow database changes mid-Turn.
-struct ConversationRequest: FetchKeyRequest {
-    struct Value: Equatable, Sendable {
-        var turns: [TurnRow] = []
-        var blocks: [ContentBlockRow] = []
-    }
-
-    func fetch(_ db: Database) throws -> Value {
-        Value(
-            turns: try TurnRow.fetchAll(db),
-            blocks: try ContentBlockRow.fetchAll(db)
-        )
     }
 }
