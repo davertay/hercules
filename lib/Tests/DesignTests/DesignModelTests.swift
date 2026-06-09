@@ -17,7 +17,7 @@ struct DesignModelTests {
     // MARK: - Engine wiring
 
     @Test
-    func engineStartsReadOnlySessionUnderGrillMeSkill() async throws {
+    func firstSubmitStartsReadOnlySessionUnderSkill() async throws {
         let database = try Self.makeDatabase()
         // The Skill is loaded from the Material bundle at init, not injected.
         let skill = loadSkill(.grillMe)

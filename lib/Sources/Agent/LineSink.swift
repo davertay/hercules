@@ -16,14 +16,15 @@ final class LineSink: @unchecked Sendable {
         self.projector = projector
     }
 
-    func ingest(_ line: Data) {
+    @discardableResult
+    func ingest(_ line: Data) -> StreamSignal {
         do {
             _ = try JSONSerialization.jsonObject(with: line)
         } catch {
             let raw = String(data: line, encoding: .utf8) ?? "<non-UTF8 data>"
             lastMalformedLine = (raw: raw, error: error)
         }
-        projector.ingest(line)
+        return projector.ingest(line)
     }
 
     func recordFailure(durationMs: Int?) {
