@@ -3,7 +3,7 @@
   [1]: "--output-format",
   [2]: "stream-json",
   [3]: "--input-format",
-  [4]: "text",
+  [4]: "stream-json",
   [5]: "--permission-mode",
   [6]: "bypassPermissions",
   [7]: "--setting-sources",

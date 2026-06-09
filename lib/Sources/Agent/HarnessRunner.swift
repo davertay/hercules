@@ -107,7 +107,13 @@ struct HarnessRunner {
         do {
             let promptString = Harness.renderPrompt(prompt: prompt, inputs: inputs)
             outcome = try await process.run(input: promptString) { line in
-                sink.withLock { $0.ingest(line) }
+                // Project the line, then translate the projector's signal into the stdin control the
+                // realtime protocol needs: interrupt on a question, close stdin once the Turn ends.
+                switch sink.withLock({ $0.ingest(line) }) {
+                case .none: return .none
+                case .askedQuestion: return .interrupt
+                case .completed: return .finishInput
+                }
             }
         } catch {
             if Task.isCancelled || error is CancellationError {
@@ -122,6 +128,11 @@ struct HarnessRunner {
         if Task.isCancelled {
             throw cancelled(startedAt: startedAt, sink: sink)
         }
+
+        // A paused run is a deliberate stop: we interrupted the Turn to await a question's answer.
+        // The Turn is already projected (with the question card and a non-error result), and the
+        // user's selection resumes the Session — so there's no exit to classify or failure to flag.
+        if outcome.paused { return }
 
         let durationMs = Int(now.timeIntervalSince(startedAt) * 1000)
 

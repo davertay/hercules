@@ -20,7 +20,10 @@ public enum Harness {
         var args: [String] = [
             "--print",
             "--output-format", "stream-json",
-            "--input-format", "text",
+            // Realtime streaming input keeps stdin open so we can send a control_request (an
+            // interrupt) mid-Turn when the agent asks a question. The prompt is sent as a
+            // stream-json user message; see `SubProcess`.
+            "--input-format", "stream-json",
             "--permission-mode", "bypassPermissions",
             "--setting-sources", "user,project,local",
             "--verbose",

@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 
 import PackageDescription
 
@@ -15,7 +15,7 @@ let package = Package(
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.12.0"),
         .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.2"),
         .package(url: "https://github.com/pointfreeco/swift-structured-queries", exact: "0.31.1"),
-        .package(url: "https://github.com/swiftlang/swift-subprocess", exact: "0.4.0"),
+        .package(url: "https://github.com/swiftlang/swift-subprocess", exact: "0.5.0"),
     ],
     targets: [
         .target(

@@ -44,7 +44,10 @@ public struct DesignView: View {
             ScrollView([.vertical]) {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(model.messages) { message in
-                        DesignMessageBubble(message: message)
+                        DesignMessageBubble(message: message, onSelectOption: { option in
+                            model.draftText = option
+                            model.submit()
+                        })
                     }
                     if let errorText = model.errorText {
                         DesignMessageBubble(
@@ -137,6 +140,7 @@ private struct DesignComposer: View {
 
 private struct DesignMessageBubble: View {
     let message: DesignModel.Message
+    var onSelectOption: (String) -> Void = { _ in }
 
     var body: some View {
         switch message.kind {
@@ -145,7 +149,11 @@ private struct DesignMessageBubble: View {
         case .thinking:
             ThinkingRow(text: message.text)
         case .toolUse:
-            ToolCallRow(name: message.toolName ?? "tool", input: message.text)
+            if message.toolName == "AskUserQuestion" {
+                AskUserQuestionRow(text: message.text, onSelectOption: onSelectOption)
+            } else {
+                ToolCallRow(name: message.toolName ?? "tool", input: message.text)
+            }
         case .toolResult:
             ToolResultRow(text: message.text)
         }
@@ -313,5 +321,87 @@ private struct DesignRunningIndicator: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// An interactive question card rendered when the agent calls `AskUserQuestion`. Each option is a
+/// tappable button that submits the selection label back into the conversation.
+private struct AskUserQuestionRow: View {
+    let text: String
+    let onSelectOption: (String) -> Void
+
+    private struct Payload: Decodable {
+        struct Question: Decodable {
+            let header: String
+            let question: String
+            let multiSelect: Bool
+            let options: [Option]
+            struct Option: Decodable {
+                let label: String
+                let description: String?
+            }
+        }
+        let questions: [Question]
+    }
+
+    private var questions: [Payload.Question] {
+        guard
+            let data = text.data(using: .utf8),
+            let payload = try? JSONDecoder().decode(Payload.self, from: data)
+        else { return [] }
+        return payload.questions
+    }
+
+    var body: some View {
+        if questions.isEmpty {
+            ToolCallRow(name: "AskUserQuestion", input: text)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(Array(questions.enumerated()), id: \.offset) { _, question in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "questionmark.circle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(question.header)
+                                .font(.caption.weight(.semibold))
+                                .textCase(.uppercase)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(question.question)
+                            .font(.callout)
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(question.options.enumerated()), id: \.offset) { _, option in
+                                Button {
+                                    onSelectOption(option.label)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(option.label)
+                                            .font(.callout.weight(.medium))
+                                        if let description = option.description, !description.isEmpty {
+                                            Text(description)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .multilineTextAlignment(.leading)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color(.windowBackgroundColor))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
     }
 }

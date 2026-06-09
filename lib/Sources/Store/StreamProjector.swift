@@ -54,6 +54,13 @@ public final class StreamProjector {
     /// The Harness emits that message one block at a time, so each maps to the next index in order.
     private var reconciledCount = 0
 
+    /// Set once an `AskUserQuestion` call is seen. The Harness has no terminal to draw its picker, so
+    /// it auto-resolves the call with an error result and the model barrels on; the Agent reacts to
+    /// the `.askedQuestion` signal by interrupting the Turn so the rendered question card is left
+    /// waiting. While set, the call's noisy auto-error result is dropped, and the Turn's own
+    /// `result` (an interrupt reads as `is_error`) is recorded as a clean stop rather than a failure.
+    private var interruptedForQuestion = false
+
     public init(database: any DatabaseWriter, turnID: UUID) {
         @Dependency(\.uuid) var uuid
         @Dependency(\.date) var date
@@ -63,8 +70,12 @@ public final class StreamProjector {
         self.date = date
     }
 
-    public func ingest(_ line: Data) {
-        guard let event = Self.decode(line) else { return }
+    /// Projects one stream line and reports what the Agent should do next: `.askedQuestion` when an
+    /// `AskUserQuestion` call was just projected (interrupt the Turn so the card can be answered), and
+    /// `.completed` when the Turn's `result` landed (the Harness can be closed). `.none` otherwise.
+    @discardableResult
+    public func ingest(_ line: Data) -> StreamSignal {
+        guard let event = Self.decode(line) else { return .none }
         switch event {
         case let .contentBlockStart(index, kind, role, toolName):
             let position = streamPosition(forIndex: index, isStart: true)
@@ -98,8 +109,18 @@ public final class StreamProjector {
                 reconciledCount += 1
                 upsert(position: position, block: block)
             }
+            // The card's full input is now persisted, so signal the Agent to interrupt — but only the
+            // first time, so a later message in the same Turn can't re-trigger it.
+            if !interruptedForQuestion,
+               decoded.contains(where: { $0.kind == "tool_use" && $0.toolName == "AskUserQuestion" }) {
+                interruptedForQuestion = true
+                return .askedQuestion
+            }
 
         case let .toolResults(decoded):
+            // Once we've asked, the only tool result left is the call's auto-generated error; drop it
+            // so it doesn't clutter the chat beneath the question card.
+            guard !interruptedForQuestion else { return .none }
             // Tool results are their own blocks, appended after the assistant content that called
             // them; they never reuse a streamed index.
             for block in decoded {
@@ -108,7 +129,9 @@ public final class StreamProjector {
 
         case let .result(finalAnswer, isError, durationMs, costUSD):
             finalize(finalAnswer: finalAnswer, isError: isError, durationMs: durationMs, costUSD: costUSD)
+            return .completed
         }
+        return .none
     }
 
     /// The absolute position for the streamed block at `index` in the current message, allocating one
@@ -216,6 +239,9 @@ public final class StreamProjector {
 
     private func finalize(finalAnswer: String?, isError: Bool, durationMs: Int?, costUSD: Double?) {
         let now = date.now
+        // Interrupting the Harness to await a question's answer reads back as an errored result; that
+        // is a deliberate, clean pause, not a Turn failure.
+        let isError = isError && !interruptedForQuestion
         withErrorReporting {
             try database.write { db in
                 try TurnRow
@@ -231,6 +257,17 @@ public final class StreamProjector {
             }
         }
     }
+}
+
+/// What the Agent should do after the `StreamProjector` consumes a line.
+public enum StreamSignal: Equatable, Sendable {
+    /// Nothing special — keep streaming.
+    case none
+    /// An `AskUserQuestion` call was just projected; interrupt the Turn so the rendered card can be
+    /// answered out-of-band, then resume the Session with the user's selection.
+    case askedQuestion
+    /// The Turn's `result` landed; the Harness can be closed.
+    case completed
 }
 
 extension StreamProjector {
