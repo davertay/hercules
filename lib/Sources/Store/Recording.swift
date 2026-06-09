@@ -9,6 +9,7 @@ public func recordSessionStart(
     workflowID: UUID,
     worktreePath: String,
     mode: AgentMode,
+    kind: SessionKind,
     at now: Date
 ) throws {
     try database.write { db in
@@ -18,6 +19,7 @@ public func recordSessionStart(
                 workflowID: workflowID,
                 worktreePath: worktreePath,
                 mode: mode.rawValue,
+                kind: kind.rawValue,
                 createdAt: now,
                 updatedAt: now
             )

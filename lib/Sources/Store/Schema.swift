@@ -66,6 +66,9 @@ public struct SessionRow: Identifiable, Equatable, Sendable {
     public var workflowID: UUID
     public var worktreePath: String
     public var mode: String
+    /// The surface this Session serves (Design/PRD/TestChat). Scopes a Chat's observation to its own
+    /// Session's Turns; one Session per (workflowID, kind) (ADR 0005).
+    public var kind: String
     public var createdAt: Date
     public var updatedAt: Date
     public var isDeleted: Bool
@@ -75,6 +78,7 @@ public struct SessionRow: Identifiable, Equatable, Sendable {
         workflowID: UUID,
         worktreePath: String,
         mode: String,
+        kind: String,
         createdAt: Date,
         updatedAt: Date,
         isDeleted: Bool = false
@@ -83,6 +87,7 @@ public struct SessionRow: Identifiable, Equatable, Sendable {
         self.workflowID = workflowID
         self.worktreePath = worktreePath
         self.mode = mode
+        self.kind = kind
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDeleted = isDeleted
