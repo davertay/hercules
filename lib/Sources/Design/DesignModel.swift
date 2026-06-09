@@ -84,25 +84,18 @@ public final class DesignModel {
         runTask = Task { [self] in
             do {
                 try await engine.send(Self.finalizationPrompt)
-                let url = try writeSummary(finalAnswer(forSession: session.id.rawValue))
-                try recordDesignComplete(artifactPath: url.path)
+                let finalAnswer = try database.latestFinalAnswer(forSession: session.id.rawValue) ?? ""
+                let url = try writeSummary(finalAnswer)
+                try database.completePhase(
+                    workflowID: workflowID, kind: "design", artifactPath: url.path,
+                    id: uuid(), now: now
+                )
                 summarySavedURL = url
             } catch {
                 engine.errorText = error.localizedDescription
             }
             engine.isRunning = false
         }
-    }
-
-    /// The final answer of the Session's most recent Turn — the finalization Turn just projected.
-    private func finalAnswer(forSession sessionID: UUID) throws -> String {
-        let turn = try database.read { db in
-            try TurnRow
-                .where { $0.sessionID.eq(sessionID) }
-                .order { $0.createdAt.desc() }
-                .fetchOne(db)
-        }
-        return turn?.finalAnswer ?? ""
     }
 
     /// Writes the summary markdown to `phases/design/summary.md` under the Workflow directory,
@@ -117,40 +110,5 @@ public final class DesignModel {
         )
         try markdown.write(to: url, atomically: true, encoding: .utf8)
         return url
-    }
-
-    /// Flips the Design `phase` row to complete with the Artifact path, inserting the row the first
-    /// time and updating it on a re-run.
-    private func recordDesignComplete(artifactPath: String) throws {
-        let timestamp = now
-        try database.write { db in
-            let existing = try PhaseRow
-                .where { $0.workflowID.eq(workflowID) }
-                .where { $0.kind.eq("design") }
-                .fetchOne(db)
-            if let existing {
-                try PhaseRow
-                    .find(existing.id)
-                    .update {
-                        $0.status = "complete"
-                        $0.artifactPath = #bind(artifactPath)
-                        $0.updatedAt = timestamp
-                    }
-                    .execute(db)
-            } else {
-                try PhaseRow.insert {
-                    PhaseRow(
-                        id: uuid(),
-                        workflowID: workflowID,
-                        kind: "design",
-                        status: "complete",
-                        artifactPath: artifactPath,
-                        createdAt: timestamp,
-                        updatedAt: timestamp
-                    )
-                }
-                .execute(db)
-            }
-        }
     }
 }
