@@ -59,10 +59,13 @@ _Avoid_: Claude (ambiguous with the model), CLI (too generic), process (implemen
 
 **Session**:
 A resumable conversation, identified by a session ID (UUID) assigned by the **Harness** on the
-first **Turn**. Pinned at start time to a **Worktree** and an **AgentMode**; these cannot
-change across resumes. Sessions persist across app restarts via the Harness's own on-disk
-storage plus the Agent module's per-Session data directory.
-_Avoid_: Conversation (use for the user-facing concept only), thread, chat.
+first **Turn**. Pinned at start time to a **Worktree**, an **AgentMode**, and a **kind** (the
+surface it serves — Design, PRD, or TestChat); these cannot change across resumes. The kind scopes
+the Session to one **Chat**, so several Sessions can share a Workflow's database without their
+Turns bleeding together — one Session per (Workflow, kind) (ADR 0005). Sessions persist across app
+restarts via the Harness's own on-disk storage plus the Agent module's per-Session data directory.
+_Avoid_: Conversation (use for the user-facing concept only), thread, chat (lowercase — reserve
+**Chat** for the user-facing surface below).
 
 **Turn**:
 A single user prompt plus the assistant response it elicits. Each Turn is one short-lived
@@ -76,6 +79,15 @@ database and projected live from the Harness's stream-json as the Turn runs, so 
 content in by observing the database. (The earlier append-only `transcript.jsonl` per Session,
 ADR 0002, is demoted to at most an Agent-internal debug spool.)
 _Avoid_: Log, history, output.
+
+**Chat**:
+The user-facing embodiment of a **Session** and its **Transcript** on one surface — what the user
+sees and types into. A Chat engine is built with a Workflow id and a **kind**; it observes only the
+Turns of that kind's Session in that Workflow, and on construction it rediscovers any existing
+Session for the pair (so reopening shows prior history and a follow-up resumes; ADR 0005). A host
+(e.g. the Design Phase) embeds a Chat and layers its own orchestration on top. Distinct from a
+Session: the Session is the Agent-level resumable conversation; the Chat is its on-screen surface.
+_Avoid_: Conversation (the everyday word for what a Chat shows), Session (the Agent-level concept).
 
 **AgentMode**:
 The tool surface a Session is granted, pinned at Session start. `readOnly` strictly forbids
