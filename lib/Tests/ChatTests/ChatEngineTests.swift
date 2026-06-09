@@ -144,6 +144,7 @@ struct ChatEngineTests {
                     id: Session.ID(rawValue: UUID(100)),
                     worktree: request.worktree,
                     mode: request.mode,
+                    kind: request.kind,
                     skillFiles: request.skillFiles,
                     addDirs: request.addDirs
                 )
@@ -151,7 +152,7 @@ struct ChatEngineTests {
         } operation: {
             ChatEngine(
                 worktree: URL(fileURLWithPath: "/repo"), mode: .readOnly, workflowID: UUID(-1),
-                skillFiles: skillFiles, addDirs: addDirs, database: database
+                kind: .design, skillFiles: skillFiles, addDirs: addDirs, database: database
             )
         }
 
@@ -164,6 +165,7 @@ struct ChatEngineTests {
         #expect(request.mode == .readOnly)
         #expect(request.worktree == URL(fileURLWithPath: "/repo"))
         #expect(request.workflowID == UUID(-1))
+        #expect(request.kind == .design)
         #expect(request.skillFiles == skillFiles)
         #expect(request.addDirs == addDirs)
         #expect(engine.draftText.isEmpty)
@@ -177,7 +179,8 @@ struct ChatEngineTests {
         let startedSession = Session(
             id: Session.ID(rawValue: UUID(100)),
             worktree: URL(fileURLWithPath: "/repo"),
-            mode: .readOnly
+            mode: .readOnly,
+            kind: .design
         )
         let resumed = LockIsolated<SendRequest?>(nil)
 
@@ -225,15 +228,128 @@ struct ChatEngineTests {
         #expect(!engine.isRunning)
     }
 
+    // MARK: - Scoping and rediscovery (ADR 0005)
+
+    @Test
+    func conversationIsScopedToTheEngineKind() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(-1)
+        let designSession = UUID(-2)
+        let prdSession = UUID(-3)
+        try Self.seedSession(database, sessionID: designSession, workflowID: workflowID, kind: .design)
+        try Self.seedSession(
+            database, sessionID: prdSession, workflowID: workflowID, kind: .prd, seedWorkflow: false
+        )
+        try await database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-10), sessionID: designSession, userPrompt: "design prompt",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-20), sessionID: prdSession, userPrompt: "prd prompt",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let designEngine = Self.makeEngine(database: database, kind: .design)
+        try await designEngine.$conversation.load()
+        let prdEngine = Self.makeEngine(database: database, kind: .prd)
+        try await prdEngine.$conversation.load()
+
+        // Each surface sees only its own Session's Turns — no cross-Session bleed.
+        #expect(designEngine.messages.map(\.text) == ["design prompt"])
+        #expect(prdEngine.messages.map(\.text) == ["prd prompt"])
+    }
+
+    @Test
+    func rediscoversExistingSessionOnConstructionAndShowsHistory() async throws {
+        let database = try Self.makeDatabase()
+        let sessionID = UUID(-2)
+        try Self.seedSession(database, sessionID: sessionID, kind: .design)
+        try await database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-10), sessionID: sessionID, userPrompt: "earlier turn",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let engine = Self.makeEngine(database: database, kind: .design)
+        try await engine.$conversation.load()
+
+        // The Session is reconstituted from the row (id, pinned worktree, mode, kind) so a follow-up
+        // resumes it, and reopening shows the prior history.
+        #expect(engine.session?.id.rawValue == sessionID)
+        #expect(engine.session?.kind == .design)
+        #expect(engine.session?.worktree == URL(fileURLWithPath: "/repo"))
+        #expect(engine.session?.mode == .readOnly)
+        #expect(!engine.isIntake)
+        #expect(engine.messages.map(\.text) == ["earlier turn"])
+    }
+
+    @Test
+    func followUpAfterRediscoveryResumesRatherThanStarts() async throws {
+        let database = try Self.makeDatabase()
+        let sessionID = UUID(-2)
+        try Self.seedSession(database, sessionID: sessionID, kind: .design)
+        let resumed = LockIsolated<SendRequest?>(nil)
+        let didStart = LockIsolated(false)
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.start = { @Sendable _ in
+                didStart.setValue(true)
+                return Session(id: Session.ID(rawValue: UUID(99)), worktree: URL(fileURLWithPath: "/repo"), mode: .readOnly, kind: .design)
+            }
+            $0.agentClient.send = { @Sendable request in
+                resumed.setValue(request)
+                return request.session
+            }
+        } operation: {
+            Self.makeEngine(database: database, kind: .design)
+        }
+
+        engine.draftText = "follow up"
+        engine.submit()
+        await engine.runTask?.value
+
+        #expect(!didStart.value)
+        #expect(resumed.value?.session.id.rawValue == sessionID)
+    }
+
+    @Test
+    func noRediscoveryWhenNoSessionOfThatKindExists() async throws {
+        let database = try Self.makeDatabase()
+        // A Session of a *different* kind exists in the same Workflow; it must not be rediscovered.
+        try Self.seedSession(database, sessionID: UUID(-2), kind: .prd)
+
+        let engine = Self.makeEngine(database: database, kind: .design)
+        try await engine.$conversation.load()
+
+        #expect(engine.session == nil)
+        #expect(engine.isIntake)
+    }
+
     // MARK: - Helpers
 
-    private static func makeEngine(database: any DatabaseWriter) -> ChatEngine {
+    private static func makeEngine(
+        database: any DatabaseWriter,
+        kind: SessionKind = .design
+    ) -> ChatEngine {
         withDependencies {
             $0.defaultDatabase = database
         } operation: {
             ChatEngine(
                 worktree: URL(fileURLWithPath: "/repo"), mode: .readOnly, workflowID: UUID(-1),
-                database: database
+                kind: kind, database: database
             )
         }
     }
@@ -244,17 +360,24 @@ struct ChatEngineTests {
         return try openWorkflowDatabase(at: dir)
     }
 
-    private static func seedSession(_ database: any DatabaseWriter, sessionID: UUID) throws {
-        let workflowID = UUID(-1)
+    private static func seedSession(
+        _ database: any DatabaseWriter,
+        sessionID: UUID,
+        workflowID: UUID = UUID(-1),
+        kind: SessionKind = .design,
+        seedWorkflow: Bool = true
+    ) throws {
         try database.write { db in
-            try WorkflowRow.insert {
-                WorkflowRow(id: workflowID, repoPath: "/repo", createdAt: fixedDate, updatedAt: fixedDate)
+            if seedWorkflow {
+                try WorkflowRow.insert {
+                    WorkflowRow(id: workflowID, repoPath: "/repo", createdAt: fixedDate, updatedAt: fixedDate)
+                }
+                .execute(db)
             }
-            .execute(db)
             try SessionRow.insert {
                 SessionRow(
                     id: sessionID, workflowID: workflowID, worktreePath: "/repo", mode: "readOnly",
-                    createdAt: fixedDate, updatedAt: fixedDate
+                    kind: kind.rawValue, createdAt: fixedDate, updatedAt: fixedDate
                 )
             }
             .execute(db)

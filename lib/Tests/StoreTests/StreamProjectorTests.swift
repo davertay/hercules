@@ -322,6 +322,7 @@ struct StreamProjectorTests {
                     workflowID: workflowID,
                     worktreePath: "/repo",
                     mode: "readOnly",
+                    kind: "design",
                     createdAt: fixedDate,
                     updatedAt: fixedDate
                 )

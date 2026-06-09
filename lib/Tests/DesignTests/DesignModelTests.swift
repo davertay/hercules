@@ -31,6 +31,7 @@ struct DesignModelTests {
                     id: Session.ID(rawValue: UUID(100)),
                     worktree: request.worktree,
                     mode: request.mode,
+                    kind: request.kind,
                     skillFiles: request.skillFiles,
                     addDirs: request.addDirs
                 )
@@ -62,7 +63,7 @@ struct DesignModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
             $0.agentClient.start = { @Sendable request in
-                Session(id: Session.ID(rawValue: UUID(100)), worktree: request.worktree, mode: request.mode)
+                Session(id: Session.ID(rawValue: UUID(100)), worktree: request.worktree, mode: request.mode, kind: request.kind)
             }
         } operation: {
             DesignModel(
@@ -85,20 +86,25 @@ struct DesignModelTests {
         let workflowDirectory = Self.makeWorkflowDirectory()
         let sessionID = UUID(100)
         try Self.seedSession(database, sessionID: sessionID)
+        let turns = LockIsolated(0)
 
         let model = withDependencies {
             $0.defaultDatabase = database
             $0.uuid = .incrementing
             $0.date.now = fixedDate
             $0.agentClient.start = { @Sendable request in
-                Session(id: Session.ID(rawValue: sessionID), worktree: request.worktree, mode: request.mode)
+                Session(id: Session.ID(rawValue: sessionID), worktree: request.worktree, mode: request.mode, kind: request.kind)
             }
             $0.agentClient.send = { @Sendable request in
+                // Each Turn needs a distinct id; the Session is rediscovered, so the kick-off and the
+                // finalization both resume it (two sends).
+                let n = turns.withValue { value -> Int in defer { value += 1 }; return value }
                 try await request.database.write { db in
                     try TurnRow.insert {
                         TurnRow(
-                            id: UUID(200), sessionID: sessionID, userPrompt: request.prompt,
-                            finalAnswer: "# Design\n\nThe plan.", createdAt: fixedDate, updatedAt: fixedDate
+                            id: UUID(200 + n), sessionID: sessionID, userPrompt: request.prompt,
+                            finalAnswer: "# Design\n\nThe plan.",
+                            createdAt: fixedDate.addingTimeInterval(TimeInterval(n)), updatedAt: fixedDate
                         )
                     }
                     .execute(db)
@@ -148,7 +154,7 @@ struct DesignModelTests {
             $0.uuid = .incrementing
             $0.date.now = fixedDate
             $0.agentClient.start = { @Sendable request in
-                Session(id: Session.ID(rawValue: sessionID), worktree: request.worktree, mode: request.mode)
+                Session(id: Session.ID(rawValue: sessionID), worktree: request.worktree, mode: request.mode, kind: request.kind)
             }
             $0.agentClient.send = { @Sendable request in
                 let n = calls.withValue { value -> Int in
@@ -219,7 +225,7 @@ struct DesignModelTests {
             try SessionRow.insert {
                 SessionRow(
                     id: sessionID, workflowID: workflowID, worktreePath: "/repo", mode: "readOnly",
-                    createdAt: fixedDate, updatedAt: fixedDate
+                    kind: "design", createdAt: fixedDate, updatedAt: fixedDate
                 )
             }
             .execute(db)

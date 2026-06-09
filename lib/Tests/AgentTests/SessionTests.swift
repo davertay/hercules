@@ -10,10 +10,17 @@ struct SessionTests {
     private let worktree = URL(fileURLWithPath: "/tmp/wt")
 
     @Test func modeReadOnlyRoundTrips() throws {
-        let session = Session(id: id, worktree: worktree, mode: .readOnly)
+        let session = Session(id: id, worktree: worktree, mode: .readOnly, kind: .design)
         let data = try JSONEncoder().encode(session)
         let decoded = try JSONDecoder().decode(Session.self, from: data)
         #expect(decoded.mode == .readOnly)
+    }
+
+    @Test func kindRoundTrips() throws {
+        let session = Session(id: id, worktree: worktree, mode: .readOnly, kind: .prd)
+        let data = try JSONEncoder().encode(session)
+        let decoded = try JSONDecoder().decode(Session.self, from: data)
+        #expect(decoded.kind == .prd)
     }
 
     @Test func skillFilesAndAddDirsRoundTrip() throws {
@@ -21,6 +28,7 @@ struct SessionTests {
             id: id,
             worktree: worktree,
             mode: .write,
+            kind: .design,
             skillFiles: [URL(fileURLWithPath: "/skills/grill-me.md")],
             addDirs: [URL(fileURLWithPath: "/skills")]
         )
