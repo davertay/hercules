@@ -54,6 +54,7 @@ public final class DesignModel {
             worktree: worktree,
             mode: .readOnly,
             workflowID: workflowID,
+            kind: .design,
             skillFiles: [skill.fileUrl],
             addDirs: [skill.folderUrl],
             database: database
