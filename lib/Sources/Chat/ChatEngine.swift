@@ -200,11 +200,13 @@ public final class ChatEngine {
 
     /// The single start-or-resume send operation: starts the Session on the first call and resumes it
     /// thereafter, projecting the Turn into the database as it streams. Returns once the Turn ends.
-    /// Hosts may call it directly (e.g. with a canned prompt) and await `runTask`.
-    public func send(_ prompt: String) async throws {
+    /// Hosts may call it directly (e.g. with a canned prompt) and await `runTask`. `inputs` carries
+    /// reference documents for the Turn — their root directory is exposed to the Harness and the
+    /// files are listed in the rendered prompt (ADR 0004).
+    public func send(_ prompt: String, inputs: InputBundle? = nil) async throws {
         if let existing = session {
             session = try await agentClient.send(
-                SendRequest(prompt: prompt, session: existing, database: database)
+                SendRequest(prompt: prompt, session: existing, inputs: inputs, database: database)
             )
         } else {
             session = try await agentClient.start(
@@ -212,6 +214,7 @@ public final class ChatEngine {
                     prompt: prompt,
                     worktree: worktree,
                     mode: mode,
+                    inputs: inputs,
                     database: database,
                     workflowID: workflowID,
                     kind: kind,
