@@ -36,7 +36,8 @@ struct IOTests {
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
             database: database,
-            workflowID: workflowID
+            workflowID: workflowID,
+            kind: .design
         )
     }
 
@@ -186,7 +187,8 @@ struct IOTests {
             mode: .write,
             inputs: bundle,
             database: database,
-            workflowID: workflowID
+            workflowID: workflowID,
+            kind: .design
         )
 
         do {

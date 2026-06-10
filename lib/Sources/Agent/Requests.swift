@@ -12,6 +12,8 @@ public struct StartRequest: Sendable {
     public let database: any DatabaseWriter
     /// The Workflow the new Session belongs to. Referenced by the `session` row's foreign key.
     public let workflowID: UUID
+    /// The surface the new Session serves; persisted on the `session` row to scope its Turns (ADR 0005).
+    public let kind: SessionKind
     /// Skill prompt files rendered as one `--append-system-prompt-file` each (ADR 0004); pinned on
     /// the Session and re-passed on every resume Turn.
     public let skillFiles: [URL]
@@ -25,6 +27,7 @@ public struct StartRequest: Sendable {
         inputs: InputBundle? = nil,
         database: any DatabaseWriter,
         workflowID: UUID,
+        kind: SessionKind,
         skillFiles: [URL] = [],
         addDirs: [URL] = []
     ) {
@@ -34,6 +37,7 @@ public struct StartRequest: Sendable {
         self.inputs = inputs
         self.database = database
         self.workflowID = workflowID
+        self.kind = kind
         self.skillFiles = skillFiles
         self.addDirs = addDirs
     }

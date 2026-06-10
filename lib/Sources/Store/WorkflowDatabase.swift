@@ -113,4 +113,16 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         )
         .execute(db)
     }
+
+    // ADR 0005: tag each Session with the surface it serves so multiple Sessions can share one
+    // Workflow database without their Turns bleeding together. Pre-existing rows predate the split
+    // and could only have been Design's Session, so they default to `design`.
+    migrator.registerMigration("Add kind to session") { db in
+        try #sql(
+            """
+            ALTER TABLE "session" ADD COLUMN "kind" TEXT NOT NULL DEFAULT 'design'
+            """
+        )
+        .execute(db)
+    }
 }

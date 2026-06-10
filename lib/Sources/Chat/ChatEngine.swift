@@ -50,17 +50,23 @@ public final class ChatEngine {
     @ObservationIgnored
     private let workflowID: UUID
 
+    /// The surface this engine serves. Scopes both the conversation observation and the Session
+    /// rediscovery to this Workflow's Session of this kind (ADR 0005).
+    @ObservationIgnored
+    private let kind: SessionKind
+
     @ObservationIgnored
     private let skillFiles: [URL]
 
     @ObservationIgnored
     private let addDirs: [URL]
 
-    /// Live view of the Workflow's Turns and their content blocks. Updates as the Harness streams,
-    /// which is what makes the assistant's reply appear before the Turn ends.
+    /// Live view of this surface's Turns and their content blocks — only those belonging to a Session
+    /// of this engine's kind in its Workflow. Updates as the Harness streams, which is what makes the
+    /// assistant's reply appear before the Turn ends. The scope is stable for the engine's lifetime,
+    /// so a freshly-created Session's Turns are picked up automatically once its row exists.
     @ObservationIgnored
-    @Fetch(ConversationRequest(), animation: .default)
-    var conversation = ConversationRequest.Value()
+    @Fetch var conversation = ConversationRequest.Value()
 
     /// Pinned once the first Turn starts so follow-ups resume rather than start a new Session.
     public private(set) var session: Session?
@@ -81,6 +87,7 @@ public final class ChatEngine {
         worktree: URL,
         mode: AgentMode,
         workflowID: UUID,
+        kind: SessionKind,
         skillFiles: [URL] = [],
         addDirs: [URL] = [],
         database: any DatabaseWriter
@@ -88,9 +95,31 @@ public final class ChatEngine {
         self.worktree = worktree
         self.mode = mode
         self.workflowID = workflowID
+        self.kind = kind
         self.skillFiles = skillFiles
         self.addDirs = addDirs
         self.database = database
+        _conversation = Fetch(
+            wrappedValue: ConversationRequest.Value(),
+            ConversationRequest(workflowID: workflowID, kind: kind),
+            animation: .default
+        )
+        // Rediscover this surface's existing Session so a follow-up resumes it rather than starting a
+        // new one, and reopening shows prior history. The persisted row carries the pinned worktree
+        // and mode; the Skill files and added directories are fixed per surface and supplied by the
+        // consumer rather than stored (ADR 0005).
+        if let row = try? database.existingSession(workflowID: workflowID, kind: kind),
+           let mode = AgentMode(rawValue: row.mode),
+           let kind = SessionKind(rawValue: row.kind) {
+            session = Session(
+                id: Session.ID(rawValue: row.id),
+                worktree: URL(fileURLWithPath: row.worktreePath),
+                mode: mode,
+                kind: kind,
+                skillFiles: skillFiles,
+                addDirs: addDirs
+            )
+        }
     }
 
     /// The conversation reconstructed from the database: one user bubble per Turn's prompt, then that
@@ -185,6 +214,7 @@ public final class ChatEngine {
                     mode: mode,
                     database: database,
                     workflowID: workflowID,
+                    kind: kind,
                     skillFiles: skillFiles,
                     addDirs: addDirs
                 )
@@ -193,18 +223,29 @@ public final class ChatEngine {
     }
 }
 
-/// Reads a Session's Turns and their content blocks in one transaction so the two stay consistent as
-/// the Workflow database changes mid-Turn.
+/// Reads one surface's Turns and their content blocks in one transaction so the two stay consistent
+/// as the Workflow database changes mid-Turn. Scoped to Sessions of `kind` in `workflowID`, so two
+/// Sessions of different kinds in the same Workflow don't bleed into each other's transcript.
 struct ConversationRequest: FetchKeyRequest {
+    var workflowID: UUID = UUID()
+    var kind: SessionKind = .design
+
     struct Value: Equatable, Sendable {
         var turns: [TurnRow] = []
         var blocks: [ContentBlockRow] = []
     }
 
     func fetch(_ db: Database) throws -> Value {
-        Value(
-            turns: try TurnRow.fetchAll(db),
-            blocks: try ContentBlockRow.fetchAll(db)
+        let sessionIDs = Set(
+            try SessionRow
+                .where { $0.workflowID.eq(workflowID) }
+                .where { $0.kind.eq(kind.rawValue) }
+                .fetchAll(db)
+                .map(\.id)
         )
+        let turns = try TurnRow.fetchAll(db).filter { sessionIDs.contains($0.sessionID) }
+        let turnIDs = Set(turns.map(\.id))
+        let blocks = try ContentBlockRow.fetchAll(db).filter { turnIDs.contains($0.turnID) }
+        return Value(turns: turns, blocks: blocks)
     }
 }

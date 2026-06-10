@@ -41,7 +41,8 @@ struct ConcurrencyTests {
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
             database: database,
-            workflowID: workflowID
+            workflowID: workflowID,
+            kind: .design
         ))
 
         let slowClient = client(slowFixture)
@@ -87,14 +88,16 @@ struct ConcurrencyTests {
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
             database: database,
-            workflowID: workflowID
+            workflowID: workflowID,
+            kind: .design
         ))
         let session2 = try await client.start(StartRequest(
             prompt: "world",
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
             database: database,
-            workflowID: workflowID
+            workflowID: workflowID,
+            kind: .design
         ))
 
         async let r1 = client.send(SendRequest(prompt: "a", session: session1, database: database))
@@ -118,7 +121,8 @@ struct ConcurrencyTests {
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
             database: database,
-            workflowID: workflowID
+            workflowID: workflowID,
+            kind: .design
         ))
 
         // Use the crash client for both sends so they share the same busySessions.

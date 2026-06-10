@@ -60,6 +60,30 @@ struct WorkflowDatabaseTests {
         #expect(rows.first?.repoPath == "/repo")
     }
 
+    @Test func sessionRowPersistsKind() throws {
+        let dir = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let database = try openWorkflowDatabase(at: dir)
+        let workflowID = UUID(0)
+        try database.write { db in
+            try WorkflowRow.insert {
+                WorkflowRow(id: workflowID, repoPath: "/repo", createdAt: Self.fixedDate, updatedAt: Self.fixedDate)
+            }
+            .execute(db)
+            try SessionRow.insert {
+                SessionRow(
+                    id: UUID(1), workflowID: workflowID, worktreePath: "/repo", mode: "readOnly",
+                    kind: "prd", createdAt: Self.fixedDate, updatedAt: Self.fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let row = try database.read { db in try SessionRow.fetchOne(db) }
+        #expect(row?.kind == "prd")
+    }
+
     private static func makeTempDir() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("StoreTests-\(UUID().uuidString)", isDirectory: true)

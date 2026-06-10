@@ -30,7 +30,8 @@ struct CancellationTests {
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
             database: database,
-            workflowID: workflowID
+            workflowID: workflowID,
+            kind: .design
         )
 
         // slow.sh exits on SIGTERM, so the teardown sequence reaps it well within
@@ -70,7 +71,8 @@ struct CancellationTests {
             worktree: FileManager.default.temporaryDirectory,
             mode: .write,
             database: database,
-            workflowID: workflowID
+            workflowID: workflowID,
+            kind: .design
         )
 
         // ignore-sigterm.sh traps SIGTERM, so the grace period elapses and the

@@ -103,7 +103,8 @@ public final class TestChatModel {
                             worktree: worktree,
                             mode: .readOnly,
                             database: database,
-                            workflowID: workflowID
+                            workflowID: workflowID,
+                            kind: .testChat
                         )
                     )
                     session = completedSession

@@ -112,7 +112,7 @@ struct FinalizationTests {
             try SessionRow.insert {
                 SessionRow(
                     id: sessionID, workflowID: workflowID, worktreePath: "/repo", mode: "readOnly",
-                    createdAt: fixedDate, updatedAt: fixedDate
+                    kind: "design", createdAt: fixedDate, updatedAt: fixedDate
                 )
             }
             .execute(db)

@@ -85,6 +85,7 @@ final class LiveAgentClient: Sendable {
             id: sessionId,
             worktree: request.worktree,
             mode: request.mode,
+            kind: request.kind,
             skillFiles: request.skillFiles,
             addDirs: request.addDirs
         )
