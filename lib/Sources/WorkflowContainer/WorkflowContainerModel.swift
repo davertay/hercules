@@ -2,6 +2,7 @@ import Design
 import Dependencies
 import Foundation
 import Observation
+import PRD
 import SQLiteData
 import Store
 
@@ -21,6 +22,12 @@ public final class WorkflowContainerModel {
     @ObservationIgnored
     public let designModel: DesignModel?
 
+    /// The PRD Phase's directed one-shot surface, constructed eagerly alongside Design and scoped to
+    /// the same Workflow database with the PRD Session kind. `nil` only if the Store could not be
+    /// opened.
+    @ObservationIgnored
+    public let prdModel: PRDModel?
+
     /// Live view of this Workflow's completed `phase` rows, used to gate the sidebar. A Phase is
     /// unlocked once the Phase before it appears here, so completing Design unlocks PRD reactively —
     /// its `phase` row flips to complete and this observation re-fires without any manual refresh.
@@ -37,10 +44,16 @@ public final class WorkflowContainerModel {
         if let database {
             // Scope `defaultDatabase` so the model's fetches observe this Workflow's Store rather
             // than the app-wide default; both fetches capture it for the window's lifetime.
-            let (model, phases): (DesignModel, Fetch<[PhaseRow]>) = withDependencies {
+            let (model, prd, phases): (DesignModel, PRDModel, Fetch<[PhaseRow]>) = withDependencies {
                 $0.defaultDatabase = database
             } operation: {
                 let model = DesignModel(
+                    worktree: URL(fileURLWithPath: data.repoPath),
+                    workflowID: data.id,
+                    workflowDirectory: data.directory,
+                    database: database
+                )
+                let prd = PRDModel(
                     worktree: URL(fileURLWithPath: data.repoPath),
                     workflowID: data.id,
                     workflowDirectory: data.directory,
@@ -51,12 +64,14 @@ public final class WorkflowContainerModel {
                     CompletedPhasesRequest(workflowID: data.id),
                     animation: .default
                 )
-                return (model, phases)
+                return (model, prd, phases)
             }
             designModel = model
+            prdModel = prd
             _completedPhases = phases
         } else {
             designModel = nil
+            prdModel = nil
             _completedPhases = Fetch(wrappedValue: [])
         }
     }

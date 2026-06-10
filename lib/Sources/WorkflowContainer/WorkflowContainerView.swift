@@ -1,4 +1,5 @@
 import Design
+import PRD
 import SwiftUI
 
 public struct WorkflowContainerView: View {
@@ -22,6 +23,15 @@ public struct WorkflowContainerView: View {
             case .design:
                 if let designModel = model.designModel {
                     DesignView(model: designModel)
+                } else {
+                    ContentUnavailableView(
+                        "Workflow store unavailable",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                }
+            case .prd:
+                if let prdModel = model.prdModel {
+                    PRDView(model: prdModel)
                 } else {
                     ContentUnavailableView(
                         "Workflow store unavailable",
