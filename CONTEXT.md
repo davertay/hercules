@@ -24,9 +24,17 @@ _Avoid_: Step (reads as atomic, and clashes with the per-issue units inside Exec
 **Artifact**:
 A Phase's durable output, consumed as the next Phase's input. Document Artifacts (the Design
 summary, the PRD) are markdown files in the Workflow directory; structured Artifacts (the Allocate
-Issue tickets) are rows in the Workflow's database. A Phase is unlocked once the Artifact it
+Issues) are rows in the Workflow's database. A Phase is unlocked once the Artifact it
 consumes exists.
 _Avoid_: Output, result, deliverable.
+
+**Issue**:
+A single bite-size unit of implementation work — small enough for an Agent to complete in one shot
+— carved out of the PRD and Design summary by the Allocate Phase. The Allocate Phase's structured
+Artifact: a row in the Workflow's database carrying the bulk of the spec as a text body alongside
+distinct **number**, **title**, **dependencies**, and **status** fields. The Issues of a Workflow
+form a dependency graph; the Execute Phase works them in dependency order.
+_Avoid_: Ticket, task (reserve for everyday speech), story, GitHub issue (see Flagged ambiguities).
 
 **Skill**:
 A prompt document shipped in the app bundle that defines a Phase's agent behavior — grill-me for
@@ -91,8 +99,11 @@ _Avoid_: Conversation (the everyday word for what a Chat shows), Session (the Ag
 
 **AgentMode**:
 The tool surface a Session is granted, pinned at Session start. `readOnly` strictly forbids
-worktree-mutating tools (allowlist of Read/Grep/Glob/WebFetch/WebSearch only); `write` grants
-full tool access. Cannot change across Turns within a Session.
+worktree-mutating tools (base allowlist of Read/Grep/Glob/WebFetch/WebSearch); `write` grants
+full tool access. A Session may additionally be granted non-worktree-mutating MCP tools — these
+write outside the worktree (e.g. Issues into the Workflow database), so they extend a `readOnly`
+Session's allowlist without breaking its worktree read-only guarantee. Cannot change across Turns
+within a Session.
 _Avoid_: Permission level, scope, sandbox.
 
 ## Flagged ambiguities
@@ -101,6 +112,11 @@ _Avoid_: Permission level, scope, sandbox.
 LLM-side participant in a chat is also called "the agent" in everyday speech ("user/agent chat
 conversation"). When precision matters, prefer **Harness** for the subprocess and **assistant**
 for the LLM-side speaker in the Transcript; reserve capitalised **Agent** for the module.
+
+**"Issue" — the Allocate Artifact vs a GitHub issue.** Hercules's own development tracks work as
+GitHub issues (`ISSUES.md`). An Allocate **Issue** is a different thing: a row in a user Workflow's
+database describing a unit of work on the *user's* repo. When precision matters, say "Allocate
+Issue" for the Artifact and "GitHub issue" for the dev-process tickets.
 
 ## Example dialogue
 
