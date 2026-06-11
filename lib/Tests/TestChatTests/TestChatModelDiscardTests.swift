@@ -68,14 +68,14 @@ struct TestChatModelDiscardTests {
             }
         } operation: {
             let m = TestChatModel(worktree: FileManager.default.temporaryDirectory)
-            m.draftText = "hello"
-            m.submit()
+            m.engine.draftText = "hello"
+            m.engine.submit()
             return m
         }
 
         // Wait until the mock start body is executing, confirming the turn is live.
         for await _ in stream { break }
-        #expect(model.isRunning)
+        #expect(model.engine.isRunning)
 
         model.tearDown()
 
