@@ -26,7 +26,9 @@ public struct PRDView: View {
             }
             if let savedURL = model.prdSavedURL {
                 Divider()
-                PRDSavedBanner(url: savedURL)
+                PRDSavedBanner(url: savedURL, isRegenerateAvailable: model.isRegenerateAvailable) {
+                    model.regenerate()
+                }
             }
         }
         .frame(minWidth: 500, minHeight: 400)
@@ -69,10 +71,13 @@ private struct IdleActionView: View {
     }
 }
 
-/// Confirmation that the PRD was saved, with a Reveal in Finder button. The user edits the markdown
-/// externally; the app never renders or edits it in place.
+/// Confirmation that the PRD was saved, with a Reveal in Finder button and the Regenerate action
+/// that re-runs the directed Turn against the (possibly edited) Design summary. The user edits the
+/// markdown externally; the app never renders or edits it in place.
 private struct PRDSavedBanner: View {
     let url: URL
+    let isRegenerateAvailable: Bool
+    let regenerate: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -86,6 +91,10 @@ private struct PRDSavedBanner: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Button("Regenerate", systemImage: "arrow.clockwise") {
+                regenerate()
+            }
+            .disabled(!isRegenerateAvailable)
             #if canImport(AppKit)
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
