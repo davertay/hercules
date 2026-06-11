@@ -83,10 +83,25 @@ public final class PRDModel {
         !engine.isRunning && prdSavedURL == nil
     }
 
+    /// Whether the Regenerate action can run: only once the Phase is complete, and not while a Turn
+    /// is in flight.
+    public var isRegenerateAvailable: Bool {
+        !engine.isRunning && prdSavedURL != nil
+    }
+
     /// The directed instruction the one-shot Turn runs with; the heavy behavioral instructions live
     /// in the to-prd Skill.
     static func directedPrompt(summaryPath: String) -> String {
         "Read the Design summary at \(summaryPath) and produce the complete PRD now as a markdown document."
+    }
+
+    /// The regenerate Turn's instruction: the summary is re-attached as an input, and the agent is
+    /// told it may have been revised since the last run.
+    static func regeneratePrompt(summaryPath: String) -> String {
+        """
+        Re-read the Design summary at \(summaryPath) — it may have been revised since the last \
+        run — and produce the complete PRD again as a markdown document.
+        """
     }
 
     /// Runs the one directed Turn: reads the Design summary's location from the completed Design
@@ -96,6 +111,22 @@ public final class PRDModel {
     /// phase row to complete with the Artifact path, unlocking Allocate.
     public func generate() {
         guard isGenerateAvailable else { return }
+        runDirectedTurn(prompt: Self.directedPrompt(summaryPath:))
+    }
+
+    /// Re-runs the directed Turn against the (possibly user-edited) Design summary by resuming the
+    /// existing PRD Session — never starting a fresh one, which would break the one-Session-per-
+    /// (Workflow, kind) invariant (ADR 0005). The result overwrites the same PRD Artifact and
+    /// updates the same Phase row, so there is always exactly one current PRD.
+    public func regenerate() {
+        guard isRegenerateAvailable else { return }
+        runDirectedTurn(prompt: Self.regeneratePrompt(summaryPath:))
+    }
+
+    /// The shared body of `generate` and `regenerate`. The summary is attached as an input on every
+    /// PRD Turn, initial and regenerate; `ChatEngine.send` starts the Session the first time and
+    /// resumes it thereafter.
+    private func runDirectedTurn(prompt: @escaping (String) -> String) {
         engine.errorText = nil
         engine.isRunning = true
 
@@ -103,7 +134,7 @@ public final class PRDModel {
             do {
                 let summaryURL = try designSummaryURL()
                 try await engine.send(
-                    Self.directedPrompt(summaryPath: summaryURL.path),
+                    prompt(summaryURL.path),
                     inputs: InputBundle(
                         root: summaryURL.deletingLastPathComponent(),
                         relativePaths: [summaryURL.lastPathComponent]
