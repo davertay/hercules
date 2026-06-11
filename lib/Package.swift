@@ -109,6 +109,29 @@ let package = Package(
             ]
         ),
         .target(
+            name: "PRD",
+            dependencies: [
+                "Agent",
+                "Chat",
+                "Material",
+                "Store",
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .testTarget(
+            name: "PRDTests",
+            dependencies: [
+                "PRD",
+                "Agent",
+                "Material",
+                "Store",
+                .product(name: "CustomDump", package: "swift-custom-dump"),
+                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .target(
             name: "Store",
             dependencies: [
                 .product(name: "Dependencies", package: "swift-dependencies"),
@@ -146,6 +169,7 @@ let package = Package(
             name: "WorkflowContainer",
             dependencies: [
                 "Design",
+                "PRD",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
