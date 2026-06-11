@@ -152,6 +152,7 @@ let package = Package(
             name: "TestChat",
             dependencies: [
                 "Agent",
+                "Chat",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
