@@ -54,6 +54,29 @@ struct FinalizationTests {
         #expect(phases.first?.updatedAt == Self.fixedDate.addingTimeInterval(60))
     }
 
+    @Test func completePhaseWithNoArtifactPathCompletesWithNullPath() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+
+        try database.completePhase(
+            workflowID: workflowID, kind: "allocate", id: UUID(2), now: Self.fixedDate
+        )
+
+        // Observable by the same completed-phase query the unlock gate uses.
+        let phases = try database.read { db in
+            try PhaseRow
+                .where { $0.kind.eq("allocate") }
+                .where { $0.status.eq("complete") }
+                .where { !$0.isDeleted }
+                .fetchAll(db)
+        }
+        #expect(phases.count == 1)
+        #expect(phases.first?.id == UUID(2))
+        #expect(phases.first?.status == "complete")
+        #expect(phases.first?.artifactPath == nil)
+    }
+
     // MARK: - latestFinalAnswer
 
     @Test func latestFinalAnswerReturnsMostRecentTurnsAnswer() throws {

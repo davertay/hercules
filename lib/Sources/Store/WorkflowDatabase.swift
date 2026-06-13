@@ -125,4 +125,30 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         )
         .execute(db)
     }
+
+    // The Allocate Phase's structured Artifact: bite-size Issues carved out of the PRD and Design
+    // summary, recorded as rows here rather than as a document. `dependencies` holds a JSON array of
+    // the referenced per-Workflow `number`s — a distinct field, not a join table.
+    migrator.registerMigration("Create issue table") { db in
+        try #sql(
+            """
+            CREATE TABLE "issue" (
+              "id" TEXT PRIMARY KEY NOT NULL ON CONFLICT REPLACE DEFAULT (uuid()),
+              "workflowID" TEXT NOT NULL REFERENCES "workflow"("id") ON DELETE CASCADE,
+              "number" INTEGER NOT NULL,
+              "title" TEXT NOT NULL DEFAULT '',
+              "body" TEXT NOT NULL DEFAULT '',
+              "dependencies" TEXT NOT NULL DEFAULT '[]',
+              "status" TEXT NOT NULL DEFAULT 'new',
+              "createdAt" TEXT NOT NULL,
+              "updatedAt" TEXT NOT NULL,
+              "isDeleted" INTEGER NOT NULL ON CONFLICT REPLACE DEFAULT 0
+            ) STRICT
+            """
+        )
+        .execute(db)
+
+        try #sql(#"CREATE INDEX "index_issue_on_workflowID" ON "issue"("workflowID")"#)
+            .execute(db)
+    }
 }
