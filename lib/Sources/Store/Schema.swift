@@ -1,5 +1,6 @@
 import Foundation
 import SQLiteData
+import StructuredQueries
 
 // Per-Workflow SQLite schema. Each row type carries the sync-ready conventions from ADR 0003:
 // a UUID primary key, `createdAt`/`updatedAt` timestamps, and an `isDeleted` soft-delete column.
@@ -126,6 +127,48 @@ public struct TurnRow: Identifiable, Equatable, Sendable {
         self.isError = isError
         self.durationMs = durationMs
         self.costUSD = costUSD
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.isDeleted = isDeleted
+    }
+}
+
+@Table("issue")
+public struct IssueRow: Identifiable, Equatable, Sendable {
+    public let id: UUID
+    public var workflowID: UUID
+    /// Per-Workflow 1…N number assigned by the agent during Allocate; `dependencies` reference these.
+    public var number: Int
+    public var title: String
+    /// The bulk one-shot spec for the Issue.
+    public var body: String
+    /// The `number`s of the other Issues this one depends on, stored as a JSON array in a TEXT column.
+    @Column(as: [Int].JSONRepresentation.self)
+    public var dependencies: [Int]
+    public var status: String
+    public var createdAt: Date
+    public var updatedAt: Date
+    public var isDeleted: Bool
+
+    public init(
+        id: UUID,
+        workflowID: UUID,
+        number: Int,
+        title: String = "",
+        body: String = "",
+        dependencies: [Int] = [],
+        status: String = "new",
+        createdAt: Date,
+        updatedAt: Date,
+        isDeleted: Bool = false
+    ) {
+        self.id = id
+        self.workflowID = workflowID
+        self.number = number
+        self.title = title
+        self.body = body
+        self.dependencies = dependencies
+        self.status = status
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDeleted = isDeleted
