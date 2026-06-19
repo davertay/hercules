@@ -108,6 +108,12 @@ let package = Package(
                 .copy("Resources"),
             ]
         ),
+        .testTarget(
+            name: "MaterialTests",
+            dependencies: [
+                "Material",
+            ]
+        ),
         .target(
             name: "PRD",
             dependencies: [
