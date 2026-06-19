@@ -10,8 +10,12 @@ public struct AppScene: Scene {
     }
 
     public var body: some Scene {
-        WindowGroup {
-            AppLaunchView(model: model)
+        Window("Hercules", id: "launcher") {
+            if let target = PreviewTarget.fromEnvironment() {
+                PreviewHarnessEscapeHatch(target: target)
+            } else {
+                AppLaunchView(model: model)
+            }
         }
 
         WorkflowContainerScene()

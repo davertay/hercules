@@ -4,7 +4,7 @@ public struct WorkflowContainerScene: Scene {
     public init() {}
 
     public var body: some Scene {
-        WindowGroup(for: WorkflowWindowData.self) { $data in
+        WindowGroup("Workflow", for: WorkflowWindowData.self) { $data in
             if let data {
                 let model = WorkflowContainerModel(data: data)
                 WorkflowContainerView(model: model)

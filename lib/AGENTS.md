@@ -14,6 +14,8 @@ swift test --filter MyFeatureTests
 swift test --filter "MyFeatureTests/MyTest"
 ``
 
+If you need to validate UI elements, use the preview escape hatch harness and screenshot skill.
+
 ### Key libraries
 
 | Library | Purpose |
