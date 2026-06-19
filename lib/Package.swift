@@ -16,6 +16,7 @@ let package = Package(
         .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.2"),
         .package(url: "https://github.com/pointfreeco/swift-structured-queries", exact: "0.31.1"),
         .package(url: "https://github.com/swiftlang/swift-subprocess", exact: "0.5.0"),
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk", from: "0.11.0"),
     ],
     targets: [
         .target(
@@ -92,6 +93,7 @@ let package = Package(
             dependencies: [
                 "Agent",
                 "Design",
+                "IssueMCP",
                 "TestChat",
                 "WorkflowContainer",
             ]
@@ -100,6 +102,26 @@ let package = Package(
             name: "HerculesAppTests",
             dependencies: [
                 "HerculesApp",
+            ]
+        ),
+        .target(
+            name: "IssueMCP",
+            dependencies: [
+                "Store",
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "MCP", package: "swift-sdk"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .testTarget(
+            name: "IssueMCPTests",
+            dependencies: [
+                "IssueMCP",
+                "Store",
+                .product(name: "CustomDump", package: "swift-custom-dump"),
+                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
+                .product(name: "MCP", package: "swift-sdk"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
             ]
         ),
         .target(

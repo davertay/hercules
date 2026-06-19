@@ -8,7 +8,16 @@ private let isDebugBuild = false
 #endif
 
 @main
-struct MainApp: App {
+enum HerculesMain {
+    static func main() {
+        // Re-exec branch: when launched as the create-issue MCP server, run that stdio loop and exit
+        // before any AppKit setup. Returns here only when booting the GUI.
+        HerculesEntryPoint.runMCPServerIfRequested()
+        HerculesGUI.main()
+    }
+}
+
+struct HerculesGUI: App {
     @State var model: AppModel
 
     init() {
