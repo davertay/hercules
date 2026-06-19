@@ -32,6 +32,22 @@
 		639E41012FC388FA008C2BF2 /* HerculesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HerculesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		639E410B2FC388FA008C2BF2 /* HerculesUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HerculesUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		639E412F2FC38D28008C2BF2 /* lib */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = lib; sourceTree = "<group>"; };
+		63D814F72FE5EA5100EDE1BD /* 0001-per-turn-harness-invocation.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "0001-per-turn-harness-invocation.md"; sourceTree = "<group>"; };
+		63D814F82FE5EA5100EDE1BD /* 0002-transcript-format.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "0002-transcript-format.md"; sourceTree = "<group>"; };
+		63D814F92FE5EA5100EDE1BD /* 0003-live-transcript-into-per-workflow-sqlite.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "0003-live-transcript-into-per-workflow-sqlite.md"; sourceTree = "<group>"; };
+		63D814FA2FE5EA5100EDE1BD /* 0004-skill-injection-via-append-system-prompt-file.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "0004-skill-injection-via-append-system-prompt-file.md"; sourceTree = "<group>"; };
+		63D814FB2FE5EA5100EDE1BD /* 0005-session-kind-scoping.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "0005-session-kind-scoping.md"; sourceTree = "<group>"; };
+		63D814FC2FE5EA5100EDE1BD /* 0006-mcp-write-tools-via-stdio-store-bridge.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "0006-mcp-write-tools-via-stdio-store-bridge.md"; sourceTree = "<group>"; };
+		63D814FE2FE5EA5100EDE1BD /* allocate-phase.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "allocate-phase.md"; sourceTree = "<group>"; };
+		63D814FF2FE5EA5100EDE1BD /* testchat-poc.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "testchat-poc.md"; sourceTree = "<group>"; };
+		63D815002FE5EA5100EDE1BD /* workflow-design-phase.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "workflow-design-phase.md"; sourceTree = "<group>"; };
+		63D815032FE5EA6700EDE1BD /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = SOURCE_ROOT; };
+		63D815042FE5EA6700EDE1BD /* CLAUDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CLAUDE.md; sourceTree = SOURCE_ROOT; };
+		63D815052FE5EA6700EDE1BD /* CONTEXT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CONTEXT.md; sourceTree = SOURCE_ROOT; };
+		63D815062FE5EA6700EDE1BD /* ISSUES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ISSUES.md; sourceTree = SOURCE_ROOT; };
+		63D815072FE5EA6700EDE1BD /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = SOURCE_ROOT; };
+		63D815082FE5EA6700EDE1BD /* Makefile */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.make; path = Makefile; sourceTree = SOURCE_ROOT; };
+		63D815092FE5EA6700EDE1BD /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -81,6 +97,7 @@
 		639E40E72FC388F8008C2BF2 = {
 			isa = PBXGroup;
 			children = (
+				63D814F52FE5E9E100EDE1BD /* auxillary */,
 				639E40F22FC388F8008C2BF2 /* Hercules */,
 				639E41042FC388FA008C2BF2 /* HerculesTests */,
 				639E410E2FC388FA008C2BF2 /* HerculesUITests */,
@@ -106,6 +123,53 @@
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
+		};
+		63D814F52FE5E9E100EDE1BD /* auxillary */ = {
+			isa = PBXGroup;
+			children = (
+				63D815022FE5EA5100EDE1BD /* docs */,
+				63D815032FE5EA6700EDE1BD /* AGENTS.md */,
+				63D815042FE5EA6700EDE1BD /* CLAUDE.md */,
+				63D815052FE5EA6700EDE1BD /* CONTEXT.md */,
+				63D815062FE5EA6700EDE1BD /* ISSUES.md */,
+				63D815072FE5EA6700EDE1BD /* LICENSE */,
+				63D815082FE5EA6700EDE1BD /* Makefile */,
+				63D815092FE5EA6700EDE1BD /* README.md */,
+			);
+			path = auxillary;
+			sourceTree = "<group>";
+		};
+		63D814FD2FE5EA5100EDE1BD /* adr */ = {
+			isa = PBXGroup;
+			children = (
+				63D814F72FE5EA5100EDE1BD /* 0001-per-turn-harness-invocation.md */,
+				63D814F82FE5EA5100EDE1BD /* 0002-transcript-format.md */,
+				63D814F92FE5EA5100EDE1BD /* 0003-live-transcript-into-per-workflow-sqlite.md */,
+				63D814FA2FE5EA5100EDE1BD /* 0004-skill-injection-via-append-system-prompt-file.md */,
+				63D814FB2FE5EA5100EDE1BD /* 0005-session-kind-scoping.md */,
+				63D814FC2FE5EA5100EDE1BD /* 0006-mcp-write-tools-via-stdio-store-bridge.md */,
+			);
+			path = adr;
+			sourceTree = "<group>";
+		};
+		63D815012FE5EA5100EDE1BD /* prd */ = {
+			isa = PBXGroup;
+			children = (
+				63D814FE2FE5EA5100EDE1BD /* allocate-phase.md */,
+				63D814FF2FE5EA5100EDE1BD /* testchat-poc.md */,
+				63D815002FE5EA5100EDE1BD /* workflow-design-phase.md */,
+			);
+			path = prd;
+			sourceTree = "<group>";
+		};
+		63D815022FE5EA5100EDE1BD /* docs */ = {
+			isa = PBXGroup;
+			children = (
+				63D814FD2FE5EA5100EDE1BD /* adr */,
+				63D815012FE5EA5100EDE1BD /* prd */,
+			);
+			path = docs;
+			sourceTree = SOURCE_ROOT;
 		};
 /* End PBXGroup section */
 
