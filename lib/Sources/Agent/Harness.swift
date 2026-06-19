@@ -15,8 +15,10 @@ public enum Harness {
         inputs: InputBundle?,
         skillFiles: [URL] = [],
         addDirs: [URL] = [],
+        mcpServers: [MCPServer] = [],
+        sessionDataDirectory: URL? = nil,
         sessionId: Session.ID
-    ) -> [String] {
+    ) throws -> [String] {
         var args: [String] = [
             "--print",
             "--output-format", "stream-json",
@@ -38,7 +40,22 @@ public enum Harness {
         }
 
         if mode == .readOnly {
-            args += ["--allowedTools", "Read", "Grep", "Glob", "WebFetch", "WebSearch"]
+            // The read-only allowlist is extended by the MCP servers' derived tool names: MCP tools
+            // write outside the worktree (into the database), so the worktree read-only guarantee
+            // still holds. Deriving from the descriptors keeps configured-and-allowed in lockstep.
+            var allowed = ["Read", "Grep", "Glob", "WebFetch", "WebSearch"]
+            allowed += mcpServers.flatMap(\.qualifiedToolNames)
+            args += ["--allowedTools"] + allowed
+        }
+
+        if !mcpServers.isEmpty {
+            guard let sessionDataDirectory else {
+                throw AgentError.mcpConfigDirectoryMissing
+            }
+            try FileManager.default.createDirectory(at: sessionDataDirectory, withIntermediateDirectories: true)
+            let configURL = sessionDataDirectory.appendingPathComponent("mcp-config.json")
+            try mcpConfigJSON(servers: mcpServers).write(to: configURL)
+            args += ["--mcp-config", configURL.path]
         }
 
         if let inputs {
@@ -54,6 +71,22 @@ public enum Harness {
         }
 
         return args
+    }
+
+    /// Pure renderer for the `--mcp-config` payload: the `{"mcpServers": {...}}` shape the harness
+    /// expects, with `command`, `args`, and `env` taken from each descriptor. Separated from the file
+    /// write so it is testable on its own. Keys are sorted for deterministic output.
+    static func mcpConfigJSON(servers: [MCPServer]) throws -> Data {
+        var entries: [String: Any] = [:]
+        for server in servers {
+            entries[server.name] = [
+                "command": server.command,
+                "args": server.args,
+                "env": server.env,
+            ]
+        }
+        let root: [String: Any] = ["mcpServers": entries]
+        return try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
     }
 
     static func renderPrompt(prompt: String, inputs: InputBundle?) -> String {

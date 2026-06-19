@@ -22,7 +22,8 @@ struct HarnessRunner {
             mode: session.mode,
             inputs: request.inputs,
             skillFiles: session.skillFiles,
-            addDirs: session.addDirs
+            addDirs: session.addDirs,
+            mcpServers: session.mcpServers
         )
     }
 
@@ -50,7 +51,8 @@ struct HarnessRunner {
             mode: request.mode,
             inputs: request.inputs,
             skillFiles: request.skillFiles,
-            addDirs: request.addDirs
+            addDirs: request.addDirs,
+            mcpServers: request.mcpServers
         )
     }
 
@@ -65,7 +67,8 @@ struct HarnessRunner {
         mode: AgentMode,
         inputs: InputBundle?,
         skillFiles: [URL],
-        addDirs: [URL]
+        addDirs: [URL],
+        mcpServers: [MCPServer]
     ) async throws {
         let startedAt = now
         let turnID = uuid()
@@ -86,7 +89,13 @@ struct HarnessRunner {
             initialState: LineSink(projector: StreamProjector(database: database, turnID: turnID))
         )
 
-        let args = Harness.renderArgs(
+        // Per-Session scratch directory the Harness writes the `--mcp-config` JSON into; re-derived
+        // (and re-written) each Turn so a resume re-passes the pinned servers (ADR 0001).
+        let sessionDataDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hercules-sessions", isDirectory: true)
+            .appendingPathComponent(sessionId.rawValue.uuidString, isDirectory: true)
+
+        let args = try Harness.renderArgs(
             binary: binaryURL,
             operation: operation,
             worktree: worktree,
@@ -94,6 +103,8 @@ struct HarnessRunner {
             inputs: inputs,
             skillFiles: skillFiles,
             addDirs: addDirs,
+            mcpServers: mcpServers,
+            sessionDataDirectory: sessionDataDirectory,
             sessionId: sessionId
         )
 
