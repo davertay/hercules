@@ -11,6 +11,7 @@ public enum AgentError: Error, Sendable {
     case storeWriteFailed(underlying: any Error)
     case inputUnreadable(URL, underlying: any Error)
     case sessionBusy(id: Session.ID)
+    case mcpConfigDirectoryMissing
     case cancelled
 }
 
@@ -35,6 +36,8 @@ extension AgentError: LocalizedError {
             "Input unreadable caused by: \(underlying.localizedDescription)"
         case .sessionBusy(id: let id):
             "Session busy \(id)"
+        case .mcpConfigDirectoryMissing:
+            "MCP servers were configured but no Session data directory was provided to write --mcp-config into"
         case .cancelled:
             "Cancelled"
         }

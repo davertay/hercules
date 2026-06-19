@@ -19,6 +19,9 @@ public struct StartRequest: Sendable {
     public let skillFiles: [URL]
     /// Extra directories exposed to the Harness via `--add-dir`, alongside any `InputBundle`.
     public let addDirs: [URL]
+    /// Custom MCP servers for the new Session; pinned on the `Session` and re-passed on every resume
+    /// Turn, exactly as `skillFiles`/`addDirs` are (ADR 0001 / ADR 0004).
+    public let mcpServers: [MCPServer]
 
     public init(
         prompt: String,
@@ -29,7 +32,8 @@ public struct StartRequest: Sendable {
         workflowID: UUID,
         kind: SessionKind,
         skillFiles: [URL] = [],
-        addDirs: [URL] = []
+        addDirs: [URL] = [],
+        mcpServers: [MCPServer] = []
     ) {
         self.prompt = prompt
         self.worktree = worktree
@@ -40,6 +44,7 @@ public struct StartRequest: Sendable {
         self.kind = kind
         self.skillFiles = skillFiles
         self.addDirs = addDirs
+        self.mcpServers = mcpServers
     }
 }
 

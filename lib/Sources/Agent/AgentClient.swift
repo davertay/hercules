@@ -87,7 +87,8 @@ final class LiveAgentClient: Sendable {
             mode: request.mode,
             kind: request.kind,
             skillFiles: request.skillFiles,
-            addDirs: request.addDirs
+            addDirs: request.addDirs,
+            mcpServers: request.mcpServers
         )
 
         let alreadyBusy = busySessions.withLock { sessions -> Bool in

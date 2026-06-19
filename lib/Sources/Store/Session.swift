@@ -11,6 +11,8 @@ public struct Session: Codable, Sendable, Hashable, Identifiable {
     /// Directories exposed to the Harness via `--add-dir`, pinned alongside the skill files so a
     /// resumed Turn can still read the supporting files a pinned skill references.
     public let addDirs: [URL]
+    /// Custom MCP servers pinned at Session start; re-passed on every resume Turn (ADR 0001).
+    public let mcpServers: [MCPServer]
 
     public init(
         id: ID,
@@ -18,7 +20,8 @@ public struct Session: Codable, Sendable, Hashable, Identifiable {
         mode: AgentMode,
         kind: SessionKind,
         skillFiles: [URL] = [],
-        addDirs: [URL] = []
+        addDirs: [URL] = [],
+        mcpServers: [MCPServer] = []
     ) {
         self.id = id
         self.worktree = worktree
@@ -26,6 +29,7 @@ public struct Session: Codable, Sendable, Hashable, Identifiable {
         self.kind = kind
         self.skillFiles = skillFiles
         self.addDirs = addDirs
+        self.mcpServers = mcpServers
     }
 
     public struct ID: Codable, Sendable, Hashable, RawRepresentable {
