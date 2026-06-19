@@ -15,6 +15,32 @@ extension DatabaseWriter {
         id: @autoclosure () -> UUID,
         now: Date
     ) throws {
+        try completePhase(
+            workflowID: workflowID, kind: kind, artifactPath: artifactPath, id: id, now: now
+        )
+    }
+
+    /// Records `kind`'s Phase as complete with no Artifact path, for a Phase whose Artifact is rows in
+    /// the database (the Allocate Issues) rather than a file. The unlock gate keys only on
+    /// `status == "complete"`, so a null path still unlocks the next Phase.
+    public func completePhase(
+        workflowID: UUID,
+        kind: String,
+        id: @autoclosure () -> UUID,
+        now: Date
+    ) throws {
+        try completePhase(
+            workflowID: workflowID, kind: kind, artifactPath: nil, id: id, now: now
+        )
+    }
+
+    private func completePhase(
+        workflowID: UUID,
+        kind: String,
+        artifactPath: String?,
+        id: () -> UUID,
+        now: Date
+    ) throws {
         try write { db in
             let existing = try PhaseRow
                 .where { $0.workflowID.eq(workflowID) }
