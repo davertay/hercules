@@ -116,6 +116,18 @@ struct PhaseGatingTests {
         #expect(model.prdModel != nil)
     }
 
+    /// The Allocate surface is constructed eagerly alongside Design and PRD, scoped to the same store.
+    @Test
+    @MainActor
+    func allocateSurfaceIsConstructedEagerly() async throws {
+        let root = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let model = Self.makeModel(id: UUID(0), root: root)
+
+        #expect(model.allocateModel != nil)
+    }
+
     /// A soft-deleted complete `phase` row must not unlock the next Phase.
     @Test
     @MainActor

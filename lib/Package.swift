@@ -115,6 +115,7 @@ let package = Package(
             name: "HerculesApp",
             dependencies: [
                 "Agent",
+                "Allocate",
                 "Design",
                 "IssueMCP",
                 "TestChat",
@@ -220,6 +221,7 @@ let package = Package(
         .target(
             name: "WorkflowContainer",
             dependencies: [
+                "Allocate",
                 "Design",
                 "PRD",
                 "Store",

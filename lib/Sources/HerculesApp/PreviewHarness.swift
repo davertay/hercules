@@ -1,3 +1,4 @@
+import Allocate
 import Design
 import Foundation
 import SwiftUI
@@ -10,6 +11,8 @@ import WorkflowContainer
 public enum PreviewTarget: String, CaseIterable, Sendable {
     case workflowEmpty
     case designIntake
+    case allocateIntake
+    case allocateCommitted
 
     public static func fromEnvironment() -> PreviewTarget? {
         guard
@@ -70,6 +73,10 @@ public struct PreviewHarnessView: View {
             WorkflowEmptyPreviewHost()
         case .designIntake:
             DesignIntakePreviewHost()
+        case .allocateIntake:
+            AllocateIntakePreviewHost()
+        case .allocateCommitted:
+            AllocateCommittedPreviewHost()
         }
     }
 }
@@ -105,6 +112,67 @@ private struct DesignIntakePreviewHost: View {
         NavigationStack {
             if let designModel = container.designModel {
                 DesignView(model: designModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        }
+        .frame(minWidth: 800, minHeight: 600)
+    }
+}
+
+/// Renders the Allocate Phase in its intake state — an empty engine, so the surface shows the single
+/// "Propose Issues from PRD & Design" action and the composer.
+private struct AllocateIntakePreviewHost: View {
+    @State var container = WorkflowContainerModel(
+        data: WorkflowWindowData(
+            id: UUID(),
+            directory: URL(fileURLWithPath: "/tmp/workflow-allocate-intake"),
+            repoPath: "/path/to/repo"
+        )
+    )
+
+    var body: some View {
+        NavigationStack {
+            if let allocateModel = container.allocateModel {
+                AllocateView(model: allocateModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        }
+        .frame(minWidth: 800, minHeight: 600)
+    }
+}
+
+/// Renders the Allocate Phase after a propose → accept run: a settled transcript, the committed Issue
+/// list, and the saved-confirmation banner. The fixture conversation and Issues are seeded into a
+/// fresh Workflow database the `WorkflowContainerModel` then opens and observes exactly as in
+/// production.
+private struct AllocateCommittedPreviewHost: View {
+    @State private var container: WorkflowContainerModel
+
+    init() {
+        let id = UUID()
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("workflow-allocate-committed-\(id.uuidString)", isDirectory: true)
+        try? AllocateModel.seedCommittedIssuesPreview(at: directory, workflowID: id)
+        _container = State(
+            wrappedValue: WorkflowContainerModel(
+                data: WorkflowWindowData(id: id, directory: directory, repoPath: "/path/to/repo")
+            )
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            if let allocateModel = container.allocateModel {
+                AllocateView(model: allocateModel)
+                    .task { await allocateModel.loadIssuesForPreview() }
             } else {
                 ContentUnavailableView(
                     "Workflow store unavailable",
