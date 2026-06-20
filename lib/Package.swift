@@ -115,6 +115,7 @@ let package = Package(
             name: "HerculesApp",
             dependencies: [
                 "Agent",
+                "Allocate",
                 "Design",
                 "IssueMCP",
                 "TestChat",
