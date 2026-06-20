@@ -113,7 +113,11 @@ private struct FlowExecutePreviewHost: View {
         NavigationStack {
             if let executeModel = container.executeModel {
                 ExecuteView(model: executeModel)
-                    .task { await executeModel.loadIssuesForPreview() }
+                    .task {
+                        await executeModel.loadIssuesForPreview()
+                        // Pre-select a node so the inspector pane renders with content in the capture.
+                        executeModel.selectNode(4)
+                    }
             } else {
                 ContentUnavailableView(
                     "Workflow store unavailable",
