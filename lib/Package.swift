@@ -149,6 +149,15 @@ let package = Package(
             ]
         ),
         .target(
+            name: "IssueGraph"
+        ),
+        .testTarget(
+            name: "IssueGraphTests",
+            dependencies: [
+                "IssueGraph",
+            ]
+        ),
+        .target(
             name: "Material",
             resources: [
                 .copy("Resources"),
