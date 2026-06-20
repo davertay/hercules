@@ -47,6 +47,29 @@ let package = Package(
             ]
         ),
         .target(
+            name: "Allocate",
+            dependencies: [
+                "Agent",
+                "Chat",
+                "Material",
+                "Store",
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .testTarget(
+            name: "AllocateTests",
+            dependencies: [
+                "Allocate",
+                "Agent",
+                "Material",
+                "Store",
+                .product(name: "CustomDump", package: "swift-custom-dump"),
+                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .target(
             name: "Chat",
             dependencies: [
                 "Agent",
