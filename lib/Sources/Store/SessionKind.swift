@@ -6,6 +6,9 @@ public enum SessionKind: String, Codable, Sendable, CaseIterable {
     case design
     /// The PRD Phase's to-prd chat.
     case prd
+    /// The Allocate Phase's to-issues chat, which proposes Issues and commits them via the MCP
+    /// create-issue write tool.
+    case allocate
     /// The throwaway developer Test Chat surface.
     case testChat
 }
