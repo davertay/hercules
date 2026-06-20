@@ -118,6 +118,7 @@ let package = Package(
                 "Allocate",
                 "DAGGraphUI",
                 "Design",
+                "Execute",
                 "IssueGraph",
                 "IssueMCP",
                 "TestChat",
@@ -160,6 +161,27 @@ let package = Package(
             name: "DAGGraphUITests",
             dependencies: [
                 "DAGGraphUI",
+            ]
+        ),
+        .target(
+            name: "Execute",
+            dependencies: [
+                "DAGGraphUI",
+                "IssueGraph",
+                "Store",
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .testTarget(
+            name: "ExecuteTests",
+            dependencies: [
+                "Execute",
+                "IssueGraph",
+                "Store",
+                .product(name: "CustomDump", package: "swift-custom-dump"),
+                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
             ]
         ),
         .target(
@@ -246,6 +268,7 @@ let package = Package(
             dependencies: [
                 "Allocate",
                 "Design",
+                "Execute",
                 "PRD",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),

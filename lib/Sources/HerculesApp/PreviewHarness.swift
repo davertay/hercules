@@ -1,6 +1,7 @@
 import Allocate
 import DAGGraphUI
 import Design
+import Execute
 import Foundation
 import IssueGraph
 import SwiftUI
@@ -16,6 +17,7 @@ public enum PreviewTarget: String, CaseIterable, Sendable {
     case allocateIntake
     case allocateCommitted
     case dagGraph
+    case flowExecute
 
     public static func fromEnvironment() -> PreviewTarget? {
         guard
@@ -82,7 +84,44 @@ public struct PreviewHarnessView: View {
             AllocateCommittedPreviewHost()
         case .dagGraph:
             DAGGraphPreviewHost()
+        case .flowExecute:
+            FlowExecutePreviewHost()
         }
+    }
+}
+
+/// Renders the Execute Phase surface end-to-end: a Workflow whose Allocate Phase has committed a
+/// dependency graph of Issues, observed and projected into the DAG by `ExecuteModel` exactly as in
+/// production. The fixture Issues are seeded into a fresh Workflow database the `WorkflowContainerModel`
+/// then opens.
+private struct FlowExecutePreviewHost: View {
+    @State private var container: WorkflowContainerModel
+
+    init() {
+        let id = UUID()
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("workflow-flow-execute-\(id.uuidString)", isDirectory: true)
+        try? ExecuteModel.seedCommittedIssuesPreview(at: directory, workflowID: id)
+        _container = State(
+            wrappedValue: WorkflowContainerModel(
+                data: WorkflowWindowData(id: id, directory: directory, repoPath: "/path/to/repo")
+            )
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            if let executeModel = container.executeModel {
+                ExecuteView(model: executeModel)
+                    .task { await executeModel.loadIssuesForPreview() }
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        }
+        .frame(minWidth: 800, minHeight: 600)
     }
 }
 

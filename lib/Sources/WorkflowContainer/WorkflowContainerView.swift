@@ -1,5 +1,6 @@
 import Allocate
 import Design
+import Execute
 import PRD
 import SwiftUI
 
@@ -42,6 +43,15 @@ public struct WorkflowContainerView: View {
             case .allocate:
                 if let allocateModel = model.allocateModel {
                     AllocateView(model: allocateModel)
+                } else {
+                    ContentUnavailableView(
+                        "Workflow store unavailable",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                }
+            case .execute:
+                if let executeModel = model.executeModel {
+                    ExecuteView(model: executeModel)
                 } else {
                     ContentUnavailableView(
                         "Workflow store unavailable",
