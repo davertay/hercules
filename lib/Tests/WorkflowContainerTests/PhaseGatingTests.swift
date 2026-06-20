@@ -104,6 +104,45 @@ struct PhaseGatingTests {
         #expect(!model.isUnlocked(.execute))
     }
 
+    @Test
+    @MainActor
+    func completingAllocateUnlocksExecuteReactively() async throws {
+        let root = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let id = UUID(0)
+        let model = Self.makeModel(id: id, root: root)
+        let database = try #require(model.database)
+
+        try await model.$completedPhases.load()
+        #expect(!model.isUnlocked(.execute))
+
+        // Allocate finishes: its `phase` row flips to complete. Its Artifact is rows, not a file, so
+        // the path is nil (mirrors `completePhase`'s nil-path completion).
+        try await database.write { db in
+            try WorkflowRow.insert {
+                WorkflowRow(id: id, repoPath: "/repo", createdAt: fixedDate, updatedAt: fixedDate)
+            }
+            .execute(db)
+            try PhaseRow.insert {
+                PhaseRow(
+                    id: UUID(-1),
+                    workflowID: id,
+                    kind: "allocate",
+                    status: "complete",
+                    createdAt: fixedDate,
+                    updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+        try await model.$completedPhases.load()
+
+        #expect(model.isUnlocked(.execute))
+        // Validate stays locked until Execute itself completes.
+        #expect(!model.isUnlocked(.validate))
+    }
+
     /// The PRD surface is constructed eagerly alongside Design, scoped to the same Workflow store.
     @Test
     @MainActor
@@ -126,6 +165,18 @@ struct PhaseGatingTests {
         let model = Self.makeModel(id: UUID(0), root: root)
 
         #expect(model.allocateModel != nil)
+    }
+
+    /// The Execute surface is constructed eagerly alongside the other Phase models, scoped to the store.
+    @Test
+    @MainActor
+    func executeSurfaceIsConstructedEagerly() async throws {
+        let root = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let model = Self.makeModel(id: UUID(0), root: root)
+
+        #expect(model.executeModel != nil)
     }
 
     /// A soft-deleted complete `phase` row must not unlock the next Phase.

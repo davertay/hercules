@@ -1,6 +1,7 @@
 import Allocate
 import Design
 import Dependencies
+import Execute
 import Foundation
 import Observation
 import PRD
@@ -36,6 +37,12 @@ public final class WorkflowContainerModel {
     @ObservationIgnored
     public let allocateModel: AllocateModel?
 
+    /// The Execute Phase's DAG visualization, constructed eagerly alongside the other Phase models and
+    /// scoped to the same Workflow database with the same observation seam. `nil` only if the Store
+    /// could not be opened.
+    @ObservationIgnored
+    public let executeModel: ExecuteModel?
+
     /// Live view of this Workflow's completed `phase` rows, used to gate the sidebar. A Phase is
     /// unlocked once the Phase before it appears here, so completing Design unlocks PRD reactively —
     /// its `phase` row flips to complete and this observation re-fires without any manual refresh.
@@ -52,7 +59,7 @@ public final class WorkflowContainerModel {
         if let database {
             // Scope `defaultDatabase` so the model's fetches observe this Workflow's Store rather
             // than the app-wide default; both fetches capture it for the window's lifetime.
-            let (model, prd, allocate, phases): (DesignModel, PRDModel, AllocateModel, Fetch<[PhaseRow]>) = withDependencies {
+            let (model, prd, allocate, execute, phases): (DesignModel, PRDModel, AllocateModel, ExecuteModel, Fetch<[PhaseRow]>) = withDependencies {
                 $0.defaultDatabase = database
             } operation: {
                 let model = DesignModel(
@@ -74,21 +81,24 @@ public final class WorkflowContainerModel {
                     mcpServerCommand: Self.mcpServerCommand,
                     database: database
                 )
+                let execute = ExecuteModel(workflowID: data.id, database: database)
                 let phases = Fetch(
                     wrappedValue: [],
                     CompletedPhasesRequest(workflowID: data.id),
                     animation: .default
                 )
-                return (model, prd, allocate, phases)
+                return (model, prd, allocate, execute, phases)
             }
             designModel = model
             prdModel = prd
             allocateModel = allocate
+            executeModel = execute
             _completedPhases = phases
         } else {
             designModel = nil
             prdModel = nil
             allocateModel = nil
+            executeModel = nil
             _completedPhases = Fetch(wrappedValue: [])
         }
     }
