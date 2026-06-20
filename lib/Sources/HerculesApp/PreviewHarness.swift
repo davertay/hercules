@@ -1,6 +1,8 @@
 import Allocate
+import DAGGraphUI
 import Design
 import Foundation
+import IssueGraph
 import SwiftUI
 import WorkflowContainer
 
@@ -13,6 +15,7 @@ public enum PreviewTarget: String, CaseIterable, Sendable {
     case designIntake
     case allocateIntake
     case allocateCommitted
+    case dagGraph
 
     public static func fromEnvironment() -> PreviewTarget? {
         guard
@@ -77,7 +80,36 @@ public struct PreviewHarnessView: View {
             AllocateIntakePreviewHost()
         case .allocateCommitted:
             AllocateCommittedPreviewHost()
+        case .dagGraph:
+            DAGGraphPreviewHost()
         }
+    }
+}
+
+/// Renders the reusable `DAGGraphUI.DAGGraphView` directly over a fixture set of `DAGNode`s exercising
+/// every `IssueStatus` (done / in-progress / ready / pending / failed / skipped) and a diamond
+/// dependency shape. Stands alone — no Workflow database — since the DAG view is a foundation surface
+/// independent of any Phase. Consumed by the screenshot skill (`dagGraph` target) to visually verify
+/// the ported renderer before the Execute feature embeds it.
+private struct DAGGraphPreviewHost: View {
+    private static let nodes: [DAGNode] = [
+        DAGNode(number: 1, title: "Foundations", status: .done, dependencies: []),
+        DAGNode(number: 2, title: "Public types", status: .done, dependencies: []),
+        DAGNode(number: 3, title: "First tracer", status: .inProgress, dependencies: [1]),
+        DAGNode(number: 4, title: "Conflict path", status: .ready, dependencies: [1, 2]),
+        DAGNode(number: 5, title: "Recovery branch", status: .pending, dependencies: [3]),
+        DAGNode(number: 6, title: "Wire end-to-end", status: .failed, dependencies: [3, 4]),
+        DAGNode(number: 7, title: "Cancelled spike", status: .skipped, dependencies: [2]),
+    ]
+
+    var body: some View {
+        DAGGraphView(
+            layoutNodes: IssueGraph.layeredLayout(Self.nodes),
+            nodesByNumber: Dictionary(uniqueKeysWithValues: Self.nodes.map { ($0.number, $0) }),
+            metrics: .default,
+            palette: .default
+        )
+        .frame(minWidth: 800, minHeight: 600)
     }
 }
 

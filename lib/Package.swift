@@ -116,7 +116,9 @@ let package = Package(
             dependencies: [
                 "Agent",
                 "Allocate",
+                "DAGGraphUI",
                 "Design",
+                "IssueGraph",
                 "IssueMCP",
                 "TestChat",
                 "WorkflowContainer",
@@ -146,6 +148,18 @@ let package = Package(
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "MCP", package: "swift-sdk"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .target(
+            name: "DAGGraphUI",
+            dependencies: [
+                "IssueGraph",
+            ]
+        ),
+        .testTarget(
+            name: "DAGGraphUITests",
+            dependencies: [
+                "DAGGraphUI",
             ]
         ),
         .target(
