@@ -174,6 +174,87 @@ struct ChatEngineTests {
     }
 
     @Test
+    func firstSubmitThreadsMCPServersIntoStartRequest() async throws {
+        let database = try Self.makeDatabase()
+        let mcpServers = [
+            MCPServer(
+                name: "hercules", command: "/repo/.build/hercules",
+                args: ["--mcp-issue-server", "--db", "/wf.sqlite"], tools: ["create_issue"]
+            )
+        ]
+        let captured = LockIsolated<StartRequest?>(nil)
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.start = { @Sendable request in
+                captured.setValue(request)
+                return Session(
+                    id: Session.ID(rawValue: UUID(100)),
+                    worktree: request.worktree,
+                    mode: request.mode,
+                    kind: request.kind
+                )
+            }
+        } operation: {
+            ChatEngine(
+                worktree: URL(fileURLWithPath: "/repo"), mode: .readOnly, workflowID: UUID(-1),
+                kind: .design, mcpServers: mcpServers, database: database
+            )
+        }
+
+        engine.draftText = "Propose issues"
+        engine.submit()
+        await engine.runTask?.value
+
+        #expect(captured.value?.mcpServers == mcpServers)
+    }
+
+    @Test
+    func mcpServersDefaultEmptySoOtherSurfacesAreUnaffected() async throws {
+        let database = try Self.makeDatabase()
+        let captured = LockIsolated<StartRequest?>(nil)
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.start = { @Sendable request in
+                captured.setValue(request)
+                return Session(
+                    id: Session.ID(rawValue: UUID(100)),
+                    worktree: request.worktree, mode: request.mode, kind: request.kind
+                )
+            }
+        } operation: {
+            Self.makeEngine(database: database)
+        }
+
+        engine.draftText = "What are we building?"
+        engine.submit()
+        await engine.runTask?.value
+
+        #expect(captured.value?.mcpServers.isEmpty == true)
+    }
+
+    @Test
+    func rediscoveredSessionPinsMCPServersForResume() async throws {
+        let database = try Self.makeDatabase()
+        let sessionID = UUID(-2)
+        try Self.seedSession(database, sessionID: sessionID, kind: .design)
+        let mcpServers = [MCPServer(name: "hercules", command: "/repo/.build/hercules", tools: ["create_issue"])]
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            ChatEngine(
+                worktree: URL(fileURLWithPath: "/repo"), mode: .readOnly, workflowID: UUID(-1),
+                kind: .design, mcpServers: mcpServers, database: database
+            )
+        }
+
+        // The reconstituted Session carries the servers so a resume Turn re-passes them (ADR 0001).
+        #expect(engine.session?.mcpServers == mcpServers)
+    }
+
+    @Test
     func followUpSubmitResumesSameSession() async throws {
         let database = try Self.makeDatabase()
         let startedSession = Session(

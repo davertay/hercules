@@ -61,6 +61,12 @@ public final class ChatEngine {
     @ObservationIgnored
     private let addDirs: [URL]
 
+    /// Custom MCP servers for this surface's Session; pinned at start and re-passed on every resume
+    /// Turn, exactly as `skillFiles`/`addDirs` are (ADR 0001 / ADR 0004). Empty for surfaces that
+    /// need none (Design, PRD, TestChat).
+    @ObservationIgnored
+    private let mcpServers: [MCPServer]
+
     /// Live view of this surface's Turns and their content blocks — only those belonging to a Session
     /// of this engine's kind in its Workflow. Updates as the Harness streams, which is what makes the
     /// assistant's reply appear before the Turn ends. The scope is stable for the engine's lifetime,
@@ -90,6 +96,7 @@ public final class ChatEngine {
         kind: SessionKind,
         skillFiles: [URL] = [],
         addDirs: [URL] = [],
+        mcpServers: [MCPServer] = [],
         database: any DatabaseWriter
     ) {
         self.worktree = worktree
@@ -98,6 +105,7 @@ public final class ChatEngine {
         self.kind = kind
         self.skillFiles = skillFiles
         self.addDirs = addDirs
+        self.mcpServers = mcpServers
         self.database = database
         _conversation = Fetch(
             wrappedValue: ConversationRequest.Value(),
@@ -117,7 +125,8 @@ public final class ChatEngine {
                 mode: mode,
                 kind: kind,
                 skillFiles: skillFiles,
-                addDirs: addDirs
+                addDirs: addDirs,
+                mcpServers: mcpServers
             )
         }
     }
@@ -219,7 +228,8 @@ public final class ChatEngine {
                     workflowID: workflowID,
                     kind: kind,
                     skillFiles: skillFiles,
-                    addDirs: addDirs
+                    addDirs: addDirs,
+                    mcpServers: mcpServers
                 )
             )
         }
