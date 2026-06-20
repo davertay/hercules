@@ -220,6 +220,7 @@ let package = Package(
         .target(
             name: "WorkflowContainer",
             dependencies: [
+                "Allocate",
                 "Design",
                 "PRD",
                 "Store",

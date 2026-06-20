@@ -1,3 +1,4 @@
+import Allocate
 import Design
 import Dependencies
 import Foundation
@@ -28,6 +29,13 @@ public final class WorkflowContainerModel {
     @ObservationIgnored
     public let prdModel: PRDModel?
 
+    /// The Allocate Phase's hybrid surface, constructed eagerly alongside Design and PRD and scoped to
+    /// the same Workflow database with the Allocate Session kind. Its create-issue MCP server is the
+    /// app binary re-executed, so the command is `Bundle.main.executableURL`. `nil` only if the Store
+    /// could not be opened.
+    @ObservationIgnored
+    public let allocateModel: AllocateModel?
+
     /// Live view of this Workflow's completed `phase` rows, used to gate the sidebar. A Phase is
     /// unlocked once the Phase before it appears here, so completing Design unlocks PRD reactively —
     /// its `phase` row flips to complete and this observation re-fires without any manual refresh.
@@ -44,7 +52,7 @@ public final class WorkflowContainerModel {
         if let database {
             // Scope `defaultDatabase` so the model's fetches observe this Workflow's Store rather
             // than the app-wide default; both fetches capture it for the window's lifetime.
-            let (model, prd, phases): (DesignModel, PRDModel, Fetch<[PhaseRow]>) = withDependencies {
+            let (model, prd, allocate, phases): (DesignModel, PRDModel, AllocateModel, Fetch<[PhaseRow]>) = withDependencies {
                 $0.defaultDatabase = database
             } operation: {
                 let model = DesignModel(
@@ -59,19 +67,28 @@ public final class WorkflowContainerModel {
                     workflowDirectory: data.directory,
                     database: database
                 )
+                let allocate = AllocateModel(
+                    worktree: URL(fileURLWithPath: data.repoPath),
+                    workflowID: data.id,
+                    workflowDirectory: data.directory,
+                    mcpServerCommand: Self.mcpServerCommand,
+                    database: database
+                )
                 let phases = Fetch(
                     wrappedValue: [],
                     CompletedPhasesRequest(workflowID: data.id),
                     animation: .default
                 )
-                return (model, prd, phases)
+                return (model, prd, allocate, phases)
             }
             designModel = model
             prdModel = prd
+            allocateModel = allocate
             _completedPhases = phases
         } else {
             designModel = nil
             prdModel = nil
+            allocateModel = nil
             _completedPhases = Fetch(wrappedValue: [])
         }
     }
@@ -85,6 +102,13 @@ public final class WorkflowContainerModel {
 
     var title: String {
         repoPath.isEmpty ? "Workflow" : URL(fileURLWithPath: repoPath).lastPathComponent
+    }
+
+    /// The command the Allocate Phase's create-issue MCP server is spawned as: the running app binary
+    /// re-executed (it branches into the stdio server at `@main` before AppKit boots). Per ADR 0006
+    /// no separate helper binary is embedded, so the path is the app's own executable.
+    private static var mcpServerCommand: String {
+        Bundle.main.executableURL?.path ?? CommandLine.arguments[0]
     }
 }
 

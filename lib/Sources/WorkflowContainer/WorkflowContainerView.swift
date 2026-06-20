@@ -1,3 +1,4 @@
+import Allocate
 import Design
 import PRD
 import SwiftUI
@@ -32,6 +33,15 @@ public struct WorkflowContainerView: View {
             case .prd:
                 if let prdModel = model.prdModel {
                     PRDView(model: prdModel)
+                } else {
+                    ContentUnavailableView(
+                        "Workflow store unavailable",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                }
+            case .allocate:
+                if let allocateModel = model.allocateModel {
+                    AllocateView(model: allocateModel)
                 } else {
                     ContentUnavailableView(
                         "Workflow store unavailable",
