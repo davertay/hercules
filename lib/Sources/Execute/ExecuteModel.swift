@@ -27,6 +27,16 @@ public final class ExecuteModel {
     /// when nothing is selected.
     public var selectedID: Int?
 
+    /// Whether an Execute run is currently in flight. Drives the Run/Stop controls; the DAG itself
+    /// recolors off the observed Issue rows, not off this flag.
+    public private(set) var isRunning = false
+
+    /// The in-flight orchestrator run, held in a `Sendable` box so it can be cancelled from outside the
+    /// MainActor — both the user's Stop button and the Workflow window's teardown (`cancelRun`) route
+    /// here. `nil` whenever no run is active.
+    @ObservationIgnored
+    let runTask = LockIsolated<Task<Void, Never>?>(nil)
+
     @ObservationIgnored
     @Dependency(\.agentClient) private var agentClient
 
@@ -139,6 +149,44 @@ public final class ExecuteModel {
     /// toggle/clear policy.
     public func selectNode(_ number: Int) {
         selectedID = selectedID == number ? nil : number
+    }
+
+    /// Whether the Run control is enabled: only when the Phase can actually start a run — no run is in
+    /// flight, the dependency graph is a valid DAG, at least one Issue exists, and the worktree is on
+    /// disk. The view disables Run on this; an invalid graph or in-flight run therefore can't start one.
+    public var canRun: Bool {
+        !isRunning && validationError == nil && !isEmpty && !worktreeMissing
+    }
+
+    /// Starts the sequential executor as the window-owned orchestrator task. Guards against a second
+    /// start (and against starting when the graph is invalid), flips `isRunning` so the controls reflect
+    /// the run, and drives `run()` to completion before clearing the run state. The task is retained in
+    /// `runTask` so `stop()` — and the window's teardown — can cancel it; closing the window therefore
+    /// ends the run rather than leaving it executing in the background.
+    public func start() {
+        guard canRun else { return }
+        isRunning = true
+        let task = Task { [self] in
+            await run()
+            isRunning = false
+            runTask.setValue(nil)
+        }
+        runTask.setValue(task)
+    }
+
+    /// Stops an in-flight run on the user's command. Cancels the orchestrator task, which propagates into
+    /// the running Harness's teardown (SIGTERM → SIGKILL) via the Agent's cancellation path; the
+    /// cancelled Turn throws, so `runIssue` leaves the Issue it was working `failed` and the loop halts.
+    public func stop() {
+        cancelRun()
+    }
+
+    /// Cancels the in-flight run from any isolation — the Stop button and the Workflow window's teardown
+    /// both route here, the latter so closing the window (or quitting) ends the run with no background
+    /// execution. Cancelling tears down the running Harness and, via the thrown Turn, marks the worked
+    /// Issue `failed`. A no-op when no run is active.
+    public nonisolated func cancelRun() {
+        runTask.value?.cancel()
     }
 
     /// Runs a single Issue end-to-end as a behind-the-scenes write agent. Marks the Issue `in_progress`,

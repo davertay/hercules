@@ -48,6 +48,25 @@ public struct ExecuteView: View {
         }
         .frame(minWidth: 700, minHeight: 400)
         .navigationTitle("Execute")
+        .toolbar {
+            ToolbarItemGroup {
+                Button {
+                    model.start()
+                } label: {
+                    Label("Run", systemImage: "play.fill")
+                }
+                .disabled(!model.canRun)
+                .help("Run the Issues sequentially in dependency order")
+
+                Button {
+                    model.stop()
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                }
+                .disabled(!model.isRunning)
+                .help("Stop the run and mark the in-flight Issue failed")
+            }
+        }
     }
 }
 
