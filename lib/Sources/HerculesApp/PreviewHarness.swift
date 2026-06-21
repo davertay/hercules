@@ -102,6 +102,12 @@ private struct FlowExecutePreviewHost: View {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("workflow-flow-execute-\(id.uuidString)", isDirectory: true)
         try? ExecuteModel.seedCommittedIssuesPreview(at: directory, workflowID: id)
+        // The Phases now operate in the Workflow's worktree, and Execute health-checks that it exists.
+        // Production cuts it at Workflow creation; the preview stands one in so the DAG renders rather
+        // than the missing-worktree error.
+        try? FileManager.default.createDirectory(
+            at: workflowWorktree(in: directory), withIntermediateDirectories: true
+        )
         _container = State(
             wrappedValue: WorkflowContainerModel(
                 data: WorkflowWindowData(id: id, directory: directory, repoPath: "/path/to/repo")

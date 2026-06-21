@@ -19,7 +19,7 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: UUID(0), database: database)
+            ExecuteModel(workflowID: UUID(0), database: database, worktree: FileManager.default.temporaryDirectory)
         }
 
         #expect(model.isEmpty)
@@ -35,7 +35,7 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database)
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
         }
         try await model.$issues.load()
 
@@ -68,12 +68,46 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database)
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
         }
         try await model.$issues.load()
 
         #expect(model.nodes.count == 2)
         #expect(model.nodesByNumber[3] == nil)
+    }
+
+    @Test("Reports a healthy worktree when the directory exists on disk")
+    func worktreePresent() throws {
+        let database = try Self.makeDatabase()
+        let worktree = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ExecuteWorktree-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: worktree) }
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            ExecuteModel(workflowID: UUID(0), database: database, worktree: worktree)
+        }
+
+        #expect(!model.worktreeMissing)
+        #expect(model.worktreeMessage == nil)
+    }
+
+    @Test("Surfaces a missing-worktree error when the directory is absent (e.g. externally pruned)")
+    func worktreeMissing() throws {
+        let database = try Self.makeDatabase()
+        let worktree = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ExecuteWorktree-\(UUID().uuidString)", isDirectory: true)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            ExecuteModel(workflowID: UUID(0), database: database, worktree: worktree)
+        }
+
+        #expect(model.worktreeMissing)
+        #expect(model.worktreeMessage?.contains(worktree.path) == true)
     }
 
     private static func seed(_ database: any DatabaseWriter, workflowID: UUID) throws {

@@ -24,12 +24,32 @@ public final class ExecuteModel {
     /// when nothing is selected.
     public var selectedID: Int?
 
-    public init(workflowID: UUID, database: any DatabaseWriter) {
+    /// The Workflow's git worktree — the working tree every Phase operates in. Carried so the health
+    /// check can name the expected location in its error.
+    @ObservationIgnored
+    private let worktree: URL
+
+    /// Whether the Workflow's worktree is absent from disk, evaluated once when the window opens
+    /// (creation or state-restored reopen). A `true` value means the expected `worktree/` directory was
+    /// pruned or deleted outside Hercules; the Phase surfaces a blocking error rather than silently
+    /// falling back to the user's raw checkout.
+    public let worktreeMissing: Bool
+
+    public init(workflowID: UUID, database: any DatabaseWriter, worktree: URL) {
+        self.worktree = worktree
+        worktreeMissing = !FileManager.default.fileExists(atPath: worktree.path)
         _issues = Fetch(
             wrappedValue: [],
             WorkflowIssuesRequest(workflowID: workflowID),
             animation: .default
         )
+    }
+
+    /// A human-readable description of the missing-worktree health-check failure, naming where the
+    /// worktree was expected, or `nil` when it is present.
+    public var worktreeMessage: String? {
+        guard worktreeMissing else { return nil }
+        return "This Workflow's git worktree is missing — expected at \(worktree.path). It may have been pruned or deleted outside Hercules. Recreating it isn't supported yet, so the Execute Phase can't run until it's restored."
     }
 
     /// True before any Issue exists — drives the empty-state placeholder. In practice Execute only
