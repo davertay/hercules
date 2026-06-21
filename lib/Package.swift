@@ -166,8 +166,10 @@ let package = Package(
         .target(
             name: "Execute",
             dependencies: [
+                "Agent",
                 "DAGGraphUI",
                 "IssueGraph",
+                "Material",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
@@ -177,7 +179,9 @@ let package = Package(
             name: "ExecuteTests",
             dependencies: [
                 "Execute",
+                "Agent",
                 "IssueGraph",
+                "Material",
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
