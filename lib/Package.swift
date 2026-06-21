@@ -264,6 +264,13 @@ let package = Package(
             ]
         ),
         .target(
+            name: "Worktree",
+            dependencies: [
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "DependenciesMacros", package: "swift-dependencies"),
+            ]
+        ),
+        .target(
             name: "WorkflowContainer",
             dependencies: [
                 "Allocate",
@@ -271,6 +278,7 @@ let package = Package(
                 "Execute",
                 "PRD",
                 "Store",
+                "Worktree",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
             ]
@@ -279,6 +287,7 @@ let package = Package(
             name: "WorkflowContainerTests",
             dependencies: [
                 "WorkflowContainer",
+                "Worktree",
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
             ]
