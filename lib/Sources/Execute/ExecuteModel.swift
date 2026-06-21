@@ -34,6 +34,9 @@ public final class ExecuteModel {
     @Dependency(\.date.now) private var now
 
     @ObservationIgnored
+    @Dependency(\.uuid) private var uuid
+
+    @ObservationIgnored
     private let database: any DatabaseWriter
 
     @ObservationIgnored
@@ -169,5 +172,62 @@ public final class ExecuteModel {
         } catch {
             try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .failed, now: now)
         }
+    }
+
+    /// Drives the whole Execute Phase: runs every Issue sequentially in dependency order onto the
+    /// worktree's branch (parallelism is fixed at 1), halting on the first failure.
+    ///
+    /// At run start it reconciles any stale `in_progress` Issue — left behind by a crash or forced quit,
+    /// with no live orchestrator to own it — back to `failed`. It then repeatedly selects the
+    /// lowest-numbered Issue still `new` whose every dependency is `done`, runs it via `runIssue`, and
+    /// inspects the status that write left behind: the first `failed` Issue halts the loop immediately —
+    /// that Issue stays `failed`, the remaining Issues stay `new`, and the Phase is *not* completed. When
+    /// no ready Issue remains and every Issue is `done`, the Execute Phase is marked complete, which
+    /// unlocks the Validate Phase. There is no auto-retry: a re-run reconciles, skips Issues already
+    /// `done`, and resumes from the first ready `new` Issue.
+    public func run() async {
+        try? database.reconcileStaleInProgressIssues(workflowID: workflowID, now: now)
+
+        while let next = readyIssue() {
+            await runIssue(next)
+            // `runIssue` has just written `done` or `failed`; a failure halts the run, leaving the rest
+            // `new` and the Phase incomplete.
+            if currentStatus(of: next.number) == IssueRunStatus.failed.rawValue { return }
+        }
+
+        // The loop only exits here when nothing is ready and no failure forced an early return. Complete
+        // the Phase only when every Issue actually landed `done` — a blocked branch (e.g. an unreachable
+        // dependency) leaves non-`done` Issues and must not falsely unlock Validate.
+        let remaining = (try? currentIssues()) ?? []
+        if !remaining.isEmpty, remaining.allSatisfy({ $0.status == IssueRunStatus.done.rawValue }) {
+            try? database.completePhase(workflowID: workflowID, kind: "execute", id: uuid(), now: now)
+        }
+    }
+
+    /// The lowest-numbered Issue still awaiting a run (`new`) whose every dependency has reached `done` —
+    /// the next Issue the loop runs, or `nil` when none is ready (all `done`, or the rest are blocked
+    /// behind a dependency that isn't `done`). Read fresh from the database each call so it reflects the
+    /// status `runIssue` just wrote rather than the lazily-updated `issues` observation.
+    private func readyIssue() -> IssueRow? {
+        let issues = (try? currentIssues()) ?? []
+        let done = Set(issues.filter { $0.status == IssueRunStatus.done.rawValue }.map(\.number))
+        return issues
+            // `"new"` is the post-commit starting status the Allocate create-issue tool writes — the only
+            // status the orchestrator treats as eligible to run (see `IssueRunStatus`).
+            .filter { $0.status == "new" }
+            .filter { $0.dependencies.allSatisfy(done.contains) }
+            .min { $0.number < $1.number }
+    }
+
+    /// This Workflow's non-deleted Issues read straight from the database rather than the observed
+    /// `issues` projection (which updates lazily), so the loop sees each status write the instant it
+    /// lands.
+    private func currentIssues() throws -> [IssueRow] {
+        try database.read { db in try WorkflowIssuesRequest(workflowID: workflowID).fetch(db) }
+    }
+
+    /// The persisted status of the Issue numbered `number`, or `nil` if it has since disappeared.
+    private func currentStatus(of number: Int) -> String? {
+        ((try? currentIssues()) ?? []).first { $0.number == number }?.status
     }
 }
