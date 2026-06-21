@@ -16,7 +16,13 @@ public struct ExecuteView: View {
 
     public var body: some View {
         Group {
-            if model.isEmpty {
+            if let message = model.worktreeMessage {
+                ContentUnavailableView {
+                    Label("Worktree missing", systemImage: "externaldrive.badge.xmark")
+                } description: {
+                    Text(message)
+                }
+            } else if model.isEmpty {
                 ContentUnavailableView {
                     Label("No Issues yet", systemImage: "point.3.connected.trianglepath.dotted")
                 } description: {

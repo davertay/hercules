@@ -54,6 +54,12 @@ public final class WorkflowContainerModel {
         directory = data.directory
         repoPath = data.repoPath
 
+        // Every Phase operates in the Workflow's git worktree — the deterministic `worktree/`
+        // subdirectory created eagerly at Workflow creation — rather than the user's raw checkout. The
+        // path is a pure convention derived from the directory, so a state-restored reopen recomputes it
+        // and reads the already-existing on-disk worktree without ever re-creating it.
+        let worktree = workflowWorktree(in: data.directory)
+
         let database = try? openWorkflowDatabase(at: data.directory)
         self.database = database
         if let database {
@@ -63,25 +69,25 @@ public final class WorkflowContainerModel {
                 $0.defaultDatabase = database
             } operation: {
                 let model = DesignModel(
-                    worktree: URL(fileURLWithPath: data.repoPath),
+                    worktree: worktree,
                     workflowID: data.id,
                     workflowDirectory: data.directory,
                     database: database
                 )
                 let prd = PRDModel(
-                    worktree: URL(fileURLWithPath: data.repoPath),
+                    worktree: worktree,
                     workflowID: data.id,
                     workflowDirectory: data.directory,
                     database: database
                 )
                 let allocate = AllocateModel(
-                    worktree: URL(fileURLWithPath: data.repoPath),
+                    worktree: worktree,
                     workflowID: data.id,
                     workflowDirectory: data.directory,
                     mcpServerCommand: Self.mcpServerCommand,
                     database: database
                 )
-                let execute = ExecuteModel(workflowID: data.id, database: database)
+                let execute = ExecuteModel(workflowID: data.id, database: database, worktree: worktree)
                 let phases = Fetch(
                     wrappedValue: [],
                     CompletedPhasesRequest(workflowID: data.id),
