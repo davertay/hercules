@@ -109,6 +109,14 @@ public final class WorkflowContainerModel {
         }
     }
 
+    /// Ends any in-flight Execute run when the window closes (or the app quits). The run is owned by this
+    /// window, so its teardown must cancel the orchestrator and tear down the in-flight Harness rather
+    /// than leave it executing in the background. `cancelRun` is `nonisolated` and a no-op when idle, so
+    /// it is safe to call from the (nonisolated) deinitializer.
+    deinit {
+        executeModel?.cancelRun()
+    }
+
     /// Whether `phase` should open its real detail view rather than a locked placeholder. The first
     /// Phase is always unlocked; every other Phase unlocks once the Phase it consumes has completed.
     public func isUnlocked(_ phase: Phase) -> Bool {
