@@ -32,8 +32,7 @@ extension WorktreeClient: DependencyKey {
         create: { request in
             let startPoint = try LiveGit.defaultBranch(in: request.repo)
             try LiveGit.run(
-                ["-C", request.repo.path, "worktree", "add", "-b", request.branch, request.worktree.path, startPoint],
-                in: request.repo
+                ["-C", request.repo.path, "worktree", "add", "-b", request.branch, request.worktree.path, startPoint]
             )
         }
     )
@@ -73,22 +72,21 @@ private enum LiveGit {
     /// regardless of any uncommitted changes in the user's primary checkout.
     static func defaultBranch(in repo: URL) throws -> String {
         if let originHead = try? capture(
-            ["-C", repo.path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-            in: repo
+            ["-C", repo.path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]
         ) {
             return originHead.replacingOccurrences(of: "origin/", with: "")
         }
-        return try capture(["-C", repo.path, "symbolic-ref", "--short", "HEAD"], in: repo)
+        return try capture(["-C", repo.path, "symbolic-ref", "--short", "HEAD"])
     }
 
     /// Runs git, throwing ``GitError`` on a non-zero exit.
-    static func run(_ arguments: [String], in repo: URL) throws {
-        _ = try capture(arguments, in: repo)
+    static func run(_ arguments: [String]) throws {
+        _ = try capture(arguments)
     }
 
     /// Runs git and returns its trimmed stdout, throwing ``GitError`` on a non-zero exit.
     @discardableResult
-    static func capture(_ arguments: [String], in repo: URL) throws -> String {
+    static func capture(_ arguments: [String]) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = arguments
