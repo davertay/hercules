@@ -36,6 +36,7 @@ struct HarnessRunner {
                 worktreePath: request.worktree.path,
                 mode: request.mode,
                 kind: request.kind,
+                issueNumber: request.issueNumber,
                 at: now
             )
         } catch {

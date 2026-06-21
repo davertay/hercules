@@ -10,6 +10,7 @@ public func recordSessionStart(
     worktreePath: String,
     mode: AgentMode,
     kind: SessionKind,
+    issueNumber: Int? = nil,
     at now: Date
 ) throws {
     try database.write { db in
@@ -20,6 +21,7 @@ public func recordSessionStart(
                 worktreePath: worktreePath,
                 mode: mode.rawValue,
                 kind: kind.rawValue,
+                issueNumber: issueNumber,
                 createdAt: now,
                 updatedAt: now
             )

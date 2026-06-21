@@ -126,6 +126,18 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         .execute(db)
     }
 
+    // The Execute Phase runs each Issue in its own behind-the-scenes write Session. Tag that Session
+    // with the Issue's `number` so a worked (especially failed) Issue's transcript is recoverable.
+    // Null for every chat-surface Session, which predates and ignores this column.
+    migrator.registerMigration("Add issueNumber to session") { db in
+        try #sql(
+            """
+            ALTER TABLE "session" ADD COLUMN "issueNumber" INTEGER
+            """
+        )
+        .execute(db)
+    }
+
     // The Allocate Phase's structured Artifact: bite-size Issues carved out of the PRD and Design
     // summary, recorded as rows here rather than as a document. `dependencies` holds a JSON array of
     // the referenced per-Workflow `number`s — a distinct field, not a join table.

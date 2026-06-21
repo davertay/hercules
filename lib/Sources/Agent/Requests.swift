@@ -14,6 +14,9 @@ public struct StartRequest: Sendable {
     public let workflowID: UUID
     /// The surface the new Session serves; persisted on the `session` row to scope its Turns (ADR 0005).
     public let kind: SessionKind
+    /// The Issue this Session works, set only for `execute`-kind runs; persisted on the `session` row
+    /// so the Issue's transcript is recoverable. `nil` for every chat surface.
+    public let issueNumber: Int?
     /// Skill prompt files rendered as one `--append-system-prompt-file` each (ADR 0004); pinned on
     /// the Session and re-passed on every resume Turn.
     public let skillFiles: [URL]
@@ -31,6 +34,7 @@ public struct StartRequest: Sendable {
         database: any DatabaseWriter,
         workflowID: UUID,
         kind: SessionKind,
+        issueNumber: Int? = nil,
         skillFiles: [URL] = [],
         addDirs: [URL] = [],
         mcpServers: [MCPServer] = []
@@ -42,6 +46,7 @@ public struct StartRequest: Sendable {
         self.database = database
         self.workflowID = workflowID
         self.kind = kind
+        self.issueNumber = issueNumber
         self.skillFiles = skillFiles
         self.addDirs = addDirs
         self.mcpServers = mcpServers

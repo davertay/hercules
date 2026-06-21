@@ -1,5 +1,8 @@
+import Agent
+import Dependencies
 import Foundation
 import IssueGraph
+import Material
 import Observation
 import SQLiteData
 import Store
@@ -24,8 +27,26 @@ public final class ExecuteModel {
     /// when nothing is selected.
     public var selectedID: Int?
 
+    @ObservationIgnored
+    @Dependency(\.agentClient) private var agentClient
+
+    @ObservationIgnored
+    @Dependency(\.date.now) private var now
+
+    @ObservationIgnored
+    private let database: any DatabaseWriter
+
+    @ObservationIgnored
+    private let workflowID: UUID
+
+    /// The bundled implement-issue Skill, injected as the per-Issue write Session's system prompt (and
+    /// its folder exposed via `--add-dir`) exactly as Allocate injects to-issues.
+    @ObservationIgnored
+    private let skill: SkillResource
+
     /// The Workflow's git worktree — the working tree every Phase operates in. Carried so the health
-    /// check can name the expected location in its error.
+    /// check can name the expected location in its error, and the cwd each per-Issue write Session runs
+    /// in.
     @ObservationIgnored
     private let worktree: URL
 
@@ -36,7 +57,10 @@ public final class ExecuteModel {
     public let worktreeMissing: Bool
 
     public init(workflowID: UUID, database: any DatabaseWriter, worktree: URL) {
+        self.workflowID = workflowID
+        self.database = database
         self.worktree = worktree
+        self.skill = loadSkill(.implementIssue)
         worktreeMissing = !FileManager.default.fileExists(atPath: worktree.path)
         _issues = Fetch(
             wrappedValue: [],
@@ -112,5 +136,38 @@ public final class ExecuteModel {
     /// toggle/clear policy.
     public func selectNode(_ number: Int) {
         selectedID = selectedID == number ? nil : number
+    }
+
+    /// Runs a single Issue end-to-end as a behind-the-scenes write agent. Marks the Issue `in_progress`,
+    /// then starts a fresh `write`-mode Session in the worktree — the implement-issue Skill injected and
+    /// its folder exposed, the Issue's spec body as the prompt, tagged with the `execute` kind and the
+    /// Issue's `number` so its transcript stays recoverable. It awaits the Turn to completion, then
+    /// writes the resulting status: `done` if the Turn finished without error, `failed` otherwise (the
+    /// Agent throws when a Turn terminates abnormally).
+    ///
+    /// This is orchestration only: no `ChatEngine` is constructed and the conversation is not presented;
+    /// the Turn is recorded through the normal transcript projection. Status is written directly via the
+    /// Store helper (no MCP), since there is no status-write tool.
+    public func runIssue(_ issue: IssueRow) async {
+        let issueNumber = issue.number
+        try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .inProgress, now: now)
+        do {
+            _ = try await agentClient.start(
+                StartRequest(
+                    prompt: issue.body,
+                    worktree: worktree,
+                    mode: .write,
+                    database: database,
+                    workflowID: workflowID,
+                    kind: .execute,
+                    issueNumber: issueNumber,
+                    skillFiles: [skill.fileUrl],
+                    addDirs: [skill.folderUrl]
+                )
+            )
+            try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .done, now: now)
+        } catch {
+            try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .failed, now: now)
+        }
     }
 }
