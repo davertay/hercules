@@ -163,4 +163,14 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         try #sql(#"CREATE INDEX "index_issue_on_workflowID" ON "issue"("workflowID")"#)
             .execute(db)
     }
+
+    // Captures why an Execute run of the Issue failed; null unless `status` is `failed`.
+    migrator.registerMigration("Add failureReason to issue") { db in
+        try #sql(
+            """
+            ALTER TABLE "issue" ADD COLUMN "failureReason" TEXT
+            """
+        )
+        .execute(db)
+    }
 }

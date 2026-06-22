@@ -29,24 +29,35 @@ public struct ExecuteView: View {
             } else if let message = model.validationMessage {
                 InvalidGraphView(message: message, issues: model.issues)
             } else {
-                HSplitView {
-                    DAGGraphView(
-                        layoutNodes: model.layoutNodes,
-                        nodesByNumber: model.nodesByNumber,
-                        metrics: .default,
-                        palette: .default,
-                        selectedID: model.selectedID,
-                        onSelectNode: { model.selectNode($0) }
-                    )
-                    .frame(maxHeight: .infinity)
-                    .layoutPriority(1)
-                    InspectorPane(issue: model.selectedIssue)
+                VStack(spacing: 0) {
+                    if let failure = model.haltingFailure, !model.isRunning {
+                        HaltBanner(issue: failure) {
+                            model.selectNode(failure.number)
+                        } onRetry: {
+                            model.retry(failure.number)
+                        }
+                    }
+                    HSplitView {
+                        DAGGraphView(
+                            layoutNodes: model.layoutNodes,
+                            nodesByNumber: model.nodesByNumber,
+                            metrics: .default,
+                            palette: .default,
+                            selectedID: model.selectedID,
+                            onSelectNode: { model.selectNode($0) }
+                        )
+                        .frame(maxHeight: .infinity)
+                        .layoutPriority(1)
+                        InspectorPane(issue: model.selectedIssue) {
+                            model.retry($0)
+                        }
                         .frame(minWidth: 260, idealWidth: 320, maxWidth: 480, maxHeight: .infinity)
+                    }
+                    // `HSplitView` proposes only its panes' ideal height; without this the row collapses to
+                    // content height and the parent centres it (the inspector's detail ScrollView is the
+                    // only thing that stretched it before, so the graph jumped around on selection). Fill.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                // `HSplitView` proposes only its panes' ideal height; without this the row collapses to
-                // content height and the parent centres it (the inspector's detail ScrollView is the only
-                // thing that stretched it before, so the graph jumped around on selection). Fill instead.
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(minWidth: 700, minHeight: 400)
@@ -76,6 +87,9 @@ public struct ExecuteView: View {
 
 private struct InspectorPane: View {
     let issue: IssueRow?
+    let onRetry: (Int) -> Void
+
+    private var isFailed: Bool { issue?.status == IssueRunStatus.failed.rawValue }
 
     var body: some View {
         if let issue {
@@ -95,6 +109,11 @@ private struct InspectorPane: View {
                             Text(issue.dependencies.map { "#\($0)" }.joined(separator: ", "))
                         }
                         .font(.callout)
+                    }
+                    if isFailed {
+                        FailureCallout(reason: issue.failureReason) {
+                            onRetry(issue.number)
+                        }
                     }
                     if !issue.body.isEmpty {
                         Divider()
@@ -126,6 +145,66 @@ private struct InspectorPane: View {
             return Text(attributed)
         }
         return Text(text)
+    }
+}
+
+/// The failure reason for a `failed` Issue plus a Retry action, shown inline in the inspector.
+private struct FailureCallout: View {
+    let reason: String?
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Run failed", systemImage: "exclamationmark.triangle.fill")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.red)
+            Text(reason ?? "The run failed for an unknown reason.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                onRetry()
+            } label: {
+                Label("Retry", systemImage: "arrow.clockwise")
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// A halt banner above the graph when a run stopped on a failed Issue: names the Issue, lets the user
+/// jump to it, and offers a one-tap retry that resumes the run from there.
+private struct HaltBanner: View {
+    let issue: IssueRow
+    let onSelect: () -> Void
+    let onRetry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.octagon.fill")
+                .foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Run halted at Issue #\(issue.number) — \(issue.title)")
+                    .font(.callout.weight(.semibold))
+                if let reason = issue.failureReason {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 8)
+            Button("Show", action: onSelect)
+            Button("Retry", action: onRetry)
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.red.opacity(0.12))
     }
 }
 

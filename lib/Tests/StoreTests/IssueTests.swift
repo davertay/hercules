@@ -145,6 +145,49 @@ struct IssueTests {
         #expect(byID[UUID(12)]?.updatedAt == Self.fixedDate)
     }
 
+    @Test func setIssueStatusWritesFailureReasonAndClearsItOnRecovery() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 1)
+
+        try database.setIssueStatus(
+            workflowID: workflowID, number: 1, to: .failed,
+            failureReason: "boom", now: Self.fixedDate
+        )
+        #expect(try database.read { db in try IssueRow.fetchOne(db) }?.failureReason == "boom")
+
+        // A later non-failed transition passes nil, clearing the stale reason.
+        try database.setIssueStatus(workflowID: workflowID, number: 1, to: .done, now: Self.fixedDate)
+        #expect(try database.read { db in try IssueRow.fetchOne(db) }?.failureReason == nil)
+    }
+
+    // MARK: - resetIssue
+
+    @Test func resetIssueReturnsFailedIssueToNewAndClearsReasonOnlyForFailed() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 1, status: "failed")
+        try Self.seedIssue(database, id: UUID(11), workflowID: workflowID, number: 2, status: "done")
+        try database.setIssueStatus(
+            workflowID: workflowID, number: 1, to: .failed, failureReason: "boom", now: Self.fixedDate
+        )
+
+        try database.resetIssue(
+            workflowID: workflowID, number: 1, now: Self.fixedDate.addingTimeInterval(60)
+        )
+        // A done Issue is left alone — reset only rescues failures.
+        try database.resetIssue(workflowID: workflowID, number: 2, now: Self.fixedDate)
+
+        let rows = try database.read { db in try IssueRow.fetchAll(db) }
+        let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+        #expect(byID[UUID(10)]?.status == "new")
+        #expect(byID[UUID(10)]?.failureReason == nil)
+        #expect(byID[UUID(10)]?.updatedAt == Self.fixedDate.addingTimeInterval(60))
+        #expect(byID[UUID(11)]?.status == "done")
+    }
+
     // MARK: - reconcileStaleInProgressIssues
 
     @Test func reconcileDemotesOnlyInProgressIssuesToFailed() throws {

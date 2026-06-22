@@ -119,6 +119,13 @@ public final class ExecuteModel {
         return issues.first { $0.number == selectedID }
     }
 
+    /// The lowest-numbered `failed` Issue — the one that halted the last run. Drives the halt banner.
+    public var haltingFailure: IssueRow? {
+        issues
+            .filter { $0.status == IssueRunStatus.failed.rawValue }
+            .min { $0.number < $1.number }
+    }
+
     /// Tapping a node's own card again clears the selection.
     public func selectNode(_ number: Int) {
         selectedID = selectedID == number ? nil : number
@@ -171,8 +178,24 @@ public final class ExecuteModel {
             )
             try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .done, now: now)
         } catch {
-            try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .failed, now: now)
+            // The agent can throw before any `turn` row exists (e.g. a missing harness binary), so record
+            // the reason on the Issue itself rather than relying on the transcript.
+            try? database.setIssueStatus(
+                workflowID: workflowID,
+                number: issueNumber,
+                to: .failed,
+                failureReason: error.localizedDescription,
+                now: now
+            )
         }
+    }
+
+    /// Resets a `failed` Issue to `new` and immediately resumes the run from it. The run loop already
+    /// starts at the lowest ready `new` Issue, so this both retries the failure and continues downstream.
+    public func retry(_ number: Int) {
+        guard !isRunning else { return }
+        try? database.resetIssue(workflowID: workflowID, number: number, now: now)
+        start()
     }
 
     /// Runs every ready Issue sequentially in dependency order, halting on the first failure. Reconciles

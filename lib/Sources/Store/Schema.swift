@@ -148,6 +148,9 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
     @Column(as: [Int].JSONRepresentation.self)
     public var dependencies: [Int]
     public var status: String
+    /// Why the last Execute run of this Issue failed; `nil` unless `status` is `failed`. Captured even
+    /// when the agent throws before any `turn` row exists (e.g. the harness binary can't be found).
+    public var failureReason: String?
     public var createdAt: Date
     public var updatedAt: Date
     public var isDeleted: Bool
@@ -160,6 +163,7 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
         body: String = "",
         dependencies: [Int] = [],
         status: String = "new",
+        failureReason: String? = nil,
         createdAt: Date,
         updatedAt: Date,
         isDeleted: Bool = false
@@ -171,6 +175,7 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
         self.body = body
         self.dependencies = dependencies
         self.status = status
+        self.failureReason = failureReason
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDeleted = isDeleted

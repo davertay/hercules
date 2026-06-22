@@ -19,10 +19,13 @@ extension DatabaseWriter {
         }
     }
 
+    /// Writes the run status, and the `failureReason` alongside it: the caller passes the reason when
+    /// moving to `failed`, and `nil` for every other transition clears any stale reason.
     public func setIssueStatus(
         workflowID: UUID,
         number: Int,
         to status: IssueRunStatus,
+        failureReason: String? = nil,
         now: Date
     ) throws {
         try write { db in
@@ -32,6 +35,25 @@ extension DatabaseWriter {
                 .where { !$0.isDeleted }
                 .update {
                     $0.status = status.rawValue
+                    $0.failureReason = failureReason
+                    $0.updatedAt = now
+                }
+                .execute(db)
+        }
+    }
+
+    /// Resets a `failed` Issue back to `new` and clears its failure reason so the run loop will pick it
+    /// up again. Scoped to `failed` so it can't disturb a `done` or `in_progress` Issue.
+    public func resetIssue(workflowID: UUID, number: Int, now: Date) throws {
+        try write { db in
+            try IssueRow
+                .where { $0.workflowID.eq(workflowID) }
+                .where { $0.number.eq(number) }
+                .where { $0.status.eq(IssueRunStatus.failed.rawValue) }
+                .where { !$0.isDeleted }
+                .update {
+                    $0.status = #bind("new")
+                    $0.failureReason = #bind(String?.none)
                     $0.updatedAt = now
                 }
                 .execute(db)
@@ -48,6 +70,7 @@ extension DatabaseWriter {
                 .where { !$0.isDeleted }
                 .update {
                     $0.status = IssueRunStatus.failed.rawValue
+                    $0.failureReason = #bind("Interrupted — the run was stopped or the app quit while this Issue was in progress.")
                     $0.updatedAt = now
                 }
                 .execute(db)
