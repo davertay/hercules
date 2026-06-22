@@ -28,26 +28,30 @@ extension DependencyValues {
 }
 
 final class LiveAgentClient: Sendable {
-    let binaryURL: URL
+    /// A fixed binary, used by the IOTests seam. When `nil`, the binary is resolved fresh from the
+    /// current `AppConfig` at the top of each `start`/`send`.
+    private let binaryOverride: URL?
     private let busySessions = OSAllocatedUnfairLock(initialState: Set<Session.ID>())
 
     init(binaryURL: URL? = nil) {
-        self.binaryURL = binaryURL ?? Self.discoverBinary()
+        self.binaryOverride = binaryURL
     }
 
-    private static func discoverBinary() -> URL {
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/local/bin:/usr/bin:/bin"
-        for dir in path.split(separator: ":") {
-            let candidate = URL(fileURLWithPath: String(dir)).appendingPathComponent("claude")
-            if FileManager.default.isExecutableFile(atPath: candidate.path) {
-                return candidate
-            }
-        }
-        // HACK: use a config settings screen to have the user input a path
-        return URL(fileURLWithPath: "/Users/admin/.local/bin/claude")
+    /// Resolves the harness binary for a run. Reads a fresh `AppConfig` each call so a Settings
+    /// change applies on the next run without restarting the app (per ADR 0001's fresh-Harness-per-Turn
+    /// boundary). The test seam's fixed binary short-circuits resolution.
+    private func resolveBinary() -> URL {
+        if let binaryOverride { return binaryOverride }
+        @Dependency(\.appConfigClient) var appConfigClient
+        let config = appConfigClient.load()
+        return HarnessBinaryResolver.resolve(
+            configuredPath: config.agentExecutablePath,
+            lookup: { HarnessBinaryResolver.pathLookup() }
+        )
     }
 
     func send(_ request: SendRequest) async throws -> Session {
+        let binaryURL = resolveBinary()
         guard FileManager.default.isExecutableFile(atPath: binaryURL.path) else {
             throw AgentError.harnessNotFound(triedPath: binaryURL)
         }
@@ -69,6 +73,7 @@ final class LiveAgentClient: Sendable {
     }
 
     func start(_ request: StartRequest) async throws -> Session {
+        let binaryURL = resolveBinary()
         guard FileManager.default.isExecutableFile(atPath: binaryURL.path) else {
             throw AgentError.harnessNotFound(triedPath: binaryURL)
         }
