@@ -10,6 +10,8 @@ struct HarnessRunner {
     @Dependency(\.uuid) var uuid
     @Dependency(\.harnessTeardownGrace) var teardownGrace
     let binaryURL: URL
+    /// Extra CLI arguments from the fresh `AppConfig`, appended after every generated argument.
+    var extraArguments: [ExtraArgument] = []
 
     func run(request: SendRequest) async throws {
         let session = request.session
@@ -106,6 +108,7 @@ struct HarnessRunner {
             addDirs: addDirs,
             mcpServers: mcpServers,
             sessionDataDirectory: sessionDataDirectory,
+            extraArguments: extraArguments,
             sessionId: sessionId
         )
 

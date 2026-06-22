@@ -17,6 +17,7 @@ public enum Harness {
         addDirs: [URL] = [],
         mcpServers: [MCPServer] = [],
         sessionDataDirectory: URL? = nil,
+        extraArguments: [ExtraArgument] = [],
         sessionId: Session.ID
     ) throws -> [String] {
         var args: [String] = [
@@ -65,6 +66,18 @@ public enum Harness {
 
         for file in skillFiles {
             args += ["--append-system-prompt-file", file.path]
+        }
+
+        // The user's configured extras render last, after every Hercules-generated argument, so they
+        // can override or extend whatever we produce.
+        for argument in extraArguments {
+            let flag = argument.flag.trimmingCharacters(in: .whitespacesAndNewlines)
+            if flag.isEmpty { continue }
+            if let value = argument.value, !value.isEmpty {
+                args += [flag, value]
+            } else {
+                args.append(flag)
+            }
         }
 
         return args

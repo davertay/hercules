@@ -37,21 +37,23 @@ final class LiveAgentClient: Sendable {
         self.binaryOverride = binaryURL
     }
 
-    /// Resolves the harness binary for a run. Reads a fresh `AppConfig` each call so a Settings
-    /// change applies on the next run without restarting the app (per ADR 0001's fresh-Harness-per-Turn
-    /// boundary). The test seam's fixed binary short-circuits resolution.
-    private func resolveBinary() -> URL {
-        if let binaryOverride { return binaryOverride }
+    /// Resolves the harness binary and the user's extra CLI arguments for a run. Reads a fresh
+    /// `AppConfig` each call so a Settings change applies on the next run without restarting the app
+    /// (per ADR 0001's fresh-Harness-per-Turn boundary). The test seam's fixed binary short-circuits
+    /// resolution and carries no extra arguments.
+    private func resolveHarness() -> (binary: URL, extraArguments: [ExtraArgument]) {
+        if let binaryOverride { return (binaryOverride, []) }
         @Dependency(\.appConfigClient) var appConfigClient
         let config = appConfigClient.load()
-        return HarnessBinaryResolver.resolve(
+        let binary = HarnessBinaryResolver.resolve(
             configuredPath: config.agentExecutablePath,
             lookup: { HarnessBinaryResolver.pathLookup() }
         )
+        return (binary, config.extraArguments)
     }
 
     func send(_ request: SendRequest) async throws -> Session {
-        let binaryURL = resolveBinary()
+        let (binaryURL, extraArguments) = resolveHarness()
         guard FileManager.default.isExecutableFile(atPath: binaryURL.path) else {
             throw AgentError.harnessNotFound(triedPath: binaryURL)
         }
@@ -66,14 +68,14 @@ final class LiveAgentClient: Sendable {
         if alreadyBusy { throw AgentError.sessionBusy(id: session.id) }
         defer { _ = busySessions.withLock { $0.remove(session.id) } }
 
-        let runner = HarnessRunner(binaryURL: binaryURL)
+        let runner = HarnessRunner(binaryURL: binaryURL, extraArguments: extraArguments)
         try await runner.run(request: request)
 
         return session
     }
 
     func start(_ request: StartRequest) async throws -> Session {
-        let binaryURL = resolveBinary()
+        let (binaryURL, extraArguments) = resolveHarness()
         guard FileManager.default.isExecutableFile(atPath: binaryURL.path) else {
             throw AgentError.harnessNotFound(triedPath: binaryURL)
         }
@@ -104,7 +106,7 @@ final class LiveAgentClient: Sendable {
         if alreadyBusy { throw AgentError.sessionBusy(id: sessionId) }
         defer { _ = busySessions.withLock { $0.remove(sessionId) } }
 
-        let runner = HarnessRunner(binaryURL: binaryURL)
+        let runner = HarnessRunner(binaryURL: binaryURL, extraArguments: extraArguments)
         try await runner.run(request: request, sessionId: sessionId)
 
         return session
