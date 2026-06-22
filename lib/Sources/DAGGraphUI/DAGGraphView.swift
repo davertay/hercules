@@ -51,44 +51,53 @@ public struct DAGGraphView: View {
     }
 
     public var body: some View {
+        // Anchor under-sized content to the top. By default macOS's `ScrollView` rests content smaller
+        // than the viewport in the *centre* while hit-testing keeps the top-aligned layout frames — so
+        // the graph both renders mis-positioned and mis-routes taps to the wrong node. Anchoring the rest
+        // position to `.top` realigns the rendered graph with its hit regions.
         ScrollView([.horizontal, .vertical]) {
-            VStack(spacing: metrics.rowGap) {
-                ForEach(rows) { row in
-                    HStack(alignment: .top, spacing: metrics.columnGap) {
-                        ForEach(row.nodes) { node in
-                            NodeView(
-                                node: node,
-                                metrics: metrics,
-                                palette: palette,
-                                isSelected: node.number == selectedID
-                            )
-                            .contentShape(
-                                RoundedRectangle(cornerRadius: metrics.nodeCornerRadius)
-                            )
-                            .onTapGesture {
-                                onSelectNode?(node.number)
-                            }
-                            .anchorPreference(
-                                key: NodeBoundsKey.self,
-                                value: .bounds
-                            ) { anchor in
-                                [node.number: anchor]
-                            }
+            graphContent
+        }
+        .defaultScrollAnchor(.top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var graphContent: some View {
+        VStack(spacing: metrics.rowGap) {
+            ForEach(rows) { row in
+                HStack(alignment: .top, spacing: metrics.columnGap) {
+                    ForEach(row.nodes) { node in
+                        NodeView(
+                            node: node,
+                            metrics: metrics,
+                            palette: palette,
+                            isSelected: node.number == selectedID
+                        )
+                        .contentShape(
+                            RoundedRectangle(cornerRadius: metrics.nodeCornerRadius)
+                        )
+                        .onTapGesture {
+                            onSelectNode?(node.number)
+                        }
+                        .anchorPreference(
+                            key: NodeBoundsKey.self,
+                            value: .bounds
+                        ) { anchor in
+                            [node.number: anchor]
                         }
                     }
                 }
             }
-            .padding(metrics.outerPadding)
-            .backgroundPreferenceValue(NodeBoundsKey.self) { anchors in
-                EdgesLayer(
-                    edges: edges,
-                    anchors: anchors,
-                    metrics: metrics,
-                    palette: palette
-                )
-            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(metrics.outerPadding)
+        .backgroundPreferenceValue(NodeBoundsKey.self) { anchors in
+            EdgesLayer(
+                edges: edges,
+                anchors: anchors,
+                metrics: metrics,
+                palette: palette
+            )
+        }
     }
 }
 

@@ -70,6 +70,14 @@ public final class ExecuteModel {
 
     public var isEmpty: Bool { issues.isEmpty }
 
+    /// Re-reads the Issue rows from disk. The Allocate Phase writes Issues out-of-process through the
+    /// create-issue MCP server (ADR 0006), and cross-process commits don't fire this `@Fetch`'s
+    /// observation — so the view forces a reload when it appears rather than trusting the snapshot taken
+    /// when the window opened.
+    public func refresh() async {
+        try? await $issues.load()
+    }
+
     public var nodes: [DAGNode] { dagNodes(from: issues) }
 
     /// A dependency cycle or reference to an unknown Issue number; `nil` when the graph is a valid DAG.

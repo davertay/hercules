@@ -38,14 +38,20 @@ public struct ExecuteView: View {
                         selectedID: model.selectedID,
                         onSelectNode: { model.selectNode($0) }
                     )
+                    .frame(maxHeight: .infinity)
                     .layoutPriority(1)
                     InspectorPane(issue: model.selectedIssue)
-                        .frame(minWidth: 260, idealWidth: 320, maxWidth: 480)
+                        .frame(minWidth: 260, idealWidth: 320, maxWidth: 480, maxHeight: .infinity)
                 }
+                // `HSplitView` proposes only its panes' ideal height; without this the row collapses to
+                // content height and the parent centres it (the inspector's detail ScrollView is the only
+                // thing that stretched it before, so the graph jumped around on selection). Fill instead.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(minWidth: 700, minHeight: 400)
         .navigationTitle("Execute")
+        .task { await model.refresh() }
         .toolbar {
             ToolbarItemGroup {
                 Button {
