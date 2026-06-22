@@ -43,6 +43,68 @@ struct TerminationClassifierTests {
         #expect(recordedDuration == 42)
     }
 
+    @Test func nonZeroExitPrefersErrorResultTextOverStderr() throws {
+        do {
+            try TerminationClassifier().classify(
+                status: .exited(1),
+                sessionId: sessionId,
+                errorResultText: "You've hit your session limit · resets 12:40am",
+                stderrTail: "",
+                durationMs: 0,
+                recordFailure: { _ in }
+            )
+            Issue.record("Expected throw")
+        } catch let err as AgentError {
+            guard case .harnessFailed(_, let tail) = err else {
+                Issue.record("Expected .harnessFailed, got \(err)")
+                return
+            }
+            #expect(tail == "You've hit your session limit · resets 12:40am")
+        }
+    }
+
+    @Test func nonZeroExitFallsBackToStderrWhenErrorResultEmpty() throws {
+        do {
+            try TerminationClassifier().classify(
+                status: .exited(1),
+                sessionId: sessionId,
+                errorResultText: "",
+                stderrTail: "boom",
+                durationMs: 0,
+                recordFailure: { _ in }
+            )
+            Issue.record("Expected throw")
+        } catch let err as AgentError {
+            guard case .harnessFailed(_, let tail) = err else {
+                Issue.record("Expected .harnessFailed, got \(err)")
+                return
+            }
+            #expect(tail == "boom")
+        }
+    }
+
+    @Test func malformedLineWinsOverErrorResultText() throws {
+        struct Dummy: Error {}
+        do {
+            try TerminationClassifier().classify(
+                status: .exited(1),
+                sessionId: sessionId,
+                lastMalformedLine: (raw: "not json", error: Dummy()),
+                errorResultText: "some result text",
+                stderrTail: "",
+                durationMs: 0,
+                recordFailure: { _ in }
+            )
+            Issue.record("Expected throw")
+        } catch let err as AgentError {
+            guard case .malformedStream(let line, _) = err else {
+                Issue.record("Expected .malformedStream, got \(err)")
+                return
+            }
+            #expect(line == "not json")
+        }
+    }
+
     @Test func nonZeroExitWithMalformedLineThrowsMalformedStream() throws {
         struct Dummy: Error {}
         do {

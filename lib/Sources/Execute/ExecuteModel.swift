@@ -15,6 +15,12 @@ public final class ExecuteModel {
     @ObservationIgnored
     @Fetch var issues: [IssueRow] = []
 
+    /// Per-Issue failure reasons recovered from the transcript (the latest errored `turn.finalAnswer`),
+    /// observed so a relaunched window shows a failed Issue's reason even though the live in-process
+    /// `failureReason` write didn't outlast the previous process.
+    @ObservationIgnored
+    @Fetch var transcriptFailureReasons: [Int: String] = [:]
+
     public var selectedID: Int?
 
     /// The DAG recolors off the observed Issue rows, not this flag.
@@ -61,6 +67,11 @@ public final class ExecuteModel {
             WorkflowIssuesRequest(workflowID: workflowID),
             animation: .default
         )
+        _transcriptFailureReasons = Fetch(
+            wrappedValue: [:],
+            IssueFailureReasonsRequest(workflowID: workflowID),
+            animation: .default
+        )
     }
 
     public var worktreeMessage: String? {
@@ -76,6 +87,14 @@ public final class ExecuteModel {
     /// when the window opened.
     public func refresh() async {
         try? await $issues.load()
+        try? await $transcriptFailureReasons.load()
+    }
+
+    /// The reason to show for a `failed` Issue: the Harness's own words from the transcript when present,
+    /// else the reason stored on the Issue row (which covers failures thrown before any Turn existed,
+    /// e.g. a missing harness binary).
+    public func failureReason(for issue: IssueRow) -> String? {
+        transcriptFailureReasons[issue.number] ?? issue.failureReason
     }
 
     public var nodes: [DAGNode] { dagNodes(from: issues) }

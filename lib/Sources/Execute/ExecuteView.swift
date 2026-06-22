@@ -31,7 +31,7 @@ public struct ExecuteView: View {
             } else {
                 VStack(spacing: 0) {
                     if let failure = model.haltingFailure, !model.isRunning {
-                        HaltBanner(issue: failure) {
+                        HaltBanner(issue: failure, reason: model.failureReason(for: failure)) {
                             model.selectNode(failure.number)
                         } onRetry: {
                             model.retry(failure.number)
@@ -48,7 +48,10 @@ public struct ExecuteView: View {
                         )
                         .frame(maxHeight: .infinity)
                         .layoutPriority(1)
-                        InspectorPane(issue: model.selectedIssue) {
+                        InspectorPane(
+                            issue: model.selectedIssue,
+                            failureReason: model.selectedIssue.flatMap { model.failureReason(for: $0) }
+                        ) {
                             model.retry($0)
                         }
                         .frame(minWidth: 260, idealWidth: 320, maxWidth: 480, maxHeight: .infinity)
@@ -87,6 +90,7 @@ public struct ExecuteView: View {
 
 private struct InspectorPane: View {
     let issue: IssueRow?
+    let failureReason: String?
     let onRetry: (Int) -> Void
 
     private var isFailed: Bool { issue?.status == IssueRunStatus.failed.rawValue }
@@ -111,7 +115,7 @@ private struct InspectorPane: View {
                         .font(.callout)
                     }
                     if isFailed {
-                        FailureCallout(reason: issue.failureReason) {
+                        FailureCallout(reason: failureReason) {
                             onRetry(issue.number)
                         }
                     }
@@ -179,6 +183,7 @@ private struct FailureCallout: View {
 /// jump to it, and offers a one-tap retry that resumes the run from there.
 private struct HaltBanner: View {
     let issue: IssueRow
+    let reason: String?
     let onSelect: () -> Void
     let onRetry: () -> Void
 
@@ -189,7 +194,7 @@ private struct HaltBanner: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Run halted at Issue #\(issue.number) — \(issue.title)")
                     .font(.callout.weight(.semibold))
-                if let reason = issue.failureReason {
+                if let reason {
                     Text(reason)
                         .font(.caption)
                         .foregroundStyle(.secondary)

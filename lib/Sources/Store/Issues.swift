@@ -78,6 +78,48 @@ extension DatabaseWriter {
     }
 }
 
+/// Maps each Issue number to the Harness's own failure reason, recovered from the most recent errored
+/// Execute-run `turn.finalAnswer`. Unlike `issue.failureReason` (written in-process when the run throws),
+/// this is projected live as the Turn streams — so it survives a crash/quit and shows after a relaunch,
+/// and it carries the Harness's clean wording rather than the wrapped `harnessFailed` message.
+public struct IssueFailureReasonsRequest: FetchKeyRequest {
+    public var workflowID: UUID
+
+    public init(workflowID: UUID = UUID()) {
+        self.workflowID = workflowID
+    }
+
+    public func fetch(_ db: Database) throws -> [Int: String] {
+        // Execute-run Sessions carry the `issueNumber` tag (ADR 0005); map each back to its Issue.
+        let sessions = try SessionRow
+            .where { $0.workflowID.eq(workflowID) }
+            .where { $0.kind.eq(SessionKind.execute.rawValue) }
+            .where { !$0.isDeleted }
+            .fetchAll(db)
+        var issueBySession: [UUID: Int] = [:]
+        for session in sessions {
+            if let number = session.issueNumber { issueBySession[session.id] = number }
+        }
+        guard !issueBySession.isEmpty else { return [:] }
+
+        // Newest first, so the first errored Turn seen per Issue is its latest run's. An interrupt records
+        // an errored Turn with no `finalAnswer`; honoring only the latest keeps a stale older reason from
+        // masking it — the Issue's own `failureReason` (the interrupt message) shows instead.
+        let erroredTurns = try TurnRow
+            .where { $0.isError }
+            .order { $0.createdAt.desc() }
+            .fetchAll(db)
+        var reasons: [Int: String] = [:]
+        var seen: Set<Int> = []
+        for turn in erroredTurns {
+            guard let number = issueBySession[turn.sessionID], !seen.contains(number) else { continue }
+            seen.insert(number)
+            if let answer = turn.finalAnswer, !answer.isEmpty { reasons[number] = answer }
+        }
+        return reasons
+    }
+}
+
 /// A Workflow's non-deleted Issues ordered by per-Workflow `number`.
 public struct WorkflowIssuesRequest: FetchKeyRequest {
     public var workflowID: UUID

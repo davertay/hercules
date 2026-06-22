@@ -49,6 +49,11 @@ public final class StreamProjector {
     /// own interrupt-`is_error` result is recorded as a clean stop.
     private var interruptedForQuestion = false
 
+    /// The text of the most recent `is_error` `result`. The Harness writes its failure reason here (on
+    /// stdout) and then exits non-zero with an empty stderr, so this is the only place that reason lives
+    /// — the `TerminationClassifier` reads it to give `harnessFailed` a meaningful detail.
+    public private(set) var lastErrorResult: String?
+
     public init(database: any DatabaseWriter, turnID: UUID) {
         @Dependency(\.uuid) var uuid
         @Dependency(\.date) var date
@@ -222,6 +227,7 @@ public final class StreamProjector {
         let now = date.now
         // An interrupt-to-await-a-question reads back as an errored result, but it's a clean pause.
         let isError = isError && !interruptedForQuestion
+        if isError { lastErrorResult = finalAnswer }
         withErrorReporting {
             try database.write { db in
                 try TurnRow
