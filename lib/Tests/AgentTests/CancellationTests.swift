@@ -34,8 +34,7 @@ struct CancellationTests {
             kind: .design
         )
 
-        // slow.sh exits on SIGTERM, so the teardown sequence reaps it well within
-        // the grace period.
+        // slow.sh exits on SIGTERM, so teardown reaps it within the grace period.
         let task = Task {
             try await withDependencies {
                 $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)
@@ -75,10 +74,8 @@ struct CancellationTests {
             kind: .design
         )
 
-        // ignore-sigterm.sh traps SIGTERM, so the grace period elapses and the
-        // teardown escalates to SIGKILL. Its orphaned `sleep` (which inherits the
-        // stdout/stderr pipes) must also be reaped, otherwise the drain can't see
-        // EOF and the turn hangs.
+        // ignore-sigterm.sh traps SIGTERM, so teardown escalates to SIGKILL. Its orphaned `sleep`
+        // (which inherits the pipes) must also be reaped, or the drain never sees EOF and hangs.
         let task = Task {
             try await withDependencies {
                 $0.date.now = Date(timeIntervalSinceReferenceDate: 1234567890)

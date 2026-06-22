@@ -1,9 +1,8 @@
 import Foundation
 import SQLiteData
 
-/// Creates or opens the SQLite database for a Workflow living at `directory`, applying the
-/// schema idempotently. Re-opening an existing Workflow database is a no-op for already-applied
-/// migrations, so this is safe to call on every launch.
+/// Creates or opens a Workflow's SQLite database, applying migrations idempotently — safe on every
+/// launch.
 public func openWorkflowDatabase(at directory: URL) throws -> any DatabaseWriter {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let path = directory.appendingPathComponent("workflow.sqlite").path
@@ -114,9 +113,7 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         .execute(db)
     }
 
-    // ADR 0005: tag each Session with the surface it serves so multiple Sessions can share one
-    // Workflow database without their Turns bleeding together. Pre-existing rows predate the split
-    // and could only have been Design's Session, so they default to `design`.
+    // ADR 0005. Pre-existing rows predate the split and could only have been Design, so default there.
     migrator.registerMigration("Add kind to session") { db in
         try #sql(
             """
@@ -126,9 +123,8 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         .execute(db)
     }
 
-    // The Execute Phase runs each Issue in its own behind-the-scenes write Session. Tag that Session
-    // with the Issue's `number` so a worked (especially failed) Issue's transcript is recoverable.
-    // Null for every chat-surface Session, which predates and ignores this column.
+    // Tags an Execute write Session with the Issue's `number` so its transcript is recoverable; null
+    // for chat-surface Sessions.
     migrator.registerMigration("Add issueNumber to session") { db in
         try #sql(
             """
@@ -138,9 +134,7 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         .execute(db)
     }
 
-    // The Allocate Phase's structured Artifact: bite-size Issues carved out of the PRD and Design
-    // summary, recorded as rows here rather than as a document. `dependencies` holds a JSON array of
-    // the referenced per-Workflow `number`s — a distinct field, not a join table.
+    // `dependencies` holds a JSON array of referenced per-Workflow `number`s — a field, not a join table.
     migrator.registerMigration("Create issue table") { db in
         try #sql(
             """

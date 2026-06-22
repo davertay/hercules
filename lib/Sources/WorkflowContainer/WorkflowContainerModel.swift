@@ -19,33 +19,21 @@ public final class WorkflowContainerModel {
     @ObservationIgnored
     let database: (any DatabaseWriter)?
 
-    /// The Design Phase's chat, scoped to observe this Workflow's database. `nil` only if the Store
-    /// could not be opened.
+    /// Each Phase model is `nil` only if the Store could not be opened.
     @ObservationIgnored
     public let designModel: DesignModel?
 
-    /// The PRD Phase's directed one-shot surface, constructed eagerly alongside Design and scoped to
-    /// the same Workflow database with the PRD Session kind. `nil` only if the Store could not be
-    /// opened.
     @ObservationIgnored
     public let prdModel: PRDModel?
 
-    /// The Allocate Phase's hybrid surface, constructed eagerly alongside Design and PRD and scoped to
-    /// the same Workflow database with the Allocate Session kind. Its create-issue MCP server is the
-    /// app binary re-executed, so the command is `Bundle.main.executableURL`. `nil` only if the Store
-    /// could not be opened.
     @ObservationIgnored
     public let allocateModel: AllocateModel?
 
-    /// The Execute Phase's DAG visualization, constructed eagerly alongside the other Phase models and
-    /// scoped to the same Workflow database with the same observation seam. `nil` only if the Store
-    /// could not be opened.
     @ObservationIgnored
     public let executeModel: ExecuteModel?
 
-    /// Live view of this Workflow's completed `phase` rows, used to gate the sidebar. A Phase is
-    /// unlocked once the Phase before it appears here, so completing Design unlocks PRD reactively —
-    /// its `phase` row flips to complete and this observation re-fires without any manual refresh.
+    /// Gates the sidebar: a Phase unlocks once the Phase before it appears here, so completing one
+    /// re-fires this observation and unlocks the next without any manual refresh.
     @ObservationIgnored
     @Fetch var completedPhases: [PhaseRow] = []
 
@@ -54,17 +42,14 @@ public final class WorkflowContainerModel {
         directory = data.directory
         repoPath = data.repoPath
 
-        // Every Phase operates in the Workflow's git worktree — the deterministic `worktree/`
-        // subdirectory created eagerly at Workflow creation — rather than the user's raw checkout. The
-        // path is a pure convention derived from the directory, so a state-restored reopen recomputes it
-        // and reads the already-existing on-disk worktree without ever re-creating it.
+        // The worktree path is a pure convention derived from the directory, so a state-restored reopen
+        // recomputes it and reads the already-existing on-disk worktree without re-creating it.
         let worktree = workflowWorktree(in: data.directory)
 
         let database = try? openWorkflowDatabase(at: data.directory)
         self.database = database
         if let database {
-            // Scope `defaultDatabase` so the model's fetches observe this Workflow's Store rather
-            // than the app-wide default; both fetches capture it for the window's lifetime.
+            // Scope `defaultDatabase` so the models' fetches observe this Workflow's Store.
             let (model, prd, allocate, execute, phases): (DesignModel, PRDModel, AllocateModel, ExecuteModel, Fetch<[PhaseRow]>) = withDependencies {
                 $0.defaultDatabase = database
             } operation: {
@@ -109,16 +94,13 @@ public final class WorkflowContainerModel {
         }
     }
 
-    /// Ends any in-flight Execute run when the window closes (or the app quits). The run is owned by this
-    /// window, so its teardown must cancel the orchestrator and tear down the in-flight Harness rather
-    /// than leave it executing in the background. `cancelRun` is `nonisolated` and a no-op when idle, so
-    /// it is safe to call from the (nonisolated) deinitializer.
+    /// Ends any in-flight Execute run when the window closes. `cancelRun` is `nonisolated` and a no-op
+    /// when idle, so it's safe from the deinitializer.
     deinit {
         executeModel?.cancelRun()
     }
 
-    /// Whether `phase` should open its real detail view rather than a locked placeholder. The first
-    /// Phase is always unlocked; every other Phase unlocks once the Phase it consumes has completed.
+    /// The first Phase is always unlocked; every other unlocks once the Phase it consumes has completed.
     public func isUnlocked(_ phase: Phase) -> Bool {
         guard let predecessor = phase.predecessor else { return true }
         return completedPhases.contains { $0.kind == predecessor.rawValue }
@@ -128,16 +110,13 @@ public final class WorkflowContainerModel {
         repoPath.isEmpty ? "Workflow" : URL(fileURLWithPath: repoPath).lastPathComponent
     }
 
-    /// The command the Allocate Phase's create-issue MCP server is spawned as: the running app binary
-    /// re-executed (it branches into the stdio server at `@main` before AppKit boots). Per ADR 0006
-    /// no separate helper binary is embedded, so the path is the app's own executable.
+    /// The app binary re-executed — it branches into the stdio server at `@main` before AppKit boots,
+    /// so no separate helper binary is embedded (ADR 0006).
     private static var mcpServerCommand: String {
         Bundle.main.executableURL?.path ?? CommandLine.arguments[0]
     }
 }
 
-/// Fetches a Workflow's completed, non-deleted `phase` rows. Driving the sidebar's gating off this
-/// observation means a Phase flipping to complete re-fires it and unlocks the next Phase live.
 struct CompletedPhasesRequest: FetchKeyRequest {
     let workflowID: UUID
 

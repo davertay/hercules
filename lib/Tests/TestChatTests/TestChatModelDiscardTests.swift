@@ -18,9 +18,8 @@ struct TestChatModelDiscardTests {
         #expect(!FileManager.default.fileExists(atPath: model.storageRoot.path))
     }
 
-    // The connection must be closed before the storage directory is unlinked; otherwise
-    // libsqlite3 reports "vnode unlinked while in use" against the still-open fds. After
-    // close, any read on the connection throws — that's the observable proof it was closed.
+    // The connection must close before the storage is unlinked (else libsqlite3 warns "vnode unlinked
+    // while in use"); a read throwing after close is the observable proof.
     @Test
     func tearDownClosesDatabaseBeforeRemovingStorage() throws {
         let model = TestChatModel(worktree: FileManager.default.temporaryDirectory)

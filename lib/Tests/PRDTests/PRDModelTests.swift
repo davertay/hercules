@@ -62,8 +62,7 @@ struct PRDModelTests {
         #expect(request.skillFiles == [skill.fileUrl])
         #expect(request.addDirs == [skill.folderUrl])
         #expect(request.prompt == PRDModel.directedPrompt(summaryPath: summaryPath))
-        // The summary is an input: only its directory is exposed to the Harness, not the whole
-        // Workflow directory (which holds the database).
+        // Only the summary's directory is exposed, not the whole Workflow directory.
         let inputs = try #require(request.inputs)
         #expect(inputs.root == URL(fileURLWithPath: summaryPath).deletingLastPathComponent())
         #expect(inputs.relativePaths == ["summary.md"])
@@ -105,8 +104,7 @@ struct PRDModelTests {
         #expect(phase?.status == "complete")
         #expect(phase?.artifactPath == prdURL.path)
 
-        // The saved confirmation is derived from the completed `prd` phase row, so it also shows
-        // again when the window is reopened.
+        // The saved confirmation is derived from the row, so it shows again on reopen.
         try await model.$prdPhase.load()
         #expect(model.prdSavedURL == prdURL)
         #expect(!model.isGenerateAvailable)
@@ -121,8 +119,7 @@ struct PRDModelTests {
         let workflowDirectory = Self.makeWorkflowDirectory()
         let summaryPath = "/wf/phases/design/summary.md"
         try Self.seedCompletedDesignPhase(database, summaryPath: summaryPath)
-        // The completed Phase and its Session pre-exist the model, as after closing and reopening
-        // the window; the engine rediscovers the Session, so regenerate resumes it.
+        // The Phase and Session pre-exist the model (as after a reopen), so the engine rediscovers it.
         let sessionID = UUID(100)
         try Self.seedCompletedPRDPhase(database, sessionID: sessionID, artifactPath: "/wf/phases/prd/prd.md")
         let started = LockIsolated(false)
@@ -153,7 +150,6 @@ struct PRDModelTests {
         #expect(!started.value)
         let request = try #require(captured.value)
         #expect(request.session.id.rawValue == sessionID)
-        // The (possibly edited) summary is re-attached, and the instruction flags the revision.
         #expect(request.prompt == PRDModel.regeneratePrompt(summaryPath: summaryPath))
         let inputs = try #require(request.inputs)
         #expect(inputs.root == URL(fileURLWithPath: summaryPath).deletingLastPathComponent())
@@ -261,8 +257,7 @@ struct PRDModelTests {
         )
     }
 
-    /// Stands in for the live client's `start`: records the Session and its one Turn (with the
-    /// final answer the projector would have written) and returns the started Session.
+    /// Stands in for the live client's `start`, recording the Session and its one Turn.
     private static func startSession(
         for request: StartRequest, id: UUID, finalAnswer: String
     ) async throws -> Session {
@@ -293,8 +288,7 @@ struct PRDModelTests {
         )
     }
 
-    /// Stands in for the live client's `send`: appends the resumed Turn (with the final answer the
-    /// projector would have written, dated after the initial Turn's) and returns the same Session.
+    /// Stands in for the live client's `send`, appending the resumed Turn dated after the initial one.
     private static func resumeSession(
         for request: SendRequest, turnID: UUID, finalAnswer: String
     ) async throws -> Session {
@@ -341,8 +335,7 @@ struct PRDModelTests {
         }
     }
 
-    /// Seeds the persisted state of an already-completed PRD Phase — the prior `prd` Session and the
-    /// completed `prd` phase row — as found when the window is reopened.
+    /// Seeds an already-completed PRD Phase — its `prd` Session and completed phase row.
     private static func seedCompletedPRDPhase(
         _ database: any DatabaseWriter, sessionID: UUID, artifactPath: String
     ) throws {

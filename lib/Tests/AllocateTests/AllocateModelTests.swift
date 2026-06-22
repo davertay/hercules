@@ -63,12 +63,10 @@ struct AllocateModelTests {
         #expect(request.skillFiles == [skill.fileUrl])
         #expect(request.addDirs == [skill.folderUrl])
         #expect(request.prompt == AllocateModel.proposePrompt(prdPath: prdPath, designPath: designPath))
-        // Both Artifacts are attached as one bundle rooted at the Workflow directory, listed by their
-        // relative `phases/...` paths.
+        // Both Artifacts attached as one bundle, listed by relative `phases/...` paths.
         let inputs = try #require(request.inputs)
         #expect(inputs.root == workflowDirectory)
         #expect(inputs.relativePaths == ["phases/prd/prd.md", "phases/design/summary.md"])
-        // The create-issue MCP server descriptor carries the DB path + workflow id as launch arguments.
         let databasePath = workflowDirectory.appendingPathComponent("workflow.sqlite").path
         #expect(request.mcpServers == [
             MCPServer(
@@ -128,8 +126,7 @@ struct AllocateModelTests {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
         try Self.seedWorkflow(database)
-        // A prior committed Issue and an existing Allocate Session, as found when reopening the window
-        // after a previous propose/accept.
+        // A prior committed Issue and Allocate Session, as found when reopening after a propose/accept.
         try Self.seedIssue(database, id: UUID(-10), number: 1, title: "Stale issue")
         try Self.seedSession(database, id: UUID(100))
         let clearedAt = LockIsolated<Bool?>(nil)
@@ -139,8 +136,8 @@ struct AllocateModelTests {
             $0.uuid = .incrementing
             $0.date.now = fixedDate
             $0.agentClient.send = { @Sendable request in
-                // At the commit Turn the prior Issue must already be cleared; the MCP child's writes
-                // are stood in for by seeding fresh Issue rows here.
+                // The prior Issue must already be cleared by now; the MCP child's writes are stubbed
+                // by seeding fresh rows.
                 let priorDeleted = try await request.database.read { db in
                     try IssueRow.find(UUID(-10)).fetchOne(db)?.isDeleted ?? false
                 }
@@ -158,12 +155,11 @@ struct AllocateModelTests {
 
         // clearIssues ran before the commit Turn.
         #expect(clearedAt.value == true)
-        // The stale Issue is soft-deleted; the freshly written set is current.
         let current = try await database.read { db in
             try WorkflowIssuesRequest(workflowID: UUID(-1)).fetch(db)
         }
         #expect(current.map(\.number) == [1, 2])
-        // The Allocate Phase is complete with a null Artifact path.
+        // The Phase is complete with a null Artifact path.
         let phase = try await database.read { db in
             try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
         }
@@ -185,7 +181,6 @@ struct AllocateModelTests {
             $0.uuid = .incrementing
             $0.date.now = fixedDate
             $0.agentClient.send = { @Sendable request in
-                // The commit Turn writes nothing.
                 try await Self.resumeSession(for: request, turnID: UUID(201))
             }
         } operation: {
@@ -215,8 +210,7 @@ struct AllocateModelTests {
         )
     }
 
-    /// Stands in for the live client's `start`: records the Session and its one Turn, then returns the
-    /// started Session pinned with the request's skill/dir/MCP state.
+    /// Stands in for the live client's `start`, recording the Session and its one Turn.
     private static func startSession(for request: StartRequest, id: UUID) async throws -> Session {
         try await request.database.write { db in
             try SessionRow.insert {
@@ -242,7 +236,7 @@ struct AllocateModelTests {
         )
     }
 
-    /// Stands in for the live client's `send`: appends the resumed Turn and returns the same Session.
+    /// Stands in for the live client's `send`, appending the resumed Turn.
     private static func resumeSession(for request: SendRequest, turnID: UUID) async throws -> Session {
         try await request.database.write { db in
             try TurnRow.insert {

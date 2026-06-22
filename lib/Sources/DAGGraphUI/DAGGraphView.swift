@@ -1,25 +1,10 @@
 import IssueGraph
 import SwiftUI
 
-/// Top-level rect-based DAG view. Renders a Workflow's Issues as a layered grid of `NodeView` cards (a
-/// `VStack` of `HStack`s, one row per `LayoutNode.y` level, ordered left-to-right by `LayoutNode.x`
-/// within each row) with a background `EdgesLayer` drawing one cubic-bezier-and-arrowhead per
-/// dependency between the cards' actual rendered frames.
-///
-/// **Geometry.** Each card attaches an `Anchor<CGRect>` via `.anchorPreference(key: NodeBoundsKey)`;
-/// the merged `[Int: Anchor<CGRect>]` is read with `.backgroundPreferenceValue` and fed, with the
-/// derived edge list, into `EdgesLayer`, which resolves anchors to frames against its `GeometryProxy`.
-/// No grid math at the call site — edges track the real rendered frames across reflows.
-///
-/// **Scrolling.** The content sits in a both-axes `ScrollView` so a deep/wide DAG can be panned; the
-/// inner `VStack`/`HStack` sizes itself naturally to the rendered bounds.
-///
-/// **Selection.** `selectedID` drives an accent halo on the matching node; taps fire `onSelectNode`
-/// with the node's Issue number. The host owns the toggle/clear logic. Both default to nil so call
-/// sites without an inspector compile unchanged.
-///
-/// **Module boundary.** A foundation view with no concept of "Execute" or "Allocate" — just `[DAGNode]`
-/// + `[LayoutNode]` + a status palette. Feature surfaces own their own scaffolding and embed this.
+/// Rect-based DAG view: a `VStack` of `HStack` rows of `NodeView` cards (one row per `LayoutNode.y`)
+/// over a background `EdgesLayer`. Cards publish their frames as `NodeBoundsKey` anchors that
+/// `EdgesLayer` resolves to draw edges — no grid math, edges track the real rendered frames across
+/// reflows. A foundation view with no concept of any Phase; feature surfaces embed it.
 public struct DAGGraphView: View {
     let layoutNodes: [IssueGraph.LayoutNode]
     let nodesByNumber: [Int: DAGNode]
@@ -44,7 +29,6 @@ public struct DAGGraphView: View {
         self.onSelectNode = onSelectNode
     }
 
-    /// Nodes grouped by `y` (row level), each row's nodes in `LayoutNode.x`-ascending order.
     private var rows: [Row] {
         let grouped = Dictionary(grouping: layoutNodes, by: \.y)
         return grouped.keys.sorted().map { y in
@@ -54,7 +38,7 @@ public struct DAGGraphView: View {
         }
     }
 
-    /// All `(dep → node)` pairs across the graph, sorted by `(to, from)` for stable `ForEach` diffing.
+    /// Sorted by `(to, from)` for stable `ForEach` diffing.
     private var edges: [DependencyEdge] {
         nodesByNumber.values
             .flatMap { node in
@@ -108,8 +92,7 @@ public struct DAGGraphView: View {
     }
 }
 
-/// One row in the layered layout — a single `LayoutNode.y` level, holding the nodes at that level in
-/// `x`-ascending order. `id` is the `y` level so `ForEach` stably diffs rows across updates.
+/// `id` is the `y` level so `ForEach` stably diffs rows across updates.
 private struct Row: Identifiable {
     let y: Int
     let nodes: [DAGNode]
@@ -117,10 +100,8 @@ private struct Row: Identifiable {
     var id: Int { y }
 }
 
-/// PreferenceKey aggregating per-`NodeView` bounds anchors into a single `[Int: Anchor<CGRect>]`
-/// (keyed by Issue number) for `EdgesLayer`. Anchors are coordinate-space-agnostic — SwiftUI resolves
-/// them to a `CGRect` against whatever `GeometryProxy` reads them, regardless of where the writer sat.
-/// The reduce prefers the latest write, which only matters transiently mid-reflow.
+/// Aggregates per-`NodeView` bounds anchors (keyed by Issue number) for `EdgesLayer`. The reduce
+/// prefers the latest write, which only matters transiently mid-reflow.
 struct NodeBoundsKey: PreferenceKey {
     static let defaultValue: [Int: Anchor<CGRect>] = [:]
 

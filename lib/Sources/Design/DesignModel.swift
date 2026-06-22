@@ -7,15 +7,11 @@ import Observation
 import SQLiteData
 import Store
 
-/// Drives the Design Phase. The chat itself is owned by a `ChatEngine` configured to start a
-/// `readOnly` Session under the bundled grill-me Skill with the repo as cwd; this model layers the
-/// Design-specific Phase orchestration on top — generating the summary Artifact and recording the
-/// Phase as complete.
+/// Drives the Design Phase: a `ChatEngine` conversation plus orchestration to generate the summary
+/// Artifact and record the Phase complete.
 @MainActor
 @Observable
 public final class DesignModel {
-    /// The shared chat engine, configured for Design's Session. Owned here and handed to the chat
-    /// views; Design adds nothing to its conversation rendering.
     let engine: ChatEngine
 
     @ObservationIgnored
@@ -30,8 +26,7 @@ public final class DesignModel {
     @ObservationIgnored
     private let workflowID: UUID
 
-    /// The Workflow's root directory (`~/.hercules/workflows/<id>/`); the Design summary Artifact is
-    /// written beneath it at `phases/design/summary.md`.
+    /// The Design summary Artifact is written beneath this at `phases/design/summary.md`.
     @ObservationIgnored
     private let workflowDirectory: URL
 
@@ -41,8 +36,7 @@ public final class DesignModel {
     @ObservationIgnored
     var runTask: Task<Void, Never>?
 
-    /// The saved summary's location once a finalization Turn has written it. Drives the saved
-    /// confirmation (with its Reveal in Finder button); cleared when new chat activity starts.
+    /// Set once a finalization Turn writes the summary; cleared when new chat activity starts.
     public var summarySavedURL: URL?
 
     public init(worktree: URL, workflowID: UUID, workflowDirectory: URL, database: any DatabaseWriter) {
@@ -63,18 +57,15 @@ public final class DesignModel {
         engine.onSend = { [weak self] in self?.summarySavedURL = nil }
     }
 
-    /// True before any conversation exists — drives the intake prompt instead of the transcript.
     public var isIntake: Bool { engine.isIntake }
 
     public var isGenerateSummaryAvailable: Bool {
         engine.session != nil
     }
 
-    /// The canned instruction the finalization Turn resumes the Session with.
     static let finalizationPrompt = "Produce the complete design summary now as a markdown document."
 
-    /// Resumes the Session with the finalization instruction, then writes that Turn's final answer to
-    /// `phases/design/summary.md` and flips the Design `phase` row to complete with the Artifact path.
+    /// Writes the finalization Turn's answer to `phases/design/summary.md` and completes the Phase.
     /// Re-running overwrites the file and updates the same row.
     public func generateSummary() {
         guard let session = engine.session, !engine.isRunning else { return }
@@ -99,8 +90,6 @@ public final class DesignModel {
         }
     }
 
-    /// Writes the summary markdown to `phases/design/summary.md` under the Workflow directory,
-    /// creating the intermediate directories and overwriting any existing file.
     private func writeSummary(_ markdown: String) throws -> URL {
         let url = workflowDirectory
             .appending(path: "phases/design", directoryHint: .isDirectory)

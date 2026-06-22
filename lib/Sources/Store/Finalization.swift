@@ -1,13 +1,9 @@
 import Foundation
 import SQLiteData
 
-// Shared data-layer helpers behind a Phase's finalization: the insert-or-update of a Phase row to
-// `complete`, and the lookup of a Session's latest final answer. File writing stays in the feature
-// models; only the database mutation and query live here so there is one implementation each.
-
 extension DatabaseWriter {
-    /// Records `kind`'s Phase as complete with its Artifact path, inserting the Phase row the first
-    /// time and updating it on a re-run. `id` is evaluated only when a row is inserted.
+    /// Records `kind`'s Phase complete, inserting the row the first time and updating it on a re-run.
+    /// `id` is evaluated only when a row is inserted.
     public func completePhase(
         workflowID: UUID,
         kind: String,
@@ -20,9 +16,8 @@ extension DatabaseWriter {
         )
     }
 
-    /// Records `kind`'s Phase as complete with no Artifact path, for a Phase whose Artifact is rows in
-    /// the database (the Allocate Issues) rather than a file. The unlock gate keys only on
-    /// `status == "complete"`, so a null path still unlocks the next Phase.
+    /// Completes a Phase whose Artifact is rows rather than a file (the Allocate Issues). The unlock
+    /// gate keys only on `status == "complete"`, so a null path still unlocks the next Phase.
     public func completePhase(
         workflowID: UUID,
         kind: String,
@@ -74,8 +69,6 @@ extension DatabaseWriter {
 }
 
 extension DatabaseReader {
-    /// The final answer of `sessionID`'s most recent Turn, or `nil` when the Session has no Turn yet
-    /// or that Turn has no final answer recorded.
     public func latestFinalAnswer(forSession sessionID: UUID) throws -> String? {
         try read { db in
             try TurnRow

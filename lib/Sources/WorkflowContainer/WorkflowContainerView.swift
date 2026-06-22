@@ -67,8 +67,6 @@ public struct WorkflowContainerView: View {
     }
 }
 
-/// A sidebar row showing a Phase's title and, while the Phase is still gated, a lock badge. Locked
-/// rows are dimmed so the enabled/locked state reads at a glance.
 struct PhaseSidebarRow: View {
     let phase: Phase
     let isUnlocked: Bool
@@ -86,8 +84,7 @@ struct PhaseSidebarRow: View {
     }
 }
 
-/// Detail view for a Phase with no real view yet. A locked Phase explains which Phase unlocks it;
-/// an unlocked-but-unbuilt Phase notes it is on the way.
+/// Detail view for a Phase with no real view yet.
 struct PhasePlaceholderView: View {
     let phase: Phase
     let isUnlocked: Bool

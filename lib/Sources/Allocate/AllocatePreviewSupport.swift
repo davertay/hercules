@@ -4,9 +4,8 @@ import SQLiteData
 import Store
 
 extension AllocateModel {
-    /// Seeds a Workflow with a settled Allocate conversation and a committed Issue set into the
-    /// database at `directory`, for the preview harness. Stands in for a propose → accept run so the
-    /// surface renders its transcript, Issue list, and saved-confirmation banner without an Agent.
+    /// Seeds a settled Allocate conversation and committed Issue set for the preview harness, standing
+    /// in for a propose → accept run so the surface renders without an Agent.
     public static func seedCommittedIssuesPreview(at directory: URL, workflowID: UUID) throws {
         let database = try openWorkflowDatabase(at: directory)
         let now = Date(timeIntervalSince1970: 1_700_000_000)
@@ -110,8 +109,7 @@ extension AllocateModel {
         }
     }
 
-    /// Eagerly loads the Issue fetch so the preview's Issue list is populated by the time the harness
-    /// window is captured, rather than relying on the async on-appear load racing the screenshot.
+    /// Eagerly loads the Issue fetch so the list is populated before the screenshot, not racing it.
     public func loadIssuesForPreview() async {
         try? await $issues.load()
     }

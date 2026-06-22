@@ -1,5 +1,4 @@
-/// The five named stages a Workflow moves through, in order. The Workflow window's sidebar lists
-/// these; each Phase consumes the prior Phase's Artifact and produces its own.
+/// The five stages a Workflow moves through, in order; each consumes the prior Phase's Artifact.
 public enum Phase: String, CaseIterable, Identifiable, Hashable, Sendable {
     case design
     case prd
@@ -19,9 +18,8 @@ public enum Phase: String, CaseIterable, Identifiable, Hashable, Sendable {
         }
     }
 
-    /// The Phase whose Artifact this Phase consumes — the one that must complete before this Phase
-    /// unlocks. The first Phase (Design) consumes the repo, not another Phase's Artifact, so it has
-    /// no predecessor and is always unlocked.
+    /// The Phase that must complete before this one unlocks. Design consumes the repo, not a Phase, so
+    /// it has none and is always unlocked.
     public var predecessor: Phase? {
         guard let index = Self.allCases.firstIndex(of: self), index > 0 else { return nil }
         return Self.allCases[index - 1]

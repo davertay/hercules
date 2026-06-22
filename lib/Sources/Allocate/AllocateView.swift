@@ -2,11 +2,8 @@ import Chat
 import Store
 import SwiftUI
 
-/// The Allocate Phase surface: a hybrid of PRD's directed kickoff and Design's conversation. Intake
-/// shows the single Propose action; once a proposal exists the streaming Transcript and a refinement
-/// composer take over, with **Propose** and **Accept & Write Issues** reachable from the toolbar.
-/// Committed Issues appear below the Transcript with a saved confirmation, derived from the live Issue
-/// fetch so they show the moment the commit Turn writes and again on reopening the window.
+/// The Allocate Phase surface: intake shows the Propose action; once a proposal exists the Transcript,
+/// composer, and committed-Issue list take over, with Propose and Accept & Write in the toolbar.
 public struct AllocateView: View {
     @Bindable var model: AllocateModel
 
@@ -33,9 +30,6 @@ public struct AllocateView: View {
         .frame(minWidth: 500, minHeight: 400)
         .navigationTitle("Allocate")
         .toolbar {
-            // Once a proposal exists, keep both actions reachable from the toolbar: Propose re-runs the
-            // breakdown (e.g. after a PRD/Design edit), Accept & Write commits the agreed set. Both are
-            // disabled while a Turn is in flight.
             if !model.isIntake {
                 ToolbarItem {
                     Button("Propose Issues from PRD & Design", systemImage: "list.bullet.rectangle") {
@@ -54,7 +48,6 @@ public struct AllocateView: View {
     }
 }
 
-/// The intake state's single action, shown before any proposal conversation exists.
 private struct IntakeActionView: View {
     let isProposeAvailable: Bool
     let propose: () -> Void
@@ -77,8 +70,7 @@ private struct IntakeActionView: View {
     }
 }
 
-/// The committed Issue set: a saved confirmation banner over a scrolling list of each Issue's number,
-/// title, body, and dependencies. Bounded in height so it doesn't crowd out the Transcript above it.
+/// Bounded in height so it doesn't crowd out the Transcript above it.
 private struct CommittedIssuesView: View {
     let issues: [IssueRow]
 
@@ -111,7 +103,6 @@ private struct CommittedIssuesView: View {
     }
 }
 
-/// One committed Issue: its number and title, the body of spec, and the numbers it depends on.
 private struct IssueRowView: View {
     let issue: IssueRow
 

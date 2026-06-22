@@ -3,10 +3,8 @@ import IssueGraph
 import Store
 import SwiftUI
 
-/// The Execute Phase surface: renders the Workflow's committed Issues as a live-coloured dependency
-/// DAG alongside a per-Issue inspector. Tapping a node selects it and fills the inspector; an invalid
-/// dependency graph (cycle or unknown dependency) surfaces a banner and degrades to a plain Issue list
-/// rather than a misrendered DAG. Read-only — scheduling and agent runs are later slices.
+/// The Execute Phase surface: the committed Issues as a live-coloured dependency DAG plus a per-Issue
+/// inspector. An invalid graph (cycle/unknown dependency) degrades to a plain Issue list with a banner.
 public struct ExecuteView: View {
     let model: ExecuteModel
 
@@ -70,8 +68,6 @@ public struct ExecuteView: View {
     }
 }
 
-/// The per-Issue detail pane: number, title, status, dependencies, and the spec body (already carried
-/// on the Issue, so no Agent call). Shows a placeholder prompt until a node is selected.
 private struct InspectorPane: View {
     let issue: IssueRow?
 
@@ -114,8 +110,6 @@ private struct InspectorPane: View {
         }
     }
 
-    /// Renders the spec body as inline markdown, falling back to plain text. Mirrors the rendering used
-    /// in the chat transcript; there's no shared repo helper to call.
     private func renderedMarkdown(_ text: String) -> Text {
         if let attributed = try? AttributedString(
             markdown: text,
@@ -129,8 +123,8 @@ private struct InspectorPane: View {
     }
 }
 
-/// Shown when the committed Issues don't form a valid DAG: a banner naming the problem over a plain,
-/// non-graph list of the Issues, so the user can still read the breakdown and go fix it in Allocate.
+/// Shown when the Issues don't form a valid DAG: a banner over a plain list, so the user can still read
+/// the breakdown and fix it in Allocate.
 private struct InvalidGraphView: View {
     let message: String
     let issues: [IssueRow]

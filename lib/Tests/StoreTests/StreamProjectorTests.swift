@@ -94,21 +94,18 @@ struct StreamProjectorTests {
 
         let askJSON = #"{"questions":[{"header":"Goal","multiSelect":false,"options":[{"label":"A"}],"question":"What?"}]}"#
 
-        // The question's tool_use lands → signal the Agent to interrupt the Turn.
         let asked = projector.ingest(Self.line(
             #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"AskUserQuestion","input":\#(askJSON)}]}}"#
         ))
         #expect(asked == .askedQuestion)
 
-        // The Harness auto-resolves the unanswerable call with an error result; it's noise, so it is
-        // dropped rather than projected beneath the card.
+        // The Harness's auto-error result for the unanswerable call is noise and dropped.
         let suppressed = projector.ingest(Self.line(
             #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"Answer questions?","is_error":true}]}}"#
         ))
         #expect(suppressed == .none)
 
-        // Interrupting reads back as an errored result, but this is a deliberate pause: `.completed`
-        // so the Harness is closed, and the Turn is recorded clean (not failed).
+        // The interrupt reads back errored but is a deliberate pause: `.completed`, Turn recorded clean.
         let completed = projector.ingest(Self.line(
             #"{"type":"result","subtype":"error_during_execution","is_error":true,"duration_ms":1,"result":""}"#
         ))
@@ -249,10 +246,9 @@ struct StreamProjectorTests {
         #expect(blocks.map(\.role) == ["assistant", "assistant", "user", "assistant"])
     }
 
-    /// The real Harness wire format: a separate consolidated `assistant` message per block (each
-    /// `count == 1`), parallel `tool_use` blocks, and the `tool_result` user messages interleaved
-    /// before `message_stop`. The old `messageBase + decoded.count` math collided positions here,
-    /// producing duplicate `(turnID, position)` rows that crashed the chat's ForEach.
+    /// The real Harness wire format — a consolidated `assistant` message per block, parallel
+    /// `tool_use`, interleaved `tool_result`s — which the old position math collided into duplicate
+    /// `(turnID, position)` rows that crashed the chat's ForEach.
     @Test func perBlockConsolidatedMessagesAndParallelToolsGetUniquePositions() throws {
         let (database, turnID) = try Self.seededWorkflow()
         let projector = StreamProjector(database: database, turnID: turnID)
@@ -302,8 +298,7 @@ struct StreamProjectorTests {
         Data(#"{"type":"stream_event","event":\#(innerJSON)}"#.utf8)
     }
 
-    /// Opens a fresh on-disk Workflow database seeded with one workflow → session → turn, and
-    /// returns the database plus the seeded turn's id for the projector to finalize.
+    /// A fresh database seeded with one workflow → session → turn, returned with the turn's id.
     private static func seededWorkflow() throws -> (any DatabaseWriter, UUID) {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("StoreTests-\(UUID().uuidString)", isDirectory: true)

@@ -1,9 +1,7 @@
 import IssueGraph
 import SwiftUI
 
-/// Colours for `IssueStatus`, centralised so every consumer of the DAG views renders status the same
-/// way. Ported from the prototype's `Theme.StatusPalette` and retargeted from `TicketStatus` to
-/// `IssueStatus` (`green`→`done`).
+/// Colours for `IssueStatus`, centralised so every DAG view renders status the same way.
 public struct StatusPalette: Sendable {
     public let pending: Color
     public let ready: Color
@@ -33,9 +31,7 @@ public struct StatusPalette: Sendable {
         failed: .red
     )
 
-    /// Canonical colour for a given `IssueStatus`: gray pending, blue ready, amber in-progress, green
-    /// done, red failed, gray skipped (the view applies a slash overlay for the "skipped" cue, so the
-    /// colour itself matches `.pending`).
+    /// `.skipped` reuses the pending grey — the view's slash overlay carries the skipped cue.
     public func color(for status: IssueStatus) -> Color {
         switch status {
         case .pending: pending
@@ -47,9 +43,7 @@ public struct StatusPalette: Sendable {
         }
     }
 
-    /// Legible label colour for text drawn on top of `color(for:)`. Two buckets, partitioned by
-    /// background luminance: `.white` on the saturated fills (ready/inProgress/done/failed), `.primary`
-    /// (SwiftUI's auto-inverting label colour) on the neutral pending/skipped grey.
+    /// `.white` on the saturated fills, `.primary` on the neutral pending/skipped grey.
     public func foregroundColor(for status: IssueStatus) -> Color {
         switch status {
         case .pending: .primary

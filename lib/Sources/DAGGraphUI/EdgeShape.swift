@@ -1,28 +1,16 @@
 import SwiftUI
 
-/// Cubic-bezier dependency edge between two nodes in the rect-based DAG layout. Works in absolute
-/// coordinates: `from` is the source rect's bottom-edge midpoint, `to` the destination's top-edge
-/// midpoint, both supplied by `EdgesLayer` after resolving `Anchor<CGRect>` preferences against its
-/// `GeometryProxy`. `path(in:)` ignores the `rect` parameter and emits the curve in the parent's
-/// coordinate space.
-///
-/// The bezier exits the source's bottom flat edge going down, swings toward the destination's column
-/// at the row midline, and enters the destination's top flat edge — the canonical layered-DAG S-curve.
-/// It terminates `arrowheadLength` short of `to` so the `ArrowheadShape` triangle covers the end-cap.
-///
-/// The `TicketGraph`/`IssueGraph` layered layout guarantees a child's `y` is strictly greater than
-/// every dependency's, so every edge runs downward — same-row or upward edges aren't producible, and
-/// the shape doesn't handle them.
+/// Cubic-bezier dependency edge in absolute coordinates, so `path(in:)` ignores its `rect` and emits
+/// the curve in the parent's coordinate space. The layered layout guarantees a child's `y` exceeds
+/// every dependency's, so every edge runs downward — upward/same-row edges aren't handled.
 struct EdgeShape: Shape {
     /// Source rect's bottom-edge midpoint, in the parent `GeometryProxy`'s coordinate space.
     let from: CGPoint
 
-    /// Destination rect's top-edge midpoint. The bezier terminates `arrowheadLength` short of this so
-    /// the matching `ArrowheadShape` covers the end-cap.
+    /// Destination rect's top-edge midpoint.
     let to: CGPoint
 
-    /// Length of the arrowhead the parent draws separately at `to`; the bezier endpoint is offset up
-    /// by this amount so the two shapes meet cleanly at the arrowhead's base.
+    /// The bezier endpoint is offset up by this so it meets the `ArrowheadShape`'s base cleanly.
     let arrowheadLength: CGFloat
 
     func path(in _: CGRect) -> Path {
@@ -39,11 +27,8 @@ struct EdgeShape: Shape {
     }
 }
 
-/// Filled isoceles triangle at the destination end of an edge. Tip sits at the destination rect's
-/// top-edge midpoint (`to`), pointing down into the rect; base sits `length` above the tip. Drawn
-/// separately from `EdgeShape` so the triangle can be `.fill`'d while the bezier is `.stroke`'d; the
-/// shared `to`/`length` make the bezier's endpoint coincide with the triangle's base. `length` doubles
-/// as the base width (square aspect — the classic graphviz/dagre arrowhead ratio).
+/// Filled arrowhead triangle at an edge's destination. Drawn separately from `EdgeShape` so it can be
+/// `.fill`'d while the bezier is `.stroke`'d; the shared `to`/`length` make their ends coincide.
 struct ArrowheadShape: Shape {
     /// Tip of the arrowhead — the destination rect's top-edge midpoint.
     let to: CGPoint

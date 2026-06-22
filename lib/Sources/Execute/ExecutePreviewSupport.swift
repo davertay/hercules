@@ -4,10 +4,8 @@ import SQLiteData
 import Store
 
 extension ExecuteModel {
-    /// Seeds a Workflow whose Allocate Phase has committed a dependency graph of Issues into the
-    /// database at `directory`, for the preview harness. Stands in for a completed Design → PRD →
-    /// Allocate run so the Execute surface renders its DAG without an Agent. Statuses span the
-    /// vocabulary so every node colour is exercised; the `"new"` roots derive `.ready`.
+    /// Seeds a committed dependency graph for the preview harness so the Execute surface renders its DAG
+    /// without an Agent. Statuses span the vocabulary so every node colour is exercised.
     public static func seedCommittedIssuesPreview(at directory: URL, workflowID: UUID) throws {
         let database = try openWorkflowDatabase(at: directory)
         let now = Date(timeIntervalSince1970: 1_700_000_000)
@@ -50,8 +48,7 @@ extension ExecuteModel {
         }
     }
 
-    /// Eagerly loads the Issue fetch so the preview's DAG is populated by the time the harness window is
-    /// captured, rather than relying on an async on-appear load racing the screenshot.
+    /// Eagerly loads the Issue fetch so the DAG is populated before the screenshot, not racing it.
     public func loadIssuesForPreview() async {
         try? await $issues.load()
     }

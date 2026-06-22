@@ -2,8 +2,6 @@ import Dependencies
 import DependenciesMacros
 import Foundation
 
-/// What a worktree creation needs: the source repository, the directory the new worktree should
-/// live in, and the name of the new branch to cut for it.
 public struct CreateWorktreeRequest: Sendable, Equatable {
     public let repo: URL
     public let worktree: URL
@@ -16,14 +14,11 @@ public struct CreateWorktreeRequest: Sendable, Equatable {
     }
 }
 
-/// Provisions git worktrees for Workflows. Injected like ``AgentClient`` so the live value shells out
-/// to git while the test and preview values are no-ops — that lets previews and tests build Workflows
-/// against placeholder repo paths without touching git.
+/// Provisions git worktrees for Workflows. The live value shells out to git; test and preview values
+/// are no-ops so they can build Workflows against placeholder repo paths without touching git.
 @DependencyClient
 public struct WorktreeClient: Sendable {
-    /// Adds a worktree for `request.repo` at `request.worktree`, checked out on a new branch named
-    /// `request.branch` cut from the repo's default-branch HEAD. Throws if git fails (not a repo, the
-    /// branch already exists, etc.).
+    /// Adds a worktree on a new branch cut from the repo's default-branch HEAD.
     public var create: @Sendable (_ request: CreateWorktreeRequest) throws -> Void
 }
 
@@ -37,10 +32,8 @@ extension WorktreeClient: DependencyKey {
         }
     )
 
-    /// No-op so tests that create Workflows against placeholder repo paths don't touch git.
     public static let testValue = WorktreeClient(create: { _ in })
 
-    /// No-op so previews that create Workflows against placeholder repo paths don't touch git.
     public static let previewValue = WorktreeClient(create: { _ in })
 }
 
@@ -51,8 +44,7 @@ extension DependencyValues {
     }
 }
 
-/// Surfaced when a git invocation exits non-zero; carries git's own stderr so the message is clear
-/// (e.g. "fatal: a branch named 'hercules/…' already exists").
+/// Carries git's own stderr so the message is clear (e.g. "fatal: a branch named '…' already exists").
 public struct GitError: Error, CustomStringConvertible {
     public let arguments: [String]
     public let status: Int32
@@ -64,12 +56,9 @@ public struct GitError: Error, CustomStringConvertible {
     }
 }
 
-/// The live git plumbing: synchronous `Process` invocations. Kept private to the live value — the
-/// test and preview values never reach it.
 private enum LiveGit {
-    /// The repo's default branch, resolved from `origin/HEAD` when a remote exists and otherwise from
-    /// the currently checked-out branch. Used as the start point so the new worktree gets a clean ref
-    /// regardless of any uncommitted changes in the user's primary checkout.
+    /// Resolved from `origin/HEAD` when a remote exists, else the checked-out branch. The start point
+    /// so the new worktree gets a clean ref regardless of uncommitted changes in the primary checkout.
     static func defaultBranch(in repo: URL) throws -> String {
         if let originHead = try? capture(
             ["-C", repo.path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]
@@ -79,12 +68,11 @@ private enum LiveGit {
         return try capture(["-C", repo.path, "symbolic-ref", "--short", "HEAD"])
     }
 
-    /// Runs git, throwing ``GitError`` on a non-zero exit.
     static func run(_ arguments: [String]) throws {
         _ = try capture(arguments)
     }
 
-    /// Runs git and returns its trimmed stdout, throwing ``GitError`` on a non-zero exit.
+    /// Returns git's trimmed stdout, throwing ``GitError`` on a non-zero exit.
     @discardableResult
     static func capture(_ arguments: [String]) throws -> String {
         let process = Process()

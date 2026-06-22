@@ -2,10 +2,8 @@ import Foundation
 import SQLiteData
 
 extension DatabaseReader {
-    /// The existing Session row for a `(workflowID, kind)` pair, or `nil` when none has been started
-    /// yet. The invariant is one Session per pair (ADR 0005); if several somehow exist the earliest
-    /// is returned so rediscovery is deterministic. A `Chat` engine calls this on construction to
-    /// reconstitute its resumable Session and pick up prior history.
+    /// The existing Session for a `(workflowID, kind)` pair (one per pair, ADR 0005), or `nil`. The
+    /// earliest is returned so rediscovery stays deterministic if several somehow exist.
     public func existingSession(workflowID: UUID, kind: SessionKind) throws -> SessionRow? {
         try read { db in
             try SessionRow
@@ -17,10 +15,8 @@ extension DatabaseReader {
         }
     }
 
-    /// The Execute-run Session that worked the Issue numbered `number` in `workflowID`, or `nil` when
-    /// none has run yet. The Execute orchestrator tags each per-Issue write Session with its
-    /// `issueNumber`; this is the reverse lookup that makes a worked (especially failed) Issue's
-    /// transcript recoverable. If a re-run produced several the earliest is returned, for determinism.
+    /// The Execute-run Session that worked Issue `number`, or `nil` — the reverse lookup of the
+    /// `issueNumber` tag that makes a worked Issue's transcript recoverable. Earliest wins on a re-run.
     public func session(forIssue number: Int, workflowID: UUID) throws -> SessionRow? {
         try read { db in
             try SessionRow

@@ -11,10 +11,8 @@ import Testing
 
 private let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
-/// Exercises the Execute Phase's Run/Stop lifecycle (`start`, `stop`, `canRun`, `isRunning`) layered on
-/// top of the `run()` loop: the controls' enablement, that `start` drives a run to completion, and that
-/// `stop` (and the window-teardown `cancelRun`) cancels an in-flight run and leaves the worked Issue
-/// `failed`.
+/// Exercises the Execute Phase's Run/Stop lifecycle (`start`, `stop`, `canRun`, `isRunning`) over the
+/// `run()` loop.
 @MainActor
 @Suite("ExecuteModel run controls")
 struct ExecuteRunControlsTests {
@@ -99,7 +97,6 @@ struct ExecuteRunControlsTests {
         model.start()
         await Self.waitUntil { model.isRunning && starts.value == 1 }
 
-        // A second start while the first is in flight must not launch another run.
         model.start()
         #expect(starts.value == 1)
 
@@ -115,22 +112,20 @@ struct ExecuteRunControlsTests {
         try Self.seedIssue(database, workflowID: workflowID, number: 2, dependencies: [1])
 
         let model = Self.model(database: database, workflowID: workflowID) { request in
-            // Record the Session, then block on a cancellable sleep — standing in for a Turn that runs
-            // until the Harness is torn down. Cancellation throws, exactly as the live client does.
+            // Block on a cancellable sleep, standing in for a Turn that runs until the Harness is torn
+            // down; cancellation throws, as the live client does.
             _ = try await Self.startSession(for: request, id: UUID(100 + (request.issueNumber ?? 0)))
             try await Task.sleep(for: .seconds(60))
             return try await Self.startSession(for: request, id: UUID(100 + (request.issueNumber ?? 0)))
         }
 
         model.start()
-        // Wait until #1 is being worked (marked in_progress before the blocking await).
         await Self.waitUntil { Self.statusOrNil(database, workflowID: workflowID, number: 1) == "in_progress" }
 
         model.stop()
         await model.runTask.value?.value
 
         #expect(model.isRunning == false)
-        // The worked Issue is failed; the run halted, so #2 stays new and the Phase didn't complete.
         #expect(try Self.status(database, workflowID: workflowID, number: 1) == "failed")
         #expect(try Self.status(database, workflowID: workflowID, number: 2) == "new")
         #expect(try Self.executeCompleted(database, workflowID: workflowID) == false)
@@ -151,7 +146,7 @@ struct ExecuteRunControlsTests {
         model.start()
         await Self.waitUntil { Self.statusOrNil(database, workflowID: workflowID, number: 1) == "in_progress" }
 
-        // The Workflow window's deinit routes here on close/quit.
+        // The window's deinit routes here on close/quit.
         model.cancelRun()
         await model.runTask.value?.value
 
@@ -161,8 +156,7 @@ struct ExecuteRunControlsTests {
 
     // MARK: - Helpers
 
-    /// Polls `condition` cooperatively (yielding between checks) until it holds or a generous bound is
-    /// reached, letting the MainActor-isolated run task make progress between checks.
+    /// Polls `condition`, yielding between checks so the MainActor run task can make progress.
     private static func waitUntil(_ condition: @MainActor () -> Bool) async {
         for _ in 0..<10_000 {
             if condition() { return }
@@ -247,7 +241,7 @@ struct ExecuteRunControlsTests {
         }?.status
     }
 
-    /// Non-throwing status read for poll predicates; `nil` on any read failure or missing row.
+    /// Non-throwing status read for poll predicates.
     private static func statusOrNil(
         _ database: any DatabaseWriter, workflowID: UUID, number: Int
     ) -> String? {

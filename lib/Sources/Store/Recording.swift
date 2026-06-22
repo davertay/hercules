@@ -1,8 +1,7 @@
 import Foundation
 import SQLiteData
 
-/// Inserts the `session` row for a Session's first Turn. This is the database equivalent of the
-/// old `hercules.session.started` framing line (ADR 0003 supersedes the JSONL transcript).
+/// Inserts the `session` row for a Session's first Turn.
 public func recordSessionStart(
     in database: any DatabaseWriter,
     sessionID: UUID,
@@ -30,8 +29,7 @@ public func recordSessionStart(
     }
 }
 
-/// Inserts the `turn` row a Turn projects into. The live `StreamProjector` finalizes this same row
-/// from the Harness's `result` event; on failure the Agent flags it via `recordFailure`.
+/// Inserts the `turn` row; the `StreamProjector` later finalizes this same row from the `result` event.
 public func recordTurnStart(
     in database: any DatabaseWriter,
     turnID: UUID,

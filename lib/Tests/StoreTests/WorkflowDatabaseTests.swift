@@ -40,8 +40,7 @@ struct WorkflowDatabaseTests {
         _ = try openWorkflowDatabase(at: dir)
         let database = try openWorkflowDatabase(at: dir)
 
-        // Re-running the registered migrations against an already-migrated connection is a no-op,
-        // not a "table already exists" error — the schema is applied idempotently.
+        // Re-running migrations against an already-migrated connection must be a no-op, not an error.
         var migrator = DatabaseMigrator()
         registerWorkflowMigrations(&migrator)
         try migrator.migrate(database)

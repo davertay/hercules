@@ -7,10 +7,8 @@ import IssueGraph
 import SwiftUI
 import WorkflowContainer
 
-/// Debug-only preview harness — renders a single feature surface in a
-/// dedicated window when the `HERCULES_PREVIEW` env var is set, bypassing
-/// the Launcher and the on-disk project/flow/ticket setup the production
-/// Scene requires. Used for taking screenshots of individual features.
+/// Debug-only preview harness — renders a single feature surface when `HERCULES_PREVIEW` is set,
+/// bypassing the Launcher and on-disk setup the production Scene requires. For feature screenshots.
 public enum PreviewTarget: String, CaseIterable, Sendable {
     case workflowEmpty
     case designIntake
@@ -30,9 +28,6 @@ public enum PreviewTarget: String, CaseIterable, Sendable {
     }
 }
 
-// Debug-only escape hatch: when `HERCULES_PREVIEW` is set,
-// the launcher window renders the `PreviewHarnessEscapeHatch`
-// instead of the real launcher chrome.
 public struct PreviewHarnessEscapeHatch: View {
     public let target: PreviewTarget
 
@@ -90,10 +85,7 @@ public struct PreviewHarnessView: View {
     }
 }
 
-/// Renders the Execute Phase surface end-to-end: a Workflow whose Allocate Phase has committed a
-/// dependency graph of Issues, observed and projected into the DAG by `ExecuteModel` exactly as in
-/// production. The fixture Issues are seeded into a fresh Workflow database the `WorkflowContainerModel`
-/// then opens.
+/// Renders the Execute Phase end-to-end over fixture Issues seeded into a fresh Workflow database.
 private struct FlowExecutePreviewHost: View {
     @State private var container: WorkflowContainerModel
 
@@ -102,9 +94,7 @@ private struct FlowExecutePreviewHost: View {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("workflow-flow-execute-\(id.uuidString)", isDirectory: true)
         try? ExecuteModel.seedCommittedIssuesPreview(at: directory, workflowID: id)
-        // The Phases now operate in the Workflow's worktree, and Execute health-checks that it exists.
-        // Production cuts it at Workflow creation; the preview stands one in so the DAG renders rather
-        // than the missing-worktree error.
+        // Stand in a worktree so Execute's health check passes and the DAG renders.
         try? FileManager.default.createDirectory(
             at: workflowWorktree(in: directory), withIntermediateDirectories: true
         )
@@ -121,7 +111,7 @@ private struct FlowExecutePreviewHost: View {
                 ExecuteView(model: executeModel)
                     .task {
                         await executeModel.loadIssuesForPreview()
-                        // Pre-select a node so the inspector pane renders with content in the capture.
+                        // Pre-select a node so the inspector renders with content.
                         executeModel.selectNode(4)
                     }
             } else {
@@ -135,11 +125,8 @@ private struct FlowExecutePreviewHost: View {
     }
 }
 
-/// Renders the reusable `DAGGraphUI.DAGGraphView` directly over a fixture set of `DAGNode`s exercising
-/// every `IssueStatus` (done / in-progress / ready / pending / failed / skipped) and a diamond
-/// dependency shape. Stands alone — no Workflow database — since the DAG view is a foundation surface
-/// independent of any Phase. Consumed by the screenshot skill (`dagGraph` target) to visually verify
-/// the ported renderer before the Execute feature embeds it.
+/// Renders `DAGGraphView` over fixtures exercising every `IssueStatus` and a diamond dependency shape.
+/// Stands alone — no Workflow database — since the view is a foundation surface.
 private struct DAGGraphPreviewHost: View {
     private static let nodes: [DAGNode] = [
         DAGNode(number: 1, title: "Foundations", status: .done, dependencies: []),
@@ -177,9 +164,7 @@ private struct WorkflowEmptyPreviewHost: View {
     }
 }
 
-/// Renders the Design Phase in isolation in its intake state — an empty engine, so the surface shows
-/// the "What are we building today?" prompt and composer. Reuses `WorkflowContainerModel` so the
-/// Workflow database is opened and its dependency scoped exactly as in production.
+/// Renders the Design Phase in its intake state — an empty engine showing the prompt and composer.
 private struct DesignIntakePreviewHost: View {
     @State var container = WorkflowContainerModel(
         data: WorkflowWindowData(
@@ -204,8 +189,7 @@ private struct DesignIntakePreviewHost: View {
     }
 }
 
-/// Renders the Allocate Phase in its intake state — an empty engine, so the surface shows the single
-/// "Propose Issues from PRD & Design" action and the composer.
+/// Renders the Allocate Phase in its intake state — an empty engine showing the Propose action.
 private struct AllocateIntakePreviewHost: View {
     @State var container = WorkflowContainerModel(
         data: WorkflowWindowData(
@@ -230,10 +214,8 @@ private struct AllocateIntakePreviewHost: View {
     }
 }
 
-/// Renders the Allocate Phase after a propose → accept run: a settled transcript, the committed Issue
-/// list, and the saved-confirmation banner. The fixture conversation and Issues are seeded into a
-/// fresh Workflow database the `WorkflowContainerModel` then opens and observes exactly as in
-/// production.
+/// Renders the Allocate Phase after a propose → accept run, from a fixture conversation and Issues
+/// seeded into a fresh Workflow database.
 private struct AllocateCommittedPreviewHost: View {
     @State private var container: WorkflowContainerModel
 

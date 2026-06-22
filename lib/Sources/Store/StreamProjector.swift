@@ -3,14 +3,9 @@ import Foundation
 import IssueReporting
 import SQLiteData
 
-/// Consumes the Harness's stream-json output for a single Turn and projects its content into the
-/// Workflow database: one `content_block` row per block — `text`, `thinking`, `tool_use` (name +
-/// input), and `tool_result` — reconciled against the consolidated `assistant`/`user` messages, and
-/// the Turn finalized from the `result` event.
-///
-/// Streamed deltas are coalesced in memory and flushed to the row in place (never stored
-/// individually): `text_delta` and `thinking_delta` append text, and `input_json_delta` appends the
-/// tool-call input JSON. A malformed / non-JSON line is a no-op — `ingest` never throws.
+/// Projects the Harness's stream-json output for one Turn into the database: one `content_block` row
+/// per block, deltas coalesced in memory and flushed in place, the Turn finalized from `result`. A
+/// malformed line is a no-op — `ingest` never throws.
 public final class StreamProjector {
     private let database: any DatabaseWriter
     private let turnID: UUID
@@ -26,39 +21,32 @@ public final class StreamProjector {
         var persisted: Bool
     }
 
-    /// A streamed block's identity. The Harness restarts its content-block `index` at 0 for each
-    /// assistant message, so an index alone isn't unique within a Turn — it's paired with the
-    /// ordinal of the message it belongs to.
+    /// The Harness restarts content-block `index` at 0 per assistant message, so index alone isn't
+    /// unique within a Turn — pair it with the message ordinal.
     private struct StreamKey: Hashable {
         var messageOrdinal: Int
         var index: Int
     }
 
-    /// Every projected block keyed by its absolute, Turn-wide position.
     private var blocks: [Int: Block] = [:]
 
     /// Maps a streamed block to its absolute position so its deltas, its stop, and the consolidated
-    /// `assistant` message that supersedes it all reconcile onto the same row instead of minting
-    /// duplicates.
+    /// message that supersedes it all reconcile onto the same row.
     private var positionByStreamKey: [StreamKey: Int] = [:]
 
-    /// Next free absolute position. Allocated in arrival order so positions stay monotonic across the
-    /// assistant messages and the interleaved tool-result messages that make up a Turn.
+    /// Allocated in arrival order so positions stay monotonic across assistant and interleaved
+    /// tool-result messages.
     private var nextPosition = 0
 
-    /// Which assistant message is currently streaming. Bumped when a `content_block_start` reuses an
-    /// index already seen in this message — the Harness's only signal that a new message has begun.
+    /// Bumped when a `content_block_start` reuses an index already seen — the Harness's only signal
+    /// that a new message has begun.
     private var messageOrdinal = 0
 
-    /// How many of the current message's blocks the consolidated `assistant` events have reconciled.
-    /// The Harness emits that message one block at a time, so each maps to the next index in order.
     private var reconciledCount = 0
 
-    /// Set once an `AskUserQuestion` call is seen. The Harness has no terminal to draw its picker, so
-    /// it auto-resolves the call with an error result and the model barrels on; the Agent reacts to
-    /// the `.askedQuestion` signal by interrupting the Turn so the rendered question card is left
-    /// waiting. While set, the call's noisy auto-error result is dropped, and the Turn's own
-    /// `result` (an interrupt reads as `is_error`) is recorded as a clean stop rather than a failure.
+    /// The Harness can't draw `AskUserQuestion`'s picker, so it auto-errors the call and barrels on. The
+    /// Agent interrupts on `.askedQuestion`; while set, the auto-error result is dropped and the Turn's
+    /// own interrupt-`is_error` result is recorded as a clean stop.
     private var interruptedForQuestion = false
 
     public init(database: any DatabaseWriter, turnID: UUID) {
@@ -70,9 +58,7 @@ public final class StreamProjector {
         self.date = date
     }
 
-    /// Projects one stream line and reports what the Agent should do next: `.askedQuestion` when an
-    /// `AskUserQuestion` call was just projected (interrupt the Turn so the card can be answered), and
-    /// `.completed` when the Turn's `result` landed (the Harness can be closed). `.none` otherwise.
+    /// Projects one stream line and reports what the Agent should do next.
     @discardableResult
     public func ingest(_ line: Data) -> StreamSignal {
         guard let event = Self.decode(line) else { return .none }
@@ -102,15 +88,14 @@ public final class StreamProjector {
             persist(streamPosition(forIndex: index, isStart: false))
 
         case let .assistantMessage(decoded):
-            // The Harness sends the consolidated message one block at a time; each supersedes the
-            // next streamed block of the current message, in order.
+            // The Harness sends the consolidated message one block at a time, each superseding the next
+            // streamed block in order.
             for block in decoded {
                 let position = streamPosition(forIndex: reconciledCount, isStart: false)
                 reconciledCount += 1
                 upsert(position: position, block: block)
             }
-            // The card's full input is now persisted, so signal the Agent to interrupt — but only the
-            // first time, so a later message in the same Turn can't re-trigger it.
+            // Interrupt only on the first question, so a later message can't re-trigger it.
             if !interruptedForQuestion,
                decoded.contains(where: { $0.kind == "tool_use" && $0.toolName == "AskUserQuestion" }) {
                 interruptedForQuestion = true
@@ -118,11 +103,9 @@ public final class StreamProjector {
             }
 
         case let .toolResults(decoded):
-            // Once we've asked, the only tool result left is the call's auto-generated error; drop it
-            // so it doesn't clutter the chat beneath the question card.
+            // After a question, the only result left is the call's auto-error; drop it.
             guard !interruptedForQuestion else { return .none }
-            // Tool results are their own blocks, appended after the assistant content that called
-            // them; they never reuse a streamed index.
+            // Tool results are their own blocks; they never reuse a streamed index.
             for block in decoded {
                 upsert(position: allocatePosition(), block: block)
             }
@@ -134,9 +117,8 @@ public final class StreamProjector {
         return .none
     }
 
-    /// The absolute position for the streamed block at `index` in the current message, allocating one
-    /// on first sight. A `content_block_start` whose index was already seen in this message means the
-    /// Harness restarted indices for a new assistant message, so the ordinal advances first.
+    /// A `content_block_start` whose index was already seen means the Harness restarted indices for a
+    /// new message, so the ordinal advances first.
     private func streamPosition(forIndex index: Int, isStart: Bool) -> Int {
         if isStart, positionByStreamKey[StreamKey(messageOrdinal: messageOrdinal, index: index)] != nil {
             messageOrdinal += 1
@@ -164,8 +146,8 @@ public final class StreamProjector {
         blocks[position]?.text += text
     }
 
-    /// Overwrites (or inserts) the block at `position` with the authoritative consolidated block,
-    /// covering blocks that never streamed.
+    /// Overwrites (or inserts) the block at `position` with the consolidated block, covering blocks
+    /// that never streamed.
     private func upsert(position: Int, block decoded: DecodedBlock) {
         if blocks[position] == nil {
             blocks[position] = Block(
@@ -218,9 +200,8 @@ public final class StreamProjector {
         blocks[position]?.persisted = true
     }
 
-    /// Flags the Turn as errored when the Harness fails before — or instead of — emitting a
-    /// `result` event (non-zero exit, crash, cancellation). Leaves `finalAnswer` untouched; the
-    /// diagnostic detail travels with the `AgentError` the Agent throws.
+    /// Flags the Turn errored when the Harness fails before emitting a `result` (non-zero exit, crash,
+    /// cancellation). The diagnostic detail travels with the `AgentError` the Agent throws.
     public func recordFailure(durationMs: Int?) {
         let now = date.now
         withErrorReporting {
@@ -239,8 +220,7 @@ public final class StreamProjector {
 
     private func finalize(finalAnswer: String?, isError: Bool, durationMs: Int?, costUSD: Double?) {
         let now = date.now
-        // Interrupting the Harness to await a question's answer reads back as an errored result; that
-        // is a deliberate, clean pause, not a Turn failure.
+        // An interrupt-to-await-a-question reads back as an errored result, but it's a clean pause.
         let isError = isError && !interruptedForQuestion
         withErrorReporting {
             try database.write { db in
@@ -261,17 +241,14 @@ public final class StreamProjector {
 
 /// What the Agent should do after the `StreamProjector` consumes a line.
 public enum StreamSignal: Equatable, Sendable {
-    /// Nothing special — keep streaming.
     case none
-    /// An `AskUserQuestion` call was just projected; interrupt the Turn so the rendered card can be
-    /// answered out-of-band, then resume the Session with the user's selection.
+    /// Interrupt the Turn so the rendered card can be answered, then resume with the selection.
     case askedQuestion
     /// The Turn's `result` landed; the Harness can be closed.
     case completed
 }
 
 extension StreamProjector {
-    /// A content block as carried by a consolidated `assistant`/`user` message.
     fileprivate struct DecodedBlock {
         var kind: String
         var role: String
@@ -308,15 +285,14 @@ extension StreamProjector {
             guard let message = object["message"] as? [String: Any] else { return nil }
             let role = message["role"] as? String ?? "assistant"
             let content = message["content"] as? [[String: Any]] ?? []
-            // Every item is kept so array offsets stay aligned with the streamed block indices.
+            // Keep every item so offsets stay aligned with the streamed block indices.
             let blocks = content.map { decodeAssistantBlock($0, role: role) }
             return .assistantMessage(blocks: blocks)
 
         case "user":
             guard let message = object["message"] as? [String: Any] else { return nil }
             let content = message["content"] as? [[String: Any]] ?? []
-            // Tool results are the only user-message content the Transcript records; the human
-            // prompt already lives on the Turn row.
+            // Tool results are the only user-message content recorded; the prompt lives on the Turn row.
             let blocks = content.compactMap(decodeToolResult)
             return blocks.isEmpty ? nil : .toolResults(blocks: blocks)
 
@@ -404,8 +380,7 @@ extension StreamProjector {
         return DecodedBlock(kind: "tool_result", role: "user", toolName: nil, text: toolResultText(item["content"]))
     }
 
-    /// A tool result's content is either a plain string or an array of content blocks; flatten the
-    /// array's text, falling back to a JSON dump of anything unexpected.
+    /// A tool result's content is either a plain string or an array of content blocks.
     private static func toolResultText(_ content: Any?) -> String {
         if let string = content as? String { return string }
         if let items = content as? [[String: Any]] {

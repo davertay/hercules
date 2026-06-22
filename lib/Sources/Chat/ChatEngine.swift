@@ -5,24 +5,19 @@ import Observation
 import SQLiteData
 import Store
 
-/// Drives a user/assistant chat over a single Session. The first `send` starts the Session with the
-/// configured mode, worktree, and Skill files; follow-ups resume it. Nothing about the conversation
-/// is held in memory for display — the chat is rendered purely by observing the Workflow database, so
-/// the assistant's text streams in live as the Agent projects it (ADR 0003).
-///
-/// The engine owns no window chrome and no Phase orchestration; a host (e.g. `Design`) embeds it and
-/// layers its own behavior on top.
+/// Drives a user/assistant chat over a single Session. The first `send` starts the Session; follow-ups
+/// resume it. Nothing is held in memory for display — the chat is rendered purely by observing the
+/// Workflow database, so the assistant's text streams in live as the Agent projects it (ADR 0003). A
+/// host (e.g. `Design`) embeds the engine and layers its own behavior on top.
 @MainActor
 @Observable
 public final class ChatEngine {
     public struct Message: Identifiable, Equatable, Sendable {
-        /// What a chat row renders: the user's prompt, the assistant's text, or — in the live
-        /// tool-call timeline — the agent's thinking, a tool invocation, or a tool's result.
         public enum Kind: Equatable, Sendable { case user, assistant, thinking, toolUse, toolResult }
         public let id: String
         public let kind: Kind
         public let text: String
-        /// The invoked tool's name; set only on `.toolUse` rows.
+        /// Set only on `.toolUse` rows.
         public let toolName: String?
         public let isError: Bool
 
@@ -50,8 +45,8 @@ public final class ChatEngine {
     @ObservationIgnored
     private let workflowID: UUID
 
-    /// The surface this engine serves. Scopes both the conversation observation and the Session
-    /// rediscovery to this Workflow's Session of this kind (ADR 0005).
+    /// Scopes the conversation observation and Session rediscovery to this Workflow's Session of this
+    /// kind (ADR 0005).
     @ObservationIgnored
     private let kind: SessionKind
 
@@ -61,16 +56,14 @@ public final class ChatEngine {
     @ObservationIgnored
     private let addDirs: [URL]
 
-    /// Custom MCP servers for this surface's Session; pinned at start and re-passed on every resume
-    /// Turn, exactly as `skillFiles`/`addDirs` are (ADR 0001 / ADR 0004). Empty for surfaces that
-    /// need none (Design, PRD, TestChat).
+    /// Pinned at start and re-passed on every resume Turn, like `skillFiles`/`addDirs` (ADR 0001 /
+    /// ADR 0004). Empty for surfaces that need none.
     @ObservationIgnored
     private let mcpServers: [MCPServer]
 
-    /// Live view of this surface's Turns and their content blocks — only those belonging to a Session
-    /// of this engine's kind in its Workflow. Updates as the Harness streams, which is what makes the
-    /// assistant's reply appear before the Turn ends. The scope is stable for the engine's lifetime,
-    /// so a freshly-created Session's Turns are picked up automatically once its row exists.
+    /// Updates as the Harness streams, which is what makes the assistant's reply appear before the Turn
+    /// ends. The scope is stable for the engine's lifetime, so a new Session's Turns are picked up once
+    /// its row exists.
     @ObservationIgnored
     @Fetch var conversation = ConversationRequest.Value()
 
@@ -85,8 +78,7 @@ public final class ChatEngine {
     /// Set only for failures that never reach the database (e.g. the Harness binary is missing).
     public var errorText: String?
 
-    /// Invoked when the user initiates a new send via the composer. Hosts use it to dismiss transient
-    /// UI (e.g. a saved-confirmation banner) the moment fresh chat activity begins.
+    /// Lets hosts dismiss transient UI (e.g. a saved-confirmation banner) when fresh chat begins.
     public var onSend: (@MainActor () -> Void)?
 
     public init(
@@ -112,10 +104,8 @@ public final class ChatEngine {
             ConversationRequest(workflowID: workflowID, kind: kind),
             animation: .default
         )
-        // Rediscover this surface's existing Session so a follow-up resumes it rather than starting a
-        // new one, and reopening shows prior history. The persisted row carries the pinned worktree
-        // and mode; the Skill files and added directories are fixed per surface and supplied by the
-        // consumer rather than stored (ADR 0005).
+        // Rediscover an existing Session so a follow-up resumes it and reopening shows prior history.
+        // Skill files and added directories are supplied by the consumer rather than stored (ADR 0005).
         if let row = try? database.existingSession(workflowID: workflowID, kind: kind),
            let mode = AgentMode(rawValue: row.mode),
            let kind = SessionKind(rawValue: row.kind) {
@@ -131,9 +121,7 @@ public final class ChatEngine {
         }
     }
 
-    /// The conversation reconstructed from the database: one user bubble per Turn's prompt, then that
-    /// Turn's content blocks in order — assistant text, thinking, tool calls, and tool results — so
-    /// the chat shows a live tool-call timeline as the Turn runs.
+    /// One user bubble per Turn's prompt, then that Turn's content blocks in order.
     public var messages: [Message] {
         let turns = conversation.turns.sorted { $0.createdAt < $1.createdAt }
         let blocksByTurn = Dictionary(grouping: conversation.blocks) { $0.turnID }
@@ -160,7 +148,7 @@ public final class ChatEngine {
         return result
     }
 
-    /// Maps one content block to its chat row, or `nil` to skip it (empty text/thinking).
+    /// `nil` to skip the block (empty text/thinking).
     private static func message(for block: ContentBlockRow, isError: Bool) -> Message? {
         let id = "\(block.turnID.uuidString)/\(block.position)"
         switch block.kind {
@@ -179,8 +167,7 @@ public final class ChatEngine {
         }
     }
 
-    /// True before any conversation exists and while the engine is idle — the empty-state condition a
-    /// host uses to show an intake prompt instead of an empty transcript.
+    /// Empty-state condition: a host shows an intake prompt instead of an empty transcript.
     public var isIntake: Bool {
         messages.isEmpty && !isRunning && errorText == nil
     }
@@ -189,7 +176,6 @@ public final class ChatEngine {
         draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunning
     }
 
-    /// Submits the draft as a new Turn: clears the composer, then runs the start-or-resume send.
     public func submit() {
         let prompt = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty, !isRunning else { return }
@@ -207,11 +193,9 @@ public final class ChatEngine {
         }
     }
 
-    /// The single start-or-resume send operation: starts the Session on the first call and resumes it
-    /// thereafter, projecting the Turn into the database as it streams. Returns once the Turn ends.
-    /// Hosts may call it directly (e.g. with a canned prompt) and await `runTask`. `inputs` carries
-    /// reference documents for the Turn — their root directory is exposed to the Harness and the
-    /// files are listed in the rendered prompt (ADR 0004).
+    /// Starts the Session on the first call and resumes it thereafter, returning once the Turn ends.
+    /// `inputs` carries reference documents: their root is exposed to the Harness and listed in the
+    /// rendered prompt (ADR 0004).
     public func send(_ prompt: String, inputs: InputBundle? = nil) async throws {
         if let existing = session {
             session = try await agentClient.send(
@@ -236,9 +220,8 @@ public final class ChatEngine {
     }
 }
 
-/// Reads one surface's Turns and their content blocks in one transaction so the two stay consistent
-/// as the Workflow database changes mid-Turn. Scoped to Sessions of `kind` in `workflowID`, so two
-/// Sessions of different kinds in the same Workflow don't bleed into each other's transcript.
+/// Reads one surface's Turns and content blocks in one transaction so they stay consistent mid-Turn.
+/// Scoped to Sessions of `kind` in `workflowID` so different-kind Sessions don't bleed transcripts.
 struct ConversationRequest: FetchKeyRequest {
     var workflowID: UUID = UUID()
     var kind: SessionKind = .design

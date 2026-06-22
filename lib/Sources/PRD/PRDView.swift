@@ -5,9 +5,8 @@ import SwiftUI
 import AppKit
 #endif
 
-/// The PRD Phase surface: a directed one-shot, not a conversation, so there is no composer. Idle
-/// shows the single generate action; a running Turn shows its streaming Transcript as the progress
-/// display; done shows the settled Transcript with a saved confirmation.
+/// The PRD Phase surface: a directed one-shot with no composer. Idle shows the generate action; a run
+/// shows the streaming Transcript; done adds a saved confirmation.
 public struct PRDView: View {
     @Bindable var model: PRDModel
 
@@ -34,9 +33,7 @@ public struct PRDView: View {
         .frame(minWidth: 500, minHeight: 400)
         .navigationTitle("PRD")
         .toolbar {
-            // Once a Transcript exists the idle action is gone; keep the action reachable from the
-            // toolbar so an errored run can be retried. Hidden once the Phase completes (re-running
-            // is the separate Regenerate action).
+            // Kept reachable so an errored run can be retried; gone once the Phase completes.
             if !model.isIdle && model.isGenerateAvailable {
                 ToolbarItem {
                     Button("Generate PRD from Design Summary", systemImage: "doc.text") {
@@ -48,7 +45,6 @@ public struct PRDView: View {
     }
 }
 
-/// The idle state's single action.
 private struct IdleActionView: View {
     let isGenerateAvailable: Bool
     let generate: () -> Void
@@ -71,9 +67,7 @@ private struct IdleActionView: View {
     }
 }
 
-/// Confirmation that the PRD was saved, with a Reveal in Finder button and the Regenerate action
-/// that re-runs the directed Turn against the (possibly edited) Design summary. The user edits the
-/// markdown externally; the app never renders or edits it in place.
+/// The user edits the markdown externally; the app never renders or edits it in place.
 private struct PRDSavedBanner: View {
     let url: URL
     let isRegenerateAvailable: Bool

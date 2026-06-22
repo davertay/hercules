@@ -1,9 +1,7 @@
 import SwiftUI
 
-/// The scrolling conversation: message bubbles, the thinking/tool-call/tool-result timeline, any
-/// out-of-band error, and the running indicator. A composable unit — a host that is not chat-only can
-/// embed just this as a panel. Carries no window chrome (frame, title, toolbar); that stays with the
-/// host.
+/// The scrolling conversation, a composable unit with no window chrome — a non-chat-only host can
+/// embed just this as a panel.
 public struct ChatTranscript: View {
     let engine: ChatEngine
 
@@ -120,7 +118,6 @@ private struct ChatMessageBubble: View {
     }
 }
 
-/// The agent's thinking, shown as a subdued italic aside distinct from its spoken text.
 private struct ThinkingRow: View {
     let text: String
 
@@ -139,7 +136,6 @@ private struct ThinkingRow: View {
     }
 }
 
-/// One step in the live tool-call timeline: the tool's name and the JSON input it was invoked with.
 private struct ToolCallRow: View {
     let name: String
     let input: String
@@ -168,7 +164,7 @@ private struct ToolCallRow: View {
     }
 }
 
-/// A tool's result, rendered monospaced and truncated so a long read/search doesn't flood the chat.
+/// Truncated so a long read/search doesn't flood the chat.
 private struct ToolResultRow: View {
     let text: String
 

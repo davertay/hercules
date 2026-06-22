@@ -13,11 +13,9 @@ struct IssueTests {
     @Test func migrationCreatesIssueTableAndIndex() throws {
         let database = try Self.makeDatabase()
 
-        // The table is queryable (columns present) and starts empty.
         let count = try database.read { db in try IssueRow.fetchAll(db).count }
         #expect(count == 0)
 
-        // The workflowID index is present.
         let indexNames = try database.read { db in
             try #sql(
                 "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'issue'",
@@ -74,14 +72,13 @@ struct IssueTests {
             try IssueRow.fetchAll(db)
         }
         let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
-        // The target Workflow's live Issues are soft-deleted and stamped.
         #expect(byID[UUID(10)]?.isDeleted == true)
         #expect(byID[UUID(11)]?.isDeleted == true)
         #expect(byID[UUID(10)]?.updatedAt == Self.fixedDate.addingTimeInterval(60))
-        // An already-deleted Issue is left untouched (its updatedAt is not re-stamped).
+        // An already-deleted Issue is left untouched (updatedAt not re-stamped).
         #expect(byID[UUID(12)]?.isDeleted == true)
         #expect(byID[UUID(12)]?.updatedAt == Self.fixedDate)
-        // The other Workflow's Issue is untouched.
+        // The other Workflow is untouched.
         #expect(byID[UUID(13)]?.isDeleted == false)
         #expect(byID[UUID(13)]?.updatedAt == Self.fixedDate)
     }
@@ -102,10 +99,8 @@ struct IssueTests {
 
         let rows = try database.read { db in try IssueRow.fetchAll(db) }
         let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
-        // The targeted Issue carries the new raw string and a fresh timestamp.
         #expect(byID[UUID(10)]?.status == "in_progress")
         #expect(byID[UUID(10)]?.updatedAt == Self.fixedDate.addingTimeInterval(60))
-        // A sibling Issue is untouched.
         #expect(byID[UUID(11)]?.status == "new")
         #expect(byID[UUID(11)]?.updatedAt == Self.fixedDate)
     }
@@ -132,7 +127,6 @@ struct IssueTests {
         let other = UUID(2)
         try Self.seedWorkflow(database, workflowID: target)
         try Self.seedWorkflow(database, workflowID: other)
-        // A same-numbered Issue in another Workflow, and a soft-deleted Issue in the target.
         try Self.seedIssue(database, id: UUID(10), workflowID: target, number: 1)
         try Self.seedIssue(database, id: UUID(11), workflowID: other, number: 1)
         try Self.seedIssue(database, id: UUID(12), workflowID: target, number: 1, isDeleted: true)
@@ -145,9 +139,8 @@ struct IssueTests {
         let rows = try database.read { db in try IssueRow.fetchAll(db) }
         let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
         #expect(byID[UUID(10)]?.status == "done")
-        // The other Workflow's same-numbered Issue is untouched.
+        // Other Workflow's same-numbered Issue, and a soft-deleted one, are untouched.
         #expect(byID[UUID(11)]?.status == "new")
-        // The soft-deleted Issue is not revived or restamped.
         #expect(byID[UUID(12)]?.status == "new")
         #expect(byID[UUID(12)]?.updatedAt == Self.fixedDate)
     }
@@ -168,7 +161,6 @@ struct IssueTests {
 
         let rows = try database.read { db in try IssueRow.fetchAll(db) }
         let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
-        // The stale in-progress Issue is demoted and restamped.
         #expect(byID[UUID(10)]?.status == "failed")
         #expect(byID[UUID(10)]?.updatedAt == Self.fixedDate.addingTimeInterval(60))
         // Terminal and pending Issues are left alone.
@@ -195,9 +187,8 @@ struct IssueTests {
         let rows = try database.read { db in try IssueRow.fetchAll(db) }
         let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
         #expect(byID[UUID(10)]?.status == "failed")
-        // The other Workflow's in-progress Issue is untouched.
+        // The other Workflow's and the soft-deleted in-progress Issues are left as-is.
         #expect(byID[UUID(11)]?.status == "in_progress")
-        // A soft-deleted in-progress Issue is left as-is.
         #expect(byID[UUID(12)]?.status == "in_progress")
     }
 

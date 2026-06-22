@@ -52,11 +52,8 @@ public final class TestChatModel {
         }
     }
 
-    // Exposed internally so tests can assert the connection is closed before the storage is
-    // removed (it must be, or libsqlite3 warns "vnode unlinked while in use").
     var databaseForTesting: (any DatabaseWriter)? { teardown.database }
 
-    // Exposed internally so tests can observe cleanup without publishing it as API.
     var storageRoot: URL { teardown.storageRoot }
 
     public var windowTitle: String {
@@ -69,10 +66,8 @@ public final class TestChatModel {
     }
 }
 
-// Holds the disposable database and storage root so deinit can close and unlink them even if
-// tearDown() was never called.
-// @unchecked Sendable: mutation is confined to @MainActor; deinit runs after the last strong
-// reference drops, at which point no @MainActor code can reach these fields.
+// Holds the disposable database/storage so deinit can close and unlink them if tearDown() never ran.
+// @unchecked Sendable: mutation is confined to @MainActor; deinit runs after the last reference drops.
 private final class TeardownHandle: @unchecked Sendable {
     let storageRoot: URL
     let database: (any DatabaseWriter)?
@@ -82,10 +77,8 @@ private final class TeardownHandle: @unchecked Sendable {
         self.database = database
     }
 
-    // Close the SQLite connection *before* unlinking the directory. Otherwise libsqlite3
-    // reports "vnode unlinked while in use" because the open file descriptors (db, -wal, -shm)
-    // outlive the file. Idempotent: a second cleanup() finds the connection already closed and
-    // the directory already gone.
+    // Close the connection *before* unlinking, or libsqlite3 warns "vnode unlinked while in use".
+    // Idempotent.
     func cleanup() {
         try? database?.close()
         try? FileManager.default.removeItem(at: storageRoot)

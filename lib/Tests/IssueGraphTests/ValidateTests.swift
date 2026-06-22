@@ -2,9 +2,6 @@ import Testing
 
 @testable import IssueGraph
 
-/// Tracers for `IssueGraph.validate(_:)`, ported from the prototype's per-discriminator `Validate*Tests`
-/// and retyped to `Int` Issue numbers. Covers the clean paths plus both malformed-input discriminators
-/// and their precedence.
 @Suite("IssueGraph.validate")
 struct ValidateTests {
 

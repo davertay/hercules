@@ -51,8 +51,6 @@ struct ExecuteRunIssueTests {
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 2))
         await model.runIssue(issue)
 
-        // The Session is tagged for the worktree, write mode, execute kind, the Issue number, and the
-        // implement-issue Skill, with the Issue body as the prompt.
         let request = try #require(captured.value)
         #expect(request.mode == .write)
         #expect(request.worktree == FileManager.default.temporaryDirectory)
@@ -65,13 +63,12 @@ struct ExecuteRunIssueTests {
         #expect(request.inputs == nil)
         #expect(request.mcpServers.isEmpty)
 
-        // The Session row carries the Issue link, and the Store helper resolves it back.
+        // The Session row carries the Issue link, resolved back via the Store helper.
         let session = try #require(try database.session(forIssue: 2, workflowID: workflowID))
         #expect(session.id == UUID(100))
         #expect(session.kind == SessionKind.execute.rawValue)
         #expect(session.issueNumber == 2)
 
-        // Success → done.
         #expect(try Self.status(database, workflowID: workflowID, number: 2) == "done")
     }
 
@@ -85,8 +82,7 @@ struct ExecuteRunIssueTests {
             $0.defaultDatabase = database
             $0.date.now = fixedDate
             $0.agentClient.start = { @Sendable request in
-                // Record the Session as the live client would before the Turn fails, then throw to
-                // stand in for a Turn that terminated abnormally.
+                // Record the Session, then throw to stand in for an abnormally-terminated Turn.
                 _ = try await Self.startSession(for: request, id: UUID(101))
                 throw AgentError.cancelled
             }
@@ -102,8 +98,7 @@ struct ExecuteRunIssueTests {
 
     // MARK: - Helpers
 
-    /// Stands in for the live client's `start`: records the per-Issue `execute` Session exactly as the
-    /// Agent would (carrying the request's `issueNumber`), then returns the started Session.
+    /// Stands in for the live client's `start`, recording the `execute` Session as the Agent would.
     private static func startSession(for request: StartRequest, id: UUID) async throws -> Session {
         try await request.database.write { db in
             try SessionRow.insert {

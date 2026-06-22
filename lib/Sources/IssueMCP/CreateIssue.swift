@@ -4,13 +4,9 @@ import MCP
 import SQLiteData
 import Store
 
-// The seam below the MCP transport: decode the model-supplied `create_issue` arguments and insert a
-// single `IssueRow`. The model supplies content only — the `workflowID` is fixed by the launch
-// context (never an argument), `status` is always `"new"`, and the id/timestamps come from the
-// injected `uuid`/`date` dependencies. Tests drive these functions directly, without real stdio.
+// The seam below the MCP transport, driven directly by tests without real stdio.
 
-/// The decoded arguments of one `create_issue` tool call: the content the model supplies for an
-/// Issue. `dependencies` defaults to empty when the model omits it for an Issue with no dependencies.
+/// `dependencies` defaults to empty when the model omits it.
 public struct CreateIssueArguments: Codable, Equatable, Sendable {
     public var number: Int
     public var title: String
@@ -36,18 +32,15 @@ public struct CreateIssueArguments: Codable, Equatable, Sendable {
         dependencies = try container.decodeIfPresent([Int].self, forKey: .dependencies) ?? []
     }
 
-    /// Decodes the arguments out of the raw MCP `[String: Value]` map a `tools/call` carries. Throws
-    /// when a required field (`number`, `title`, `body`) is missing or the wrong type — the malformed
-    /// path the server reports back as a tool error.
+    /// Throws when a required field is missing or the wrong type — reported back as a tool error.
     public init(mcpArguments: [String: Value]?) throws {
         let data = try JSONEncoder().encode(Value.object(mcpArguments ?? [:]))
         self = try JSONDecoder().decode(CreateIssueArguments.self, from: data)
     }
 }
 
-/// Inserts one `IssueRow` from decoded `create_issue` arguments into `database`. The `workflowID`
-/// comes from the launch context (not the arguments) so the model can never target another Workflow;
-/// `status` is `"new"`; the id and timestamps are taken from the injected `uuid`/`date` dependencies.
+/// `workflowID` comes from the launch context, not the arguments, so the model can't target another
+/// Workflow.
 @discardableResult
 public func createIssue(
     _ arguments: CreateIssueArguments,

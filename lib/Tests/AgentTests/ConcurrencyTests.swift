@@ -28,8 +28,6 @@ struct ConcurrencyTests {
         }
     }
 
-    // Two simultaneous sends on the same Session: the second throws .sessionBusy,
-    // the first completes normally.
     @Test func sameSesssionOverlapRejectsSecond() async throws {
         let echoFixture = try fixtureURL("echo-init.sh")
         let slowFixture = try fixtureURL("slow.sh")
@@ -47,15 +45,13 @@ struct ConcurrencyTests {
 
         let slowClient = client(slowFixture)
 
-        // First send: acquires lock and runs slow.sh (sleeps 30s).
         let firstTask = Task {
             try await slowClient.send(SendRequest(prompt: "first", session: session, database: database))
         }
 
-        // Give slow.sh time to start and acquire the lock before the second send.
+        // Let slow.sh acquire the lock before the second send.
         try await Task.sleep(nanoseconds: 200_000_000)
 
-        // Second send on the same session must throw .sessionBusy immediately.
         do {
             _ = try await slowClient.send(SendRequest(prompt: "second", session: session, database: database))
             Issue.record("Expected AgentError.sessionBusy to be thrown")
@@ -69,13 +65,10 @@ struct ConcurrencyTests {
             #expect(id == session.id)
         }
 
-        // Cancel the slow first task to keep the test fast.
         firstTask.cancel()
         _ = try? await firstTask.value
     }
 
-    // Two simultaneous sends on different Sessions: both proceed in parallel
-    // without either throwing .sessionBusy.
     @Test func differentSessionsProceedInParallel() async throws {
         let echoFixture = try fixtureURL("echo-init.sh")
         let (database, workflowID, root) = try WorkflowFixture.make()
@@ -108,8 +101,7 @@ struct ConcurrencyTests {
         #expect(result2.id == session2.id)
     }
 
-    // After a failing Turn the Session ID is removed from busySessions, so the
-    // next send on the same client does not throw .sessionBusy.
+    // A failing Turn must release the Session lock so the next send isn't rejected as busy.
     @Test func failedSendReleasesLock() async throws {
         let echoFixture = try fixtureURL("echo-init.sh")
         let crashFixture = try fixtureURL("crash.sh")
@@ -125,7 +117,7 @@ struct ConcurrencyTests {
             kind: .design
         ))
 
-        // Use the crash client for both sends so they share the same busySessions.
+        // Both sends share one client (and so one busySessions).
         let crashClient = client(crashFixture)
 
         do {
@@ -135,16 +127,13 @@ struct ConcurrencyTests {
             // expected — harnessFailed from crash.sh
         }
 
-        // Second send on the same client: must NOT throw .sessionBusy.
-        // It will fail with .harnessFailed (crash.sh again), but that proves the
-        // lock was correctly released by the defer in the first send.
+        // The second send must not throw .sessionBusy, proving the lock was released.
         do {
             _ = try await crashClient.send(SendRequest(prompt: "second", session: session, database: database))
         } catch let err as AgentError {
             if case .sessionBusy = err {
                 Issue.record("Session lock was not released after failed send: \(err)")
             }
-            // .harnessFailed is expected; anything other than .sessionBusy is fine
         }
     }
 }

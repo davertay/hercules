@@ -7,20 +7,13 @@ import Observation
 import SQLiteData
 import Store
 
-/// Drives the Allocate Phase: a hybrid of PRD's directed kickoff and Design's conversation, with a
-/// button-gated commit. The shared `ChatEngine` is configured for a `readOnly` Session under the
-/// bundled to-issues Skill with the repo as cwd (so the agent grounds Issue sizing in real code) and
-/// the create-issue MCP server descriptor pinned on it. `propose()` runs a proposal Turn that reads
-/// the PRD and Design summary and presents the breakdown as text — no Issues written. `acceptAndWrite()`
-/// clears any prior Issues, runs the commit Turn that writes the agreed set via the MCP tool, then —
-/// only if the write produced at least one Issue — marks the Allocate Phase complete (its Artifact is
-/// rows, not a file, so the nil-path `completePhase` is used).
+/// Drives the Allocate Phase: a conversation with a button-gated commit. `propose()` reads the PRD and
+/// Design summary and presents an Issue breakdown as text; `acceptAndWrite()` clears any prior Issues,
+/// runs the commit Turn that writes the agreed set via the create-issue MCP tool, then marks the Phase
+/// complete only if the write produced at least one Issue (its Artifact is rows, not a file).
 @MainActor
 @Observable
 public final class AllocateModel {
-    /// The shared chat engine, configured for the Allocate Session. Driven by `propose()` /
-    /// `acceptAndWrite()` and by the composer for refinement Turns; its streaming Transcript is the
-    /// conversation display.
     let engine: ChatEngine
 
     @ObservationIgnored
@@ -35,26 +28,23 @@ public final class AllocateModel {
     @ObservationIgnored
     private let workflowID: UUID
 
-    /// The Workflow's root directory (`~/.hercules/workflows/<id>/`); the PRD and Design Artifacts
-    /// live beneath it and are attached as inputs by their relative `phases/...` paths.
+    /// The PRD and Design Artifacts live beneath this and are attached by their relative `phases/...`
+    /// paths.
     @ObservationIgnored
     private let workflowDirectory: URL
 
     @ObservationIgnored
     private let skill: SkillResource
 
-    /// Live view of this Workflow's committed Issues, ordered by number. The Issue list and saved
-    /// confirmation are derived from it, so they appear live when the commit Turn writes and survive
-    /// closing and reopening the window.
     @ObservationIgnored
     @Fetch var issues: [IssueRow] = []
 
     @ObservationIgnored
     var runTask: Task<Void, Never>?
 
-    /// - Parameter mcpServerCommand: the path to the Hercules app binary, re-executed as the stdio
-    ///   create-issue MCP server. The DB path and workflow id are fixed as launch arguments here, so
-    ///   the model can never target another Workflow's database.
+    /// - Parameter mcpServerCommand: the Hercules app binary, re-executed as the stdio create-issue MCP
+    ///   server. The DB path and workflow id are fixed as launch args, so it can't target another
+    ///   Workflow's database.
     public init(
         worktree: URL,
         workflowID: UUID,
@@ -83,18 +73,15 @@ public final class AllocateModel {
         )
     }
 
-    /// True before any conversation exists — drives the intake action instead of the transcript.
     public var isIntake: Bool { engine.isIntake }
 
-    /// Whether the Propose action can run: not while a Turn is in flight.
     public var isProposeAvailable: Bool { !engine.isRunning }
 
-    /// Whether the Accept & Write action can run: only once a proposal conversation exists, and not
-    /// while a Turn is in flight.
+    /// Available only once a proposal conversation exists.
     public var isAcceptAvailable: Bool { engine.session != nil && !engine.isRunning }
 
-    /// The directed instruction the proposal Turn runs with; the heavy behavioural instructions —
-    /// propose as text only, write nothing yet — live in the to-issues Skill.
+    /// The heavy behavioural instructions — propose as text only, write nothing yet — live in the
+    /// to-issues Skill.
     static func proposePrompt(prdPath: String, designPath: String) -> String {
         """
         Read the PRD at \(prdPath) and the Design summary at \(designPath), then propose the \
@@ -102,15 +89,11 @@ public final class AllocateModel {
         """
     }
 
-    /// The directed instruction the commit Turn resumes the Session with; the Skill carries the rule
-    /// that this is the only point at which `create_issue` is called.
     static let commitPrompt =
         "Write the agreed set of Issues now, one create_issue call per Issue."
 
-    /// Runs the proposal Turn: reads the PRD and Design summary locations from their completed Phase
-    /// rows (the single source of truth), attaches both as one `InputBundle` rooted at the Workflow
-    /// directory, and sends the directed proposal prompt. `ChatEngine.send` starts the Session the
-    /// first time and resumes it on a re-propose. No Issues are written.
+    /// Reads the PRD and Design summary locations from their completed Phase rows, attaches both, and
+    /// sends the proposal prompt. Starts the Session the first time, resumes it on a re-propose.
     public func propose() {
         guard isProposeAvailable else { return }
         engine.errorText = nil
@@ -134,11 +117,9 @@ public final class AllocateModel {
         }
     }
 
-    /// Commits the agreed breakdown: clears any previously written Allocate Issues so a re-commit
-    /// replaces the set cleanly, resumes the Session with the commit instruction (the agent writes
-    /// each Issue via the create-issue MCP tool), then re-reads the Issues. Only if the write produced
-    /// at least one Issue is the Allocate Phase marked complete (nil Artifact path), so a commit Turn
-    /// that wrote nothing does not falsely unlock Execute.
+    /// Clears any prior Issues so a re-commit replaces the set cleanly, then writes via the MCP tool.
+    /// Completes the Phase only if the write produced at least one Issue, so an empty commit doesn't
+    /// falsely unlock Execute.
     public func acceptAndWrite() {
         guard isAcceptAvailable else { return }
         engine.errorText = nil
@@ -161,8 +142,6 @@ public final class AllocateModel {
         }
     }
 
-    /// The create-issue MCP server descriptor: the app binary re-executed with the stdio subcommand,
-    /// with the Workflow DB path and id fixed as launch arguments.
     private static func issueServer(
         command: String, workflowDirectory: URL, workflowID: UUID
     ) -> MCPServer {
@@ -179,8 +158,7 @@ public final class AllocateModel {
         )
     }
 
-    /// The location of a completed Phase's file Artifact, read from its `phase` row (single source of
-    /// truth) — the PRD at `phases/prd/prd.md`, the Design summary at `phases/design/summary.md`.
+    /// A completed Phase's file Artifact, read from its `phase` row.
     private func artifactURL(kind: String) throws -> URL {
         let row = try database.read { db in
             try PhaseRow
@@ -194,16 +172,14 @@ public final class AllocateModel {
         return URL(fileURLWithPath: path)
     }
 
-    /// The Workflow's current non-deleted Issues, read directly so the completion gate keys on the
-    /// rows the commit Turn actually wrote rather than waiting for the `@Fetch` to refire.
+    /// Read directly so the completion gate keys on the rows the commit Turn just wrote rather than
+    /// waiting for the `@Fetch` to refire.
     private func currentIssues() throws -> [IssueRow] {
         try database.read { db in
             try WorkflowIssuesRequest(workflowID: workflowID).fetch(db)
         }
     }
 
-    /// `absolute`'s path relative to the Workflow directory, so the two Artifacts are listed as the
-    /// `phases/...` paths under the bundle root rather than absolute paths.
     private func relativePath(of absolute: URL) -> String {
         let root = workflowDirectory.standardizedFileURL.path
         let path = absolute.standardizedFileURL.path

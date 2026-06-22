@@ -30,24 +30,22 @@ struct CreateIssueTests {
         }
 
         let row = try #require(try database.read { db in try IssueRow.fetchOne(db) })
-        // Content matches the arguments.
         #expect(row.number == 7)
         #expect(row.title == "Add issue table")
         #expect(row.body == "The bulk spec.")
         #expect(row.dependencies == [3, 5])
-        // workflowID comes from the launch context, status is defaulted, id/timestamps from deps.
+        // workflowID from the launch context, status defaulted, id/timestamps from deps.
         #expect(row.workflowID == workflowID)
         #expect(row.status == "new")
         #expect(row.id == UUID(0))
         #expect(row.createdAt == Self.fixedDate)
         #expect(row.updatedAt == Self.fixedDate)
-        // The returned row is the inserted row.
         #expect(inserted == row)
     }
 
     @Test func ignoresAnyWorkflowIDInArguments() throws {
-        // The model cannot smuggle a different Workflow in: `workflowID` is not even a decoded field,
-        // so an extra `workflowID` key in the raw arguments is ignored and the launch one is used.
+        // `workflowID` isn't a decoded field, so an extra key in the raw arguments can't override the
+        // launch one.
         let database = try Self.makeDatabase()
         let launchWorkflow = UUID(1)
         try Self.seedWorkflow(database, workflowID: launchWorkflow)

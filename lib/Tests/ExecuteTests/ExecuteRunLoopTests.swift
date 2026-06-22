@@ -11,9 +11,8 @@ import Testing
 
 private let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
-/// Exercises `ExecuteModel.run` — the sequential, dependency-ordered loop that drives the whole Execute
-/// Phase. The agent client is stubbed so each Issue's run is a synchronous success/failure decision; the
-/// tests assert on the persisted Issue statuses and the Phase-completion row the loop writes.
+/// Exercises `ExecuteModel.run` with the agent client stubbed so each Issue's run is a synchronous
+/// success/failure decision.
 @MainActor
 @Suite("ExecuteModel.run")
 struct ExecuteRunLoopTests {
@@ -22,8 +21,7 @@ struct ExecuteRunLoopTests {
     func runsInReadyOrder() async throws {
         let database = try Self.makeDatabase()
         let workflowID = UUID(0)
-        // #1 is a root; #2 depends on #1; #3 depends on #2. Ready order is 1, 2, 3 regardless of any
-        // numeric tie-break, because each unlocks the next only once it is `done`.
+        // A chain 1 → 2 → 3, so each unlocks the next only once it is `done`.
         try Self.seedIssue(database, workflowID: workflowID, number: 1, dependencies: [])
         try Self.seedIssue(database, workflowID: workflowID, number: 2, dependencies: [1])
         try Self.seedIssue(database, workflowID: workflowID, number: 3, dependencies: [2])
@@ -31,7 +29,6 @@ struct ExecuteRunLoopTests {
         let order = LockIsolated<[Int]>([])
         let model = Self.model(database: database, workflowID: workflowID) { request in
             order.withValue { $0.append(request.issueNumber ?? -1) }
-            // When #2 runs, #1 must already be `done`; when #3 runs, #2 must be `done`.
             return try await Self.startSession(for: request, id: UUID(100 + (request.issueNumber ?? 0)))
         }
 
@@ -47,8 +44,7 @@ struct ExecuteRunLoopTests {
     func selectsLowestReadyNotLowestNumber() async throws {
         let database = try Self.makeDatabase()
         let workflowID = UUID(0)
-        // #1 depends on #2; #2 is a root. The lowest *ready* Issue is #2, so it runs first even though
-        // #1 has the lower number.
+        // #1 depends on #2, so the lowest *ready* Issue is #2 despite #1's lower number.
         try Self.seedIssue(database, workflowID: workflowID, number: 1, dependencies: [2])
         try Self.seedIssue(database, workflowID: workflowID, number: 2, dependencies: [])
 
@@ -75,7 +71,6 @@ struct ExecuteRunLoopTests {
         let model = Self.model(database: database, workflowID: workflowID) { request in
             order.withValue { $0.append(request.issueNumber ?? -1) }
             _ = try await Self.startSession(for: request, id: UUID(100 + (request.issueNumber ?? 0)))
-            // #2 fails its Turn.
             if request.issueNumber == 2 { throw AgentError.cancelled }
             return Session(
                 id: Session.ID(rawValue: UUID(100 + (request.issueNumber ?? 0))),
@@ -86,13 +81,10 @@ struct ExecuteRunLoopTests {
 
         await model.run()
 
-        // The loop ran #1 then #2, halted before #3.
         #expect(order.value == [1, 2])
         #expect(try Self.status(database, workflowID: workflowID, number: 1) == "done")
         #expect(try Self.status(database, workflowID: workflowID, number: 2) == "failed")
-        // #3 was never picked up — it stays `new`.
         #expect(try Self.status(database, workflowID: workflowID, number: 3) == "new")
-        // The Phase did not complete, so Validate stays locked.
         #expect(try Self.executeCompleted(database, workflowID: workflowID) == false)
     }
 
@@ -112,8 +104,7 @@ struct ExecuteRunLoopTests {
 
         await model.run()
 
-        // The stale Issue was demoted to `failed` before selection; nothing was `new` and ready, so no
-        // Issue ran and the Phase stays incomplete.
+        // Demoted to `failed` before selection, so nothing was ready and no Issue ran.
         #expect(order.value == [])
         #expect(try Self.status(database, workflowID: workflowID, number: 1) == "failed")
         #expect(try Self.status(database, workflowID: workflowID, number: 2) == "new")
@@ -135,7 +126,6 @@ struct ExecuteRunLoopTests {
 
         #expect(try Self.status(database, workflowID: workflowID, number: 1) == "done")
         #expect(try Self.status(database, workflowID: workflowID, number: 2) == "done")
-        // The `execute` Phase row is now `complete`, the gate the Validate Phase unlocks on.
         #expect(try Self.executeCompleted(database, workflowID: workflowID) == true)
     }
 
@@ -155,7 +145,7 @@ struct ExecuteRunLoopTests {
 
         await model.run()
 
-        // Only #2 ran; the already-`done` #1 was skipped, never re-attempted.
+        // The already-`done` #1 was skipped.
         #expect(order.value == [2])
         #expect(try Self.status(database, workflowID: workflowID, number: 1) == "done")
         #expect(try Self.status(database, workflowID: workflowID, number: 2) == "done")
@@ -164,9 +154,7 @@ struct ExecuteRunLoopTests {
 
     // MARK: - Helpers
 
-    /// Builds an `ExecuteModel` with the agent client's `start` stubbed by `start`, the fixed date, and a
-    /// deterministic uuid sequence for the Phase-completion row. `send` traps so a run never resumes a
-    /// Session.
+    /// `send` traps so a run never resumes a Session.
     private static func model(
         database: any DatabaseWriter,
         workflowID: UUID,
@@ -186,8 +174,7 @@ struct ExecuteRunLoopTests {
         }
     }
 
-    /// Stands in for the live client's `start`: records the per-Issue `execute` Session exactly as the
-    /// Agent would, then returns the started Session.
+    /// Stands in for the live client's `start`, recording the `execute` Session as the Agent would.
     private static func startSession(for request: StartRequest, id: UUID) async throws -> Session {
         try await request.database.write { db in
             try SessionRow.insert {
@@ -240,8 +227,6 @@ struct ExecuteRunLoopTests {
         }?.status
     }
 
-    /// Whether the Workflow's `execute` Phase row is `complete` — the gate `WorkflowContainerModel`
-    /// unlocks the Validate Phase on.
     private static func executeCompleted(
         _ database: any DatabaseWriter, workflowID: UUID
     ) throws -> Bool {

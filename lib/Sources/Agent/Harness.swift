@@ -22,9 +22,7 @@ public enum Harness {
         var args: [String] = [
             "--print",
             "--output-format", "stream-json",
-            // Realtime streaming input keeps stdin open so we can send a control_request (an
-            // interrupt) mid-Turn when the agent asks a question. The prompt is sent as a
-            // stream-json user message; see `SubProcess`.
+            // Realtime input keeps stdin open so we can interrupt mid-Turn on a question (see `SubProcess`).
             "--input-format", "stream-json",
             "--permission-mode", "bypassPermissions",
             "--setting-sources", "user,project,local",
@@ -40,9 +38,8 @@ public enum Harness {
         }
 
         if mode == .readOnly {
-            // The read-only allowlist is extended by the MCP servers' derived tool names: MCP tools
-            // write outside the worktree (into the database), so the worktree read-only guarantee
-            // still holds. Deriving from the descriptors keeps configured-and-allowed in lockstep.
+            // MCP tools are allowed too: they write to the database, not the worktree, so the
+            // read-only guarantee holds. Deriving from the descriptors keeps configured-and-allowed in step.
             var allowed = ["Read", "Grep", "Glob", "WebFetch", "WebSearch"]
             allowed += mcpServers.flatMap(\.qualifiedToolNames)
             args += ["--allowedTools"] + allowed
@@ -73,9 +70,8 @@ public enum Harness {
         return args
     }
 
-    /// Pure renderer for the `--mcp-config` payload: the `{"mcpServers": {...}}` shape the harness
-    /// expects, with `command`, `args`, and `env` taken from each descriptor. Separated from the file
-    /// write so it is testable on its own. Keys are sorted for deterministic output.
+    /// The `{"mcpServers": {...}}` payload, separated from the file write so it's testable. Keys sorted
+    /// for deterministic output.
     static func mcpConfigJSON(servers: [MCPServer]) throws -> Data {
         var entries: [String: Any] = [:]
         for server in servers {

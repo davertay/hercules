@@ -1,13 +1,11 @@
 import Foundation
 import Store
 
-/// Bridges the Harness's live stdout into the Store's `StreamProjector` for one Turn, and notes the
-/// last non-JSON line so the `TerminationClassifier` can surface a `malformedStream` error when the
-/// Harness also exits non-zero. The projector silently ignores malformed lines, so the tracking is
-/// kept here rather than in the projector.
+/// Feeds the Harness's stdout into the `StreamProjector`, also noting the last non-JSON line so the
+/// `TerminationClassifier` can surface a `malformedStream` error on a non-zero exit (the projector
+/// silently ignores malformed lines).
 ///
-/// `@unchecked Sendable`: every access is serialized through the `OSAllocatedUnfairLock` the runner
-/// wraps it in, and the only writer (the stdout drain) has finished before the runner reads back.
+/// `@unchecked Sendable`: every access is serialized through the runner's `OSAllocatedUnfairLock`.
 final class LineSink: @unchecked Sendable {
     private let projector: StreamProjector
     private(set) var lastMalformedLine: (raw: String, error: any Error)?

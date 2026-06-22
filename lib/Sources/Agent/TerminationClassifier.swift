@@ -2,11 +2,8 @@ import Foundation
 import Store
 import Subprocess
 
-/// Maps a Harness's termination status to an `AgentError` on failure, and flags the Turn's row via
-/// `recordFailure` when the Harness fails before — or instead of — projecting a `result` event.
-/// A clean exit is a no-op: the live projector already finalized the Turn from its `result` event.
-/// Cancellation is detected by the caller (via `Task`); the SIGTERM → SIGKILL escalation lives in
-/// `SubProcess`'s teardown sequence.
+/// Maps a Harness termination status to an `AgentError`, flagging the Turn via `recordFailure` when it
+/// fails before projecting a `result`. A clean exit is a no-op (the projector already finalized it).
 struct TerminationClassifier {
     func classify(
         status: TerminationStatus,
@@ -24,8 +21,7 @@ struct TerminationClassifier {
             if let malformed = lastMalformedLine {
                 throw AgentError.malformedStream(line: malformed.raw, underlying: malformed.error)
             }
-            // "No conversation found with session ID:" is the stable harness prefix for an unknown
-            // session; it's narrow enough to not misclassify other failures.
+            // The stable harness prefix for an unknown session.
             if stderrTail.contains("No conversation found with session ID:") {
                 throw AgentError.sessionNotFound(id: sessionId)
             }

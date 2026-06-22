@@ -2,9 +2,8 @@ import Foundation
 import SQLiteData
 import StructuredQueries
 
-// Per-Workflow SQLite schema. Each row type carries the sync-ready conventions from ADR 0003:
-// a UUID primary key, `createdAt`/`updatedAt` timestamps, and an `isDeleted` soft-delete column.
-// CloudKit sync is not enabled yet; the schema is merely shaped for it.
+// Per-Workflow SQLite schema. Each row carries the sync-ready conventions from ADR 0003 (UUID PK,
+// timestamps, `isDeleted`); CloudKit sync is not enabled yet, the schema is merely shaped for it.
 
 @Table("workflow")
 public struct WorkflowRow: Identifiable, Equatable, Sendable {
@@ -67,12 +66,9 @@ public struct SessionRow: Identifiable, Equatable, Sendable {
     public var workflowID: UUID
     public var worktreePath: String
     public var mode: String
-    /// The surface this Session serves (Design/PRD/TestChat). Scopes a Chat's observation to its own
-    /// Session's Turns; one Session per (workflowID, kind) (ADR 0005).
+    /// The surface this Session serves; one Session per (workflowID, kind) (ADR 0005).
     public var kind: String
-    /// The `number` of the Issue this Session worked, set only on `execute`-kind Sessions; `nil` for
-    /// every chat surface. Links a behind-the-scenes Execute run back to its Issue so a failed Issue's
-    /// transcript stays recoverable.
+    /// Set only on `execute`-kind Sessions, linking the run back to its Issue; `nil` for chat surfaces.
     public var issueNumber: Int?
     public var createdAt: Date
     public var updatedAt: Date

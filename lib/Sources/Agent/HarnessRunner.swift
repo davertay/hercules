@@ -90,8 +90,8 @@ struct HarnessRunner {
             initialState: LineSink(projector: StreamProjector(database: database, turnID: turnID))
         )
 
-        // Per-Session scratch directory the Harness writes the `--mcp-config` JSON into; re-derived
-        // (and re-written) each Turn so a resume re-passes the pinned servers (ADR 0001).
+        // Scratch dir for the `--mcp-config` JSON; re-written each Turn so a resume re-passes the
+        // pinned servers (ADR 0001).
         let sessionDataDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("hercules-sessions", isDirectory: true)
             .appendingPathComponent(sessionId.rawValue.uuidString, isDirectory: true)
@@ -120,8 +120,7 @@ struct HarnessRunner {
         do {
             let promptString = Harness.renderPrompt(prompt: prompt, inputs: inputs)
             outcome = try await process.run(input: promptString) { line in
-                // Project the line, then translate the projector's signal into the stdin control the
-                // realtime protocol needs: interrupt on a question, close stdin once the Turn ends.
+                // Translate the projector's signal into the realtime protocol's stdin control.
                 switch sink.withLock({ $0.ingest(line) }) {
                 case .none: return .none
                 case .askedQuestion: return .interrupt
@@ -135,16 +134,14 @@ struct HarnessRunner {
             throw AgentError.harnessIOFailed(underlying: error)
         }
 
-        // swift-subprocess kills the child on cancellation, so the run returns a
-        // `.signaled` status rather than throwing; check the task to tell a
-        // cancellation apart from a genuine crash.
+        // Cancellation kills the child (a `.signaled` status, not a throw), so check the task to tell
+        // it apart from a genuine crash.
         if Task.isCancelled {
             throw cancelled(startedAt: startedAt, sink: sink)
         }
 
-        // A paused run is a deliberate stop: we interrupted the Turn to await a question's answer.
-        // The Turn is already projected (with the question card and a non-error result), and the
-        // user's selection resumes the Session — so there's no exit to classify or failure to flag.
+        // A paused run is a deliberate stop awaiting a question's answer — already projected, nothing
+        // to classify or flag.
         if outcome.paused { return }
 
         let durationMs = Int(now.timeIntervalSince(startedAt) * 1000)

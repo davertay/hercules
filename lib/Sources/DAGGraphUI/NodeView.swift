@@ -1,19 +1,9 @@
 import IssueGraph
 import SwiftUI
 
-/// One Issue node in the rect-based DAG layout (`DAGGraphView`).
-///
-/// Renders the Issue as a rounded-rectangle "sticky note": neutral translucent fill, status-coloured
-/// border (`StatusPalette.color(for:)` stroked at `metrics.nodeBorderWidth`), the `#<number>` badge at
-/// the top, and the title wrapping below. Carrying the status colour on the border (not the fill) keeps
-/// the title legible against any status.
-///
-/// **`.skipped` overlay.** A single diagonal slash from bottom-left to top-right, clipped to the
-/// rounded-rect silhouette, drawn between the fill and the text so the labels stay readable.
-///
-/// **`.inProgress` amber-pulse.** The status-coloured border alpha-pulses via an `.easeInOut`
-/// `.repeatForever(autoreverses:)` animation, kicked off in `.onAppear`. Only opacity animates (not the
-/// colour) so the hue stays stable on wide-gamut displays.
+/// One Issue node in `DAGGraphView`: a rounded-rect card with status-coloured border, `#number` badge,
+/// and wrapping title. `.skipped` gets a diagonal slash; `.inProgress` alpha-pulses the border (only
+/// opacity animates, not the colour, so the hue stays stable on wide-gamut displays).
 struct NodeView: View {
     let node: DAGNode
     let metrics: DAGGraphMetrics
@@ -101,9 +91,7 @@ struct NodeView: View {
     }
 }
 
-/// Single diagonal line from the rect's bottom-left to its top-right (`/` direction), sized to the
-/// available space. The caller clips it to the rounded-rect silhouette so the slash doesn't extend past
-/// the corners.
+/// Diagonal line from the rect's bottom-left to its top-right; the caller clips it to the card.
 private struct SlashLine: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()

@@ -143,7 +143,6 @@ struct PhaseGatingTests {
         #expect(!model.isUnlocked(.validate))
     }
 
-    /// The PRD surface is constructed eagerly alongside Design, scoped to the same Workflow store.
     @Test
     @MainActor
     func prdSurfaceIsConstructedEagerly() async throws {
@@ -155,7 +154,6 @@ struct PhaseGatingTests {
         #expect(model.prdModel != nil)
     }
 
-    /// The Allocate surface is constructed eagerly alongside Design and PRD, scoped to the same store.
     @Test
     @MainActor
     func allocateSurfaceIsConstructedEagerly() async throws {
@@ -167,7 +165,6 @@ struct PhaseGatingTests {
         #expect(model.allocateModel != nil)
     }
 
-    /// The Execute surface is constructed eagerly alongside the other Phase models, scoped to the store.
     @Test
     @MainActor
     func executeSurfaceIsConstructedEagerly() async throws {
