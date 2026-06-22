@@ -128,7 +128,10 @@ let package = Package(
         .testTarget(
             name: "HerculesAppTests",
             dependencies: [
+                "Agent",
                 "HerculesApp",
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
             ]
         ),
         .target(

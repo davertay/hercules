@@ -1,5 +1,7 @@
+import Agent
 import Allocate
 import DAGGraphUI
+import Dependencies
 import Design
 import Execute
 import Foundation
@@ -16,6 +18,7 @@ public enum PreviewTarget: String, CaseIterable, Sendable {
     case allocateCommitted
     case dagGraph
     case flowExecute
+    case settings
 
     public static func fromEnvironment() -> PreviewTarget? {
         guard
@@ -81,7 +84,36 @@ public struct PreviewHarnessView: View {
             DAGGraphPreviewHost()
         case .flowExecute:
             FlowExecutePreviewHost()
+        case .settings:
+            SettingsPreviewHost()
         }
+    }
+}
+
+/// Renders ``SettingsView`` over a fixture config so the form shows a populated path and arguments.
+private struct SettingsPreviewHost: View {
+    @State private var model: SettingsModel
+
+    init() {
+        let config = AppConfig(
+            agentExecutablePath: "~/.local/bin/claude",
+            extraArguments: [
+                ExtraArgument(flag: "--model", value: "claude-opus-4-8"),
+                ExtraArgument(flag: "--verbose", value: nil),
+            ]
+        )
+        let model = withDependencies {
+            $0.appConfigClient.load = { config }
+            $0.appConfigClient.save = { _ in }
+        } operation: {
+            SettingsModel()
+        }
+        _model = State(wrappedValue: model)
+    }
+
+    var body: some View {
+        SettingsView(model: model)
+            .frame(minWidth: 480, minHeight: 360)
     }
 }
 
