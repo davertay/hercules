@@ -150,6 +150,53 @@ struct ValidateModelTests {
         #expect(row.failureReason?.contains("Interrupted") == true)
     }
 
+    @Test("Code Quality and Security run concurrently, each producing its own Summary")
+    func concurrentPersonasProduceSeparateSummaries() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        let nextSessionID = LockIsolated(100)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                // Distinguish the two Personas by their skill file so each gets its own Summary.
+                let isSecurity = request.skillFiles.contains { $0.path.contains("review-security") }
+                let summary = isSecurity ? "No security issues found." : "The code reads cleanly."
+                let id = nextSessionID.withValue { value -> Int in value += 1; return value }
+                return try await Self.startSession(for: request, id: UUID(id), finalAnswer: summary)
+            }
+        } operation: {
+            ValidateModel(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory,
+                mcpServerCommand: "/path/to/Hercules"
+            )
+        }
+
+        // Start both at once; both tasks share the run map, neither blocks the other.
+        await withDependencies {
+            $0.uuid = .incrementing
+        } operation: {
+            model.run(.codeQuality)
+            model.run(.security)
+            let tasks = model.runTasks.withValue { Array($0.values) }
+            for task in tasks { await task.value }
+        }
+
+        let codeQuality = try #require(try Self.review(database, workflowID: workflowID, kind: "code-quality"))
+        let security = try #require(try Self.review(database, workflowID: workflowID, kind: "security"))
+        #expect(codeQuality.status == "reviewed")
+        #expect(security.status == "reviewed")
+        #expect(codeQuality.summary == "The code reads cleanly.")
+        #expect(security.summary == "No security issues found.")
+        // Distinct rows, distinct linked Sessions.
+        #expect(codeQuality.id != security.id)
+        #expect(codeQuality.sessionID != security.sessionID)
+    }
+
     @Test("Stale running rows are reconciled to failed on first refresh (window open)")
     func reconcilesStaleRunningOnOpen() async throws {
         let database = try Self.makeDatabase()
@@ -206,7 +253,7 @@ struct ValidateModelTests {
                 .execute(db)
                 try TurnRow.insert {
                     TurnRow(
-                        id: UUID(200), sessionID: id, userPrompt: request.prompt,
+                        id: UUID(), sessionID: id, userPrompt: request.prompt,
                         finalAnswer: finalAnswer, createdAt: fixedDate, updatedAt: fixedDate
                     )
                 }

@@ -6,4 +6,5 @@ public enum Skill: String {
     case toIssues = "to-issues"
     case implementIssue = "implement-issue"
     case reviewCodeQuality = "review-code-quality"
+    case reviewSecurity = "review-security"
 }

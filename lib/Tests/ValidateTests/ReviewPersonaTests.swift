@@ -22,6 +22,20 @@ struct ReviewPersonaTests {
         #expect(FileManager.default.fileExists(atPath: resource.fileUrl.path))
     }
 
+    @Test func securityCarriesItsCatalogTextAndSkill() {
+        let persona = ReviewPersona.security
+        #expect(persona.rawValue == "security")
+        #expect(persona.title == "Security")
+        #expect(!persona.description.isEmpty)
+        #expect(persona.skill == .reviewSecurity)
+        #expect(persona.skillResource.name == "review-security")
+        #expect(FileManager.default.fileExists(atPath: persona.skillResource.fileUrl.path))
+    }
+
+    @Test func catalogContainsBothPersonas() {
+        #expect(ReviewPersona.allCases == [.codeQuality, .security])
+    }
+
     @Test func everyPersonaResolvesItsSkillResource() {
         for persona in ReviewPersona.allCases {
             #expect(FileManager.default.fileExists(atPath: persona.skillResource.fileUrl.path))
