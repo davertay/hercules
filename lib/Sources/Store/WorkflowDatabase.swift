@@ -173,4 +173,36 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         )
         .execute(db)
     }
+
+    // One row per (workflowID, kind), upserted per Validate run — no run history. Idle (never run) is the
+    // absence of a row. `sessionID` forward-links the run's Session (a loose link, like `session.issueNumber`
+    // — no FK). A partial unique index over the non-deleted rows enforces the one-row-per-Persona invariant
+    // and doubles as the `workflowID` lookup index.
+    migrator.registerMigration("Create review table") { db in
+        try #sql(
+            """
+            CREATE TABLE "review" (
+              "id" TEXT PRIMARY KEY NOT NULL ON CONFLICT REPLACE DEFAULT (uuid()),
+              "workflowID" TEXT NOT NULL REFERENCES "workflow"("id") ON DELETE CASCADE,
+              "kind" TEXT NOT NULL,
+              "status" TEXT NOT NULL,
+              "summary" TEXT,
+              "failureReason" TEXT,
+              "sessionID" TEXT,
+              "createdAt" TEXT NOT NULL,
+              "updatedAt" TEXT NOT NULL,
+              "isDeleted" INTEGER NOT NULL ON CONFLICT REPLACE DEFAULT 0
+            ) STRICT
+            """
+        )
+        .execute(db)
+
+        try #sql(
+            #"""
+            CREATE UNIQUE INDEX "index_review_on_workflowID_kind"
+              ON "review"("workflowID", "kind") WHERE "isDeleted" = 0
+            """#
+        )
+        .execute(db)
+    }
 }

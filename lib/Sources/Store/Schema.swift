@@ -182,6 +182,49 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
     }
 }
 
+@Table("review")
+public struct ReviewRow: Identifiable, Equatable, Sendable {
+    public let id: UUID
+    public var workflowID: UUID
+    /// The review Persona this row belongs to (`ReviewPersona` rawValue); one row per (workflowID, kind),
+    /// upserted on each run — no run history.
+    public var kind: String
+    public var status: String
+    /// The Persona's captured Summary; set on `reviewed`, `nil` otherwise.
+    public var summary: String?
+    /// Why the last run of this Persona failed; `nil` unless `status` is `failed`.
+    public var failureReason: String?
+    /// Forward link to the run's Session, for a future transcript viewer; `nil` until the run records one.
+    public var sessionID: UUID?
+    public var createdAt: Date
+    public var updatedAt: Date
+    public var isDeleted: Bool
+
+    public init(
+        id: UUID,
+        workflowID: UUID,
+        kind: String,
+        status: String,
+        summary: String? = nil,
+        failureReason: String? = nil,
+        sessionID: UUID? = nil,
+        createdAt: Date,
+        updatedAt: Date,
+        isDeleted: Bool = false
+    ) {
+        self.id = id
+        self.workflowID = workflowID
+        self.kind = kind
+        self.status = status
+        self.summary = summary
+        self.failureReason = failureReason
+        self.sessionID = sessionID
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.isDeleted = isDeleted
+    }
+}
+
 @Table("content_block")
 public struct ContentBlockRow: Identifiable, Equatable, Sendable {
     public let id: UUID

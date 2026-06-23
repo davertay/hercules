@@ -8,4 +8,7 @@ public enum SessionKind: String, Codable, Sendable, CaseIterable {
     /// A behind-the-scenes Execute write run for one Issue — no Chat; recorded only so the Issue's
     /// transcript is recoverable, scoped further per Issue via the Session row's `issueNumber`.
     case execute
+    /// A behind-the-scenes Validate review run for one Persona — no Chat; the forward link lives on the
+    /// `review` row's `sessionID`, so the Session itself stays untagged (the Summary is on the row).
+    case validate
 }
