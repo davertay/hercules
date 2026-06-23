@@ -6,7 +6,13 @@ import SQLiteData
 public func openWorkflowDatabase(at directory: URL) throws -> any DatabaseWriter {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let path = directory.appendingPathComponent("workflow.sqlite").path
-    let database = try defaultDatabase(path: path)
+    // The create-issue MCP server writes Issues from a separate process (ADR 0006) while the app streams
+    // the live transcript into the same WAL database. SQLite allows only one writer at a time, so without
+    // a busy timeout a contending `BEGIN IMMEDIATE` fails outright with "database is locked". Wait and
+    // retry for a few seconds instead.
+    var configuration = Configuration()
+    configuration.busyMode = .timeout(5)
+    let database = try defaultDatabase(path: path, configuration: configuration)
     var migrator = DatabaseMigrator()
     registerWorkflowMigrations(&migrator)
     try migrator.migrate(database)
@@ -156,5 +162,15 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
 
         try #sql(#"CREATE INDEX "index_issue_on_workflowID" ON "issue"("workflowID")"#)
             .execute(db)
+    }
+
+    // Captures why an Execute run of the Issue failed; null unless `status` is `failed`.
+    migrator.registerMigration("Add failureReason to issue") { db in
+        try #sql(
+            """
+            ALTER TABLE "issue" ADD COLUMN "failureReason" TEXT
+            """
+        )
+        .execute(db)
     }
 }

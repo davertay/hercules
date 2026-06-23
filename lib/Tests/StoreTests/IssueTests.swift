@@ -145,6 +145,49 @@ struct IssueTests {
         #expect(byID[UUID(12)]?.updatedAt == Self.fixedDate)
     }
 
+    @Test func setIssueStatusWritesFailureReasonAndClearsItOnRecovery() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 1)
+
+        try database.setIssueStatus(
+            workflowID: workflowID, number: 1, to: .failed,
+            failureReason: "boom", now: Self.fixedDate
+        )
+        #expect(try database.read { db in try IssueRow.fetchOne(db) }?.failureReason == "boom")
+
+        // A later non-failed transition passes nil, clearing the stale reason.
+        try database.setIssueStatus(workflowID: workflowID, number: 1, to: .done, now: Self.fixedDate)
+        #expect(try database.read { db in try IssueRow.fetchOne(db) }?.failureReason == nil)
+    }
+
+    // MARK: - resetIssue
+
+    @Test func resetIssueReturnsFailedIssueToNewAndClearsReasonOnlyForFailed() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 1, status: "failed")
+        try Self.seedIssue(database, id: UUID(11), workflowID: workflowID, number: 2, status: "done")
+        try database.setIssueStatus(
+            workflowID: workflowID, number: 1, to: .failed, failureReason: "boom", now: Self.fixedDate
+        )
+
+        try database.resetIssue(
+            workflowID: workflowID, number: 1, now: Self.fixedDate.addingTimeInterval(60)
+        )
+        // A done Issue is left alone — reset only rescues failures.
+        try database.resetIssue(workflowID: workflowID, number: 2, now: Self.fixedDate)
+
+        let rows = try database.read { db in try IssueRow.fetchAll(db) }
+        let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+        #expect(byID[UUID(10)]?.status == "new")
+        #expect(byID[UUID(10)]?.failureReason == nil)
+        #expect(byID[UUID(10)]?.updatedAt == Self.fixedDate.addingTimeInterval(60))
+        #expect(byID[UUID(11)]?.status == "done")
+    }
+
     // MARK: - reconcileStaleInProgressIssues
 
     @Test func reconcileDemotesOnlyInProgressIssuesToFailed() throws {
@@ -213,6 +256,75 @@ struct IssueTests {
         #expect(issues.map(\.id) == [UUID(11), UUID(10)])
     }
 
+    // MARK: - IssueFailureReasonsRequest
+
+    @Test func failureReasonsMapEachIssueToItsErroredTurnFinalAnswer() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        // Issue 1: an execute session with an errored Turn carrying the Harness's reason.
+        try Self.seedSession(database, id: UUID(20), workflowID: workflowID, issueNumber: 1)
+        try Self.seedTurn(
+            database, id: UUID(30), sessionID: UUID(20), isError: true,
+            finalAnswer: "You've hit your session limit", at: Self.fixedDate
+        )
+        // Issue 2: a clean (non-errored) Turn — must not appear.
+        try Self.seedSession(database, id: UUID(21), workflowID: workflowID, issueNumber: 2)
+        try Self.seedTurn(
+            database, id: UUID(31), sessionID: UUID(21), isError: false,
+            finalAnswer: "All good", at: Self.fixedDate
+        )
+
+        let reasons = try database.read { db in
+            try IssueFailureReasonsRequest(workflowID: workflowID).fetch(db)
+        }
+
+        #expect(reasons == [1: "You've hit your session limit"])
+    }
+
+    @Test func failureReasonsPrefersTheLatestErroredTurnAndSkipsEmptyFinalAnswer() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedSession(database, id: UUID(20), workflowID: workflowID, issueNumber: 1)
+        // An older failure with a reason, then a newer interrupt (errored, no finalAnswer). The newest
+        // Turn wins, so no reason is surfaced and the Issue's own failureReason shows instead.
+        try Self.seedTurn(
+            database, id: UUID(30), sessionID: UUID(20), isError: true,
+            finalAnswer: "API Error: 529 Overloaded", at: Self.fixedDate
+        )
+        try Self.seedTurn(
+            database, id: UUID(31), sessionID: UUID(20), isError: true,
+            finalAnswer: nil, at: Self.fixedDate.addingTimeInterval(60)
+        )
+
+        let reasons = try database.read { db in
+            try IssueFailureReasonsRequest(workflowID: workflowID).fetch(db)
+        }
+
+        #expect(reasons.isEmpty)
+    }
+
+    @Test func failureReasonsIgnoreNonExecuteSessions() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        // A chat-kind session has no issueNumber tag; its errored Turn must not map to any Issue.
+        try Self.seedSession(
+            database, id: UUID(20), workflowID: workflowID, issueNumber: nil, kind: .allocate
+        )
+        try Self.seedTurn(
+            database, id: UUID(30), sessionID: UUID(20), isError: true,
+            finalAnswer: "irrelevant", at: Self.fixedDate
+        )
+
+        let reasons = try database.read { db in
+            try IssueFailureReasonsRequest(workflowID: workflowID).fetch(db)
+        }
+
+        #expect(reasons.isEmpty)
+    }
+
     // MARK: - Helpers
 
     private static func makeDatabase() throws -> any DatabaseWriter {
@@ -239,6 +351,36 @@ struct IssueTests {
                 IssueRow(
                     id: id, workflowID: workflowID, number: number, title: "Issue \(number)",
                     status: status, createdAt: fixedDate, updatedAt: fixedDate, isDeleted: isDeleted
+                )
+            }
+            .execute(db)
+        }
+    }
+
+    private static func seedSession(
+        _ database: any DatabaseWriter, id: UUID, workflowID: UUID, issueNumber: Int?,
+        kind: SessionKind = .execute
+    ) throws {
+        try database.write { db in
+            try SessionRow.insert {
+                SessionRow(
+                    id: id, workflowID: workflowID, worktreePath: "/worktree", mode: "write",
+                    kind: kind.rawValue, issueNumber: issueNumber, createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+    }
+
+    private static func seedTurn(
+        _ database: any DatabaseWriter, id: UUID, sessionID: UUID, isError: Bool,
+        finalAnswer: String?, at createdAt: Date
+    ) throws {
+        try database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: id, sessionID: sessionID, finalAnswer: finalAnswer, isError: isError,
+                    createdAt: createdAt, updatedAt: createdAt
                 )
             }
             .execute(db)

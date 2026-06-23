@@ -93,7 +93,11 @@ struct ExecuteRunIssueTests {
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
         await model.runIssue(issue)
 
-        #expect(try Self.status(database, workflowID: workflowID, number: 1) == "failed")
+        let failed = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(failed.status == "failed")
+        // The thrown error's description is captured on the Issue, even though a Turn row exists here it
+        // is the runIssue catch — not the transcript — that records the reason.
+        #expect(failed.failureReason == AgentError.cancelled.localizedDescription)
     }
 
     // MARK: - Helpers

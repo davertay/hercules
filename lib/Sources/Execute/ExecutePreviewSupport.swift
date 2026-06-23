@@ -38,7 +38,9 @@ extension ExecuteModel {
                 IssueRow(id: UUID(), workflowID: workflowID, number: 5, title: "Recovery branch",
                          dependencies: [3], status: "new", createdAt: now, updatedAt: now),
                 IssueRow(id: UUID(), workflowID: workflowID, number: 6, title: "Wire end-to-end",
-                         dependencies: [3, 4], status: "failed", createdAt: now, updatedAt: now),
+                         dependencies: [3, 4], status: "failed",
+                         failureReason: "Harness binary not found at /Users/admin/.local/bin/claude.",
+                         createdAt: now, updatedAt: now),
                 IssueRow(id: UUID(), workflowID: workflowID, number: 7, title: "Cancelled spike",
                          dependencies: [2], status: "skipped", createdAt: now, updatedAt: now),
             ]

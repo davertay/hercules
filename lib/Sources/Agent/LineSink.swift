@@ -10,6 +10,9 @@ final class LineSink: @unchecked Sendable {
     private let projector: StreamProjector
     private(set) var lastMalformedLine: (raw: String, error: any Error)?
 
+    /// The Harness's own failure reason, when it emitted an `is_error` result before exiting non-zero.
+    var lastErrorResult: String? { projector.lastErrorResult }
+
     init(projector: StreamProjector) {
         self.projector = projector
     }
