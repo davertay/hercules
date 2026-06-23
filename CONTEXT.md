@@ -106,6 +106,48 @@ Session's allowlist without breaking its worktree read-only guarantee. Cannot ch
 within a Session.
 _Avoid_: Permission level, scope, sandbox.
 
+### Validate Phase
+
+**Persona**:
+A named code-review agent in the Validate Phase, defined by its own **Skill** — e.g. Code Quality,
+Security; the set grows as Skills are added. Runs read-only against the Worktree at the user's
+discretion (each started manually, none required), produces a **Summary**, and may propose Issues.
+Each Persona shows as one node in the Validate graph with a ready/running/done lifecycle. A static
+description, not a per-run headline, labels the node.
+_Avoid_: Reviewer, review agent, bot, validator.
+
+**Review**:
+One Persona's pass over the Worktree and its durable record — at most one per (Workflow, Persona),
+overwritten when the Persona is re-run. Carries the run's lifecycle status and its **Summary**.
+_Avoid_: Run, pass, scan, audit.
+
+**Summary**:
+The prose output of a **Review** — the Persona's findings, surfaced on demand from its node. There
+is no separate headline; a Review yields one Summary.
+_Avoid_: Headline, report, finding.
+
+### Human-gated Issues
+
+**HITL Issue**:
+An Issue whose forward progress needs an explicit human decision rather than an Agent run. Its
+status is one the Execute run loop refuses to auto-pick; it is resolved from the Execute DAG with a
+positive control and a negative one. The negative always soft-deletes the Issue. Two kinds exist: a
+**Proposed Issue** (from a Validate **Persona**) and a manual **Gate** (from Allocate).
+_Avoid_: Blocked issue (reserve for an Issue waiting on its dependencies), approval.
+
+**Proposed Issue**:
+A **HITL Issue** a **Persona** creates during a **Review** to recommend a fix — status `proposed`,
+with no dependencies and an Agent-assigned number. Approving it sets status `new` so the next Execute
+run implements it; denying it soft-deletes it. A Persona proposes without asking.
+_Avoid_: Suggested issue, draft, recommendation.
+
+**Gate**:
+A **HITL Issue** carved out in Allocate for work an Agent can't do (a manual step it must wait on).
+The human marks it done — status goes straight to `done`, never running the Agent — which unblocks
+its dependents; rejecting it soft-deletes it. Unlike a **Proposed Issue**, a Gate can be depended
+upon. (Allocate-side; not built in the first Validate slice.)
+_Avoid_: Manual issue, checkpoint, milestone.
+
 ## Flagged ambiguities
 
 **"Agent" — the module vs the LLM participant.** The Swift module is called `Agent`, and the
