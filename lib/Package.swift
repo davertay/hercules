@@ -275,6 +275,7 @@ let package = Package(
                 "DAGGraphUI",
                 "Material",
                 "Store",
+                "Worktree",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
             ]
@@ -286,6 +287,7 @@ let package = Package(
                 "Agent",
                 "Material",
                 "Store",
+                "Worktree",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
@@ -296,6 +298,12 @@ let package = Package(
             dependencies: [
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "DependenciesMacros", package: "swift-dependencies"),
+            ]
+        ),
+        .testTarget(
+            name: "WorktreeTests",
+            dependencies: [
+                "Worktree",
             ]
         ),
         .target(

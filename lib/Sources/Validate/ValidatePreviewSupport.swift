@@ -27,6 +27,17 @@ extension ValidateModel {
                 .execute(db)
             }
 
+            // All Issues done, so the Open Pull Request button renders enabled.
+            for number in 1...3 {
+                try IssueRow.insert {
+                    IssueRow(
+                        id: UUID(), workflowID: workflowID, number: number, title: "Issue \(number)",
+                        status: "done", createdAt: now, updatedAt: now
+                    )
+                }
+                .execute(db)
+            }
+
             try ReviewRow.insert {
                 ReviewRow(
                     id: UUID(), workflowID: workflowID, kind: ReviewPersona.codeQuality.rawValue,

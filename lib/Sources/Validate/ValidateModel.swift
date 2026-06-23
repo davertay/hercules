@@ -5,6 +5,7 @@ import Material
 import Observation
 import SQLiteData
 import Store
+import Worktree
 
 /// Drives the Validate Phase: the behind-the-scenes review runner. The Validate analogue of Execute's
 /// per-Issue runner, but reviews are concurrent and independent — each Persona runs a fresh read-only
@@ -16,7 +17,18 @@ public final class ValidateModel {
     @ObservationIgnored
     @Fetch var reviews: [ReviewRow] = []
 
+    /// The Workflow's committed Issues, observed to gate the PR button (it opens only once every
+    /// non-deleted Issue is `done`).
+    @ObservationIgnored
+    @Fetch var issues: [IssueRow] = []
+
     public var selectedPersona: ReviewPersona?
+
+    /// Transient "branch pushed" confirmation, shown after a successful PR push; the view clears it.
+    public var pullRequestConfirmation: String?
+
+    /// The reason a PR push/compare-URL build failed; `nil` until one does.
+    public var pullRequestError: String?
 
     /// One live run task per Persona, so several reviews proceed at once (vs Execute's single `runTask`).
     /// Boxed so the window's teardown (`cancelAll`) can cancel them off the MainActor.
@@ -28,6 +40,9 @@ public final class ValidateModel {
 
     @ObservationIgnored
     @Dependency(\.date.now) private var now
+
+    @ObservationIgnored
+    @Dependency(\.worktreeClient) private var worktreeClient
 
     @ObservationIgnored
     private let database: any DatabaseWriter
@@ -74,6 +89,11 @@ public final class ValidateModel {
             WorkflowReviewsRequest(workflowID: workflowID),
             animation: .default
         )
+        _issues = Fetch(
+            wrappedValue: [],
+            WorkflowIssuesRequest(workflowID: workflowID),
+            animation: .default
+        )
     }
 
     public var worktreeMessage: String? {
@@ -96,6 +116,7 @@ public final class ValidateModel {
             try? database.reconcileStaleRunningReviews(workflowID: workflowID, now: now)
         }
         try? await $reviews.load()
+        try? await $issues.load()
     }
 
     /// The persisted row for `persona`, or `nil` when the Persona has never run (idle).
@@ -181,6 +202,38 @@ public final class ValidateModel {
                 workflowID: workflowID, kind: kind, to: .failed, failureReason: reason, now: now
             )
         }
+    }
+
+    /// The terminal PR action opens only once every non-deleted Issue is `done` (proposed / new /
+    /// in_progress / failed all count as outstanding work; reviews are NOT required) and no review is
+    /// running. Empty is not openable — there's nothing to ship.
+    public var canOpenPullRequest: Bool {
+        !isAnyRunning && !issues.isEmpty && issues.allSatisfy { $0.status == "done" }
+    }
+
+    /// Pushes the worktree's branch to `origin` and returns the GitHub compare URL for the caller to open.
+    /// Does NOT mark Validate complete — we can't confirm a real PR was opened (MVP). The git work runs off
+    /// the MainActor so the network push doesn't block the UI. Returns `nil` (and sets `pullRequestError`)
+    /// on failure.
+    public func openPullRequest() async -> URL? {
+        pullRequestError = nil
+        let client = worktreeClient
+        let worktree = worktree
+        do {
+            let url = try await Task.detached {
+                try client.push(worktree: worktree)
+                return try client.compareURL(worktree: worktree)
+            }.value
+            pullRequestConfirmation = "Branch pushed — finish on GitHub"
+            return url
+        } catch {
+            pullRequestError = error.localizedDescription
+            return nil
+        }
+    }
+
+    public func dismissPullRequestConfirmation() {
+        pullRequestConfirmation = nil
     }
 
     /// The propose-issue MCP server granted to each read-only review Session (like Allocate's create-issue

@@ -5,6 +5,7 @@ import Material
 import SQLiteData
 import Store
 import Testing
+import Worktree
 
 @testable import Validate
 
@@ -222,7 +223,128 @@ struct ValidateModelTests {
         #expect(row.failureReason?.isEmpty == false)
     }
 
+    // MARK: - Open Pull Request
+
+    @Test("PR opens only when every non-deleted Issue is done")
+    func prGateRequiresAllIssuesDone() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, status: "done")
+        try Self.seedIssue(database, workflowID: workflowID, number: 2, status: "proposed")
+
+        let model = Self.makeModel(database: database, workflowID: workflowID)
+        await model.refresh()
+        // A proposed Issue is outstanding.
+        #expect(model.canOpenPullRequest == false)
+
+        // Deny-equivalent: remove the proposed Issue, leaving only the done one.
+        try await database.write { db in
+            try IssueRow
+                .where { $0.workflowID.eq(workflowID) && $0.number.eq(2) }
+                .update { $0.isDeleted = true }
+                .execute(db)
+        }
+        await model.refresh()
+        #expect(model.canOpenPullRequest == true)
+    }
+
+    @Test("Empty Workflow can't open a PR")
+    func prGateRejectsEmpty() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+
+        let model = Self.makeModel(database: database, workflowID: workflowID)
+        await model.refresh()
+        #expect(model.canOpenPullRequest == false)
+    }
+
+    @Test("Open Pull Request pushes the branch, returns the compare URL, and confirms")
+    func openPullRequestPushesAndReturnsURL() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        let pushed = LockIsolated<URL?>(nil)
+        let compareURL = URL(string: "https://github.com/acme/widgets/compare/main...feature?expand=1")!
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.worktreeClient.push = { @Sendable worktree in pushed.setValue(worktree) }
+            $0.worktreeClient.compareURL = { @Sendable _ in compareURL }
+        } operation: {
+            ValidateModel(
+                workflowID: workflowID, database: database,
+                worktree: URL(fileURLWithPath: "/tmp/worktree"),
+                workflowDirectory: FileManager.default.temporaryDirectory,
+                mcpServerCommand: "/path/to/Hercules"
+            )
+        }
+
+        let url = await model.openPullRequest()
+
+        #expect(url == compareURL)
+        #expect(pushed.value == URL(fileURLWithPath: "/tmp/worktree"))
+        #expect(model.pullRequestConfirmation != nil)
+        #expect(model.pullRequestError == nil)
+    }
+
+    @Test("A failed push surfaces an error and no URL")
+    func openPullRequestSurfacesPushError() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.worktreeClient.push = { @Sendable _ in throw WorktreeError.unsupportedRemote("nope") }
+        } operation: {
+            ValidateModel(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory,
+                mcpServerCommand: "/path/to/Hercules"
+            )
+        }
+
+        let url = await model.openPullRequest()
+
+        #expect(url == nil)
+        #expect(model.pullRequestError != nil)
+        #expect(model.pullRequestConfirmation == nil)
+    }
+
     // MARK: - Helpers
+
+    private static func makeModel(database: any DatabaseWriter, workflowID: UUID) -> ValidateModel {
+        withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+        } operation: {
+            ValidateModel(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory,
+                mcpServerCommand: "/path/to/Hercules"
+            )
+        }
+    }
+
+    private static func seedIssue(
+        _ database: any DatabaseWriter, workflowID: UUID, number: Int, status: String
+    ) throws {
+        try database.write { db in
+            try IssueRow.insert {
+                IssueRow(
+                    id: UUID(), workflowID: workflowID, number: number, title: "Issue \(number)",
+                    status: status, createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+    }
 
     /// Runs a Persona inside a uuid scope (so the Store writes resolve `\.uuid`, which the live generator
     /// supplies in production but tests forbid) and awaits the run task to completion.

@@ -7,6 +7,7 @@ import SwiftUI
 /// a card holds the latest Summary and stays re-runnable.
 public struct ValidateView: View {
     @Bindable var model: ValidateModel
+    @Environment(\.openURL) private var openURL
 
     public init(model: ValidateModel) {
         self.model = model
@@ -37,6 +38,59 @@ public struct ValidateView: View {
         .frame(minWidth: 700, minHeight: 400)
         .navigationTitle("Validate")
         .task { await model.refresh() }
+        .overlay(alignment: .bottom) {
+            if let confirmation = model.pullRequestConfirmation {
+                PushedConfirmation(message: confirmation)
+                    .task {
+                        // Transient — clears itself after a beat.
+                        try? await Task.sleep(for: .seconds(4))
+                        model.dismissPullRequestConfirmation()
+                    }
+            }
+        }
+        .alert(
+            "Couldn't open the pull request",
+            isPresented: Binding(
+                get: { model.pullRequestError != nil },
+                set: { if !$0 { model.pullRequestError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.pullRequestError ?? "")
+        }
+        .toolbar {
+            ToolbarItem {
+                Button("Open Pull Request", systemImage: "arrow.triangle.pull") {
+                    Task {
+                        if let url = await model.openPullRequest() {
+                            openURL(url)
+                        }
+                    }
+                }
+                .disabled(!model.canOpenPullRequest)
+                .help("Push the branch and open a GitHub pull request — enabled once every Issue is done")
+            }
+        }
+    }
+}
+
+/// The transient "branch pushed" toast shown after a successful PR push.
+private struct PushedConfirmation: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            Text(message)
+                .font(.callout.weight(.medium))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.thinMaterial, in: Capsule())
+        .padding(.bottom, 16)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
 
