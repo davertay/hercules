@@ -268,6 +268,19 @@ let package = Package(
             ]
         ),
         .target(
+            name: "Validate",
+            dependencies: [
+                "Material",
+            ]
+        ),
+        .testTarget(
+            name: "ValidateTests",
+            dependencies: [
+                "Validate",
+                "Material",
+            ]
+        ),
+        .target(
             name: "Worktree",
             dependencies: [
                 .product(name: "Dependencies", package: "swift-dependencies"),
