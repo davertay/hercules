@@ -217,6 +217,16 @@ public final class ExecuteModel {
         start()
     }
 
+    /// Promotes a `proposed` Issue to `new` so the next Execute run picks it up.
+    public func approve(_ number: Int) {
+        try? database.approveIssue(workflowID: workflowID, number: number, now: now)
+    }
+
+    /// Soft-deletes a `proposed` Issue, removing it from the graph.
+    public func deny(_ number: Int) {
+        try? database.denyIssue(workflowID: workflowID, number: number, now: now)
+    }
+
     /// Runs every ready Issue sequentially in dependency order, halting on the first failure. Reconciles
     /// stale `in_progress` Issues (left by a crash) back to `failed` first, and completes the Phase only
     /// once every Issue is `done` — a blocked branch must not falsely unlock Validate. Re-running resumes

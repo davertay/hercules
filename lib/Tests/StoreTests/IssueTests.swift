@@ -188,6 +188,87 @@ struct IssueTests {
         #expect(byID[UUID(11)]?.status == "done")
     }
 
+    // MARK: - approveIssue
+
+    @Test func approveIssuePromotesProposedToNewAndStampsUpdatedAt() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 1, status: "proposed")
+        try Self.seedIssue(database, id: UUID(11), workflowID: workflowID, number: 2, status: "new")
+
+        try database.approveIssue(workflowID: workflowID, number: 1, now: Self.fixedDate.addingTimeInterval(60))
+
+        let rows = try database.read { db in try IssueRow.fetchAll(db) }
+        let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+        #expect(byID[UUID(10)]?.status == "new")
+        #expect(byID[UUID(10)]?.updatedAt == Self.fixedDate.addingTimeInterval(60))
+        // A non-proposed Issue is left alone.
+        #expect(byID[UUID(11)]?.status == "new")
+        #expect(byID[UUID(11)]?.updatedAt == Self.fixedDate)
+    }
+
+    @Test func approveIssueSkipsDeletedAndOtherWorkflow() throws {
+        let database = try Self.makeDatabase()
+        let target = UUID(1)
+        let other = UUID(2)
+        try Self.seedWorkflow(database, workflowID: target)
+        try Self.seedWorkflow(database, workflowID: other)
+        try Self.seedIssue(database, id: UUID(10), workflowID: target, number: 1, status: "proposed")
+        try Self.seedIssue(database, id: UUID(11), workflowID: other, number: 1, status: "proposed")
+        try Self.seedIssue(database, id: UUID(12), workflowID: target, number: 2, status: "proposed", isDeleted: true)
+
+        try database.approveIssue(workflowID: target, number: 1, now: Self.fixedDate.addingTimeInterval(60))
+
+        let rows = try database.read { db in try IssueRow.fetchAll(db) }
+        let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+        #expect(byID[UUID(10)]?.status == "new")
+        // The other Workflow's and the soft-deleted proposed Issue are untouched.
+        #expect(byID[UUID(11)]?.status == "proposed")
+        #expect(byID[UUID(12)]?.status == "proposed")
+        #expect(byID[UUID(12)]?.isDeleted == true)
+    }
+
+    // MARK: - denyIssue
+
+    @Test func denyIssueSoftDeletesProposedAndStampsUpdatedAt() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 1, status: "proposed")
+        try Self.seedIssue(database, id: UUID(11), workflowID: workflowID, number: 2, status: "new")
+
+        try database.denyIssue(workflowID: workflowID, number: 1, now: Self.fixedDate.addingTimeInterval(60))
+
+        let rows = try database.read { db in try IssueRow.fetchAll(db) }
+        let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+        #expect(byID[UUID(10)]?.isDeleted == true)
+        #expect(byID[UUID(10)]?.updatedAt == Self.fixedDate.addingTimeInterval(60))
+        // A non-proposed Issue is left alone.
+        #expect(byID[UUID(11)]?.isDeleted == false)
+        #expect(byID[UUID(11)]?.updatedAt == Self.fixedDate)
+    }
+
+    @Test func denyIssueSkipsNonProposedAndOtherWorkflow() throws {
+        let database = try Self.makeDatabase()
+        let target = UUID(1)
+        let other = UUID(2)
+        try Self.seedWorkflow(database, workflowID: target)
+        try Self.seedWorkflow(database, workflowID: other)
+        try Self.seedIssue(database, id: UUID(10), workflowID: target, number: 1, status: "proposed")
+        try Self.seedIssue(database, id: UUID(11), workflowID: target, number: 2, status: "done")
+        try Self.seedIssue(database, id: UUID(12), workflowID: other, number: 1, status: "proposed")
+
+        try database.denyIssue(workflowID: target, number: 1, now: Self.fixedDate.addingTimeInterval(60))
+
+        let rows = try database.read { db in try IssueRow.fetchAll(db) }
+        let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+        #expect(byID[UUID(10)]?.isDeleted == true)
+        // A done Issue and the other Workflow's proposed Issue are untouched.
+        #expect(byID[UUID(11)]?.isDeleted == false)
+        #expect(byID[UUID(12)]?.isDeleted == false)
+    }
+
     // MARK: - reconcileStaleInProgressIssues
 
     @Test func reconcileDemotesOnlyInProgressIssuesToFailed() throws {

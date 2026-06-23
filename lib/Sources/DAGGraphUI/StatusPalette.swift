@@ -32,6 +32,7 @@ public struct StatusPalette: Sendable {
     )
 
     /// `.skipped` reuses the pending grey — the view's slash overlay carries the skipped cue.
+    /// `.proposed` uses purple to signal a HITL issue awaiting human resolution.
     public func color(for status: IssueStatus) -> Color {
         switch status {
         case .pending: pending
@@ -40,6 +41,7 @@ public struct StatusPalette: Sendable {
         case .done: complete
         case .failed: failed
         case .skipped: pending
+        case .proposed: .purple
         }
     }
 
@@ -52,6 +54,7 @@ public struct StatusPalette: Sendable {
         case .done: .white
         case .failed: .white
         case .skipped: .primary
+        case .proposed: .white
         }
     }
 }

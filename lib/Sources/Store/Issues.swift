@@ -60,6 +60,40 @@ extension DatabaseWriter {
         }
     }
 
+    /// Promotes a `proposed` Issue to `new` so the next Execute run picks it up in dependency order.
+    /// Scoped to `proposed` so it can't disturb an Issue that is already running or done.
+    public func approveIssue(workflowID: UUID, number: Int, now: Date) throws {
+        try write { db in
+            try IssueRow
+                .where { $0.workflowID.eq(workflowID) }
+                .where { $0.number.eq(number) }
+                .where { $0.status.eq("proposed") }
+                .where { !$0.isDeleted }
+                .update {
+                    $0.status = #bind("new")
+                    $0.updatedAt = now
+                }
+                .execute(db)
+        }
+    }
+
+    /// Soft-deletes a `proposed` Issue, removing it from the graph. Scoped to `proposed` so it can't
+    /// accidentally remove an Issue that is in progress or done.
+    public func denyIssue(workflowID: UUID, number: Int, now: Date) throws {
+        try write { db in
+            try IssueRow
+                .where { $0.workflowID.eq(workflowID) }
+                .where { $0.number.eq(number) }
+                .where { $0.status.eq("proposed") }
+                .where { !$0.isDeleted }
+                .update {
+                    $0.isDeleted = true
+                    $0.updatedAt = now
+                }
+                .execute(db)
+        }
+    }
+
     /// Demotes every `in_progress` Issue back to `failed`. Run at the start of an Execute run: with no
     /// live orchestrator at that point, any `in_progress` Issue is stale by definition (a crash/quit).
     public func reconcileStaleInProgressIssues(workflowID: UUID, now: Date) throws {

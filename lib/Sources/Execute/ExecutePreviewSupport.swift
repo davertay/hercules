@@ -43,6 +43,8 @@ extension ExecuteModel {
                          createdAt: now, updatedAt: now),
                 IssueRow(id: UUID(), workflowID: workflowID, number: 7, title: "Cancelled spike",
                          dependencies: [2], status: "skipped", createdAt: now, updatedAt: now),
+                IssueRow(id: UUID(), workflowID: workflowID, number: 8, title: "Add input sanitisation",
+                         dependencies: [], status: "proposed", createdAt: now, updatedAt: now),
             ]
             for issue in issues {
                 try IssueRow.insert { issue }.execute(db)

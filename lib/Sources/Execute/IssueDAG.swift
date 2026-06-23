@@ -35,6 +35,7 @@ func mapStatus(_ raw: String) -> IssueStatus {
     case "done": .done
     case "failed": .failed
     case "skipped": .skipped
+    case "proposed": .proposed
     default: .pending
     }
 }

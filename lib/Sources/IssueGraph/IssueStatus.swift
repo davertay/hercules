@@ -10,4 +10,6 @@ public enum IssueStatus: CaseIterable, Equatable, Hashable, Sendable {
     case failed
     /// Marked terminally complete without being worked.
     case skipped
+    /// Proposed by a Validate Persona; awaiting human Approve or Deny before the run loop can pick it up.
+    case proposed
 }

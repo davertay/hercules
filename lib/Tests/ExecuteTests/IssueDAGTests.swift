@@ -104,7 +104,15 @@ struct IssueDAGTests {
         #expect(mapStatus("done") == .done)
         #expect(mapStatus("failed") == .failed)
         #expect(mapStatus("skipped") == .skipped)
+        #expect(mapStatus("proposed") == .proposed)
         #expect(mapStatus("something-unexpected") == .pending)
+    }
+
+    @Test("A proposed Issue is never promoted to ready even when it has no dependencies")
+    func proposedIsNeverPromotedToReady() {
+        let nodes = dagNodes(from: [issue(1, status: "proposed")])
+
+        #expect(nodes[0].status == .proposed)
     }
 
     private func issue(

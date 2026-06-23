@@ -50,10 +50,11 @@ public struct ExecuteView: View {
                         .layoutPriority(1)
                         InspectorPane(
                             issue: model.selectedIssue,
-                            failureReason: model.selectedIssue.flatMap { model.failureReason(for: $0) }
-                        ) {
-                            model.retry($0)
-                        }
+                            failureReason: model.selectedIssue.flatMap { model.failureReason(for: $0) },
+                            onRetry: { model.retry($0) },
+                            onApprove: { model.approve($0) },
+                            onDeny: { model.deny($0) }
+                        )
                         .frame(minWidth: 260, idealWidth: 320, maxWidth: 480, maxHeight: .infinity)
                     }
                     // `HSplitView` proposes only its panes' ideal height; without this the row collapses to
@@ -92,8 +93,11 @@ private struct InspectorPane: View {
     let issue: IssueRow?
     let failureReason: String?
     let onRetry: (Int) -> Void
+    let onApprove: (Int) -> Void
+    let onDeny: (Int) -> Void
 
     private var isFailed: Bool { issue?.status == IssueRunStatus.failed.rawValue }
+    private var isProposed: Bool { issue?.status == "proposed" }
 
     var body: some View {
         if let issue {
@@ -117,6 +121,13 @@ private struct InspectorPane: View {
                     if isFailed {
                         FailureCallout(reason: failureReason) {
                             onRetry(issue.number)
+                        }
+                    }
+                    if isProposed {
+                        ProposedCallout {
+                            onApprove(issue.number)
+                        } onDeny: {
+                            onDeny(issue.number)
                         }
                     }
                     if !issue.body.isEmpty {
@@ -176,6 +187,42 @@ private struct FailureCallout: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// Approve / Deny controls for a `proposed` Issue, shown inline in the inspector. Proposed Issues are
+/// created by Validate Personas and need a human decision before the run loop can pick them up.
+private struct ProposedCallout: View {
+    let onApprove: () -> Void
+    let onDeny: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Awaiting approval", systemImage: "person.badge.clock.fill")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.purple)
+            Text("This Issue was proposed by a Persona during Validate. Approve to schedule it for the next run, or Deny to remove it from the graph.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                Button {
+                    onDeny()
+                } label: {
+                    Label("Deny", systemImage: "xmark")
+                }
+                Button {
+                    onApprove()
+                } label: {
+                    Label("Approve", systemImage: "checkmark")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.purple)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.purple.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
