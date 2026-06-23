@@ -60,6 +60,40 @@ extension DatabaseWriter {
         }
     }
 
+    /// Approves a HITL Proposed Issue: flips `proposed` → `new` so the next Execute run picks it up in
+    /// dependency order (ADR 0007). Scoped to `proposed` so it can't disturb an already-running set.
+    public func approveIssue(workflowID: UUID, number: Int, now: Date) throws {
+        try write { db in
+            try IssueRow
+                .where { $0.workflowID.eq(workflowID) }
+                .where { $0.number.eq(number) }
+                .where { $0.status.eq("proposed") }
+                .where { !$0.isDeleted }
+                .update {
+                    $0.status = #bind("new")
+                    $0.updatedAt = now
+                }
+                .execute(db)
+        }
+    }
+
+    /// Denies a HITL Proposed Issue: soft-deletes it (like `clearIssues`) so it leaves the graph. Scoped to
+    /// `proposed` so a normal Issue can't be removed this way.
+    public func denyIssue(workflowID: UUID, number: Int, now: Date) throws {
+        try write { db in
+            try IssueRow
+                .where { $0.workflowID.eq(workflowID) }
+                .where { $0.number.eq(number) }
+                .where { $0.status.eq("proposed") }
+                .where { !$0.isDeleted }
+                .update {
+                    $0.isDeleted = true
+                    $0.updatedAt = now
+                }
+                .execute(db)
+        }
+    }
+
     /// Demotes every `in_progress` Issue back to `failed`. Run at the start of an Execute run: with no
     /// live orchestrator at that point, any `in_progress` Issue is stale by definition (a crash/quit).
     public func reconcileStaleInProgressIssues(workflowID: UUID, now: Date) throws {
