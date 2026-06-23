@@ -138,14 +138,14 @@ struct ValidateModelTests {
         #expect(row.failureReason?.contains("Interrupted") == true)
     }
 
-    @Test("Stale running rows are reconciled to failed when the window opens")
+    @Test("Stale running rows are reconciled to failed on first refresh (window open)")
     func reconcilesStaleRunningOnOpen() async throws {
         let database = try Self.makeDatabase()
         let workflowID = UUID(0)
         try Self.seedWorkflow(database, workflowID: workflowID)
         try Self.seedReview(database, workflowID: workflowID, kind: "code-quality", status: "running")
 
-        _ = withDependencies {
+        let model = withDependencies {
             $0.defaultDatabase = database
             $0.date.now = fixedDate
         } operation: {
@@ -154,6 +154,7 @@ struct ValidateModelTests {
                 worktree: FileManager.default.temporaryDirectory
             )
         }
+        await model.refresh()
 
         let row = try #require(try Self.review(database, workflowID: workflowID, kind: "code-quality"))
         #expect(row.status == "failed")

@@ -42,17 +42,16 @@ public final class ValidateModel {
     /// Hercules, which blocks the Phase rather than reviewing the user's raw checkout.
     public let worktreeMissing: Bool
 
+    /// Guards the once-per-window reconcile in `refresh`; a re-appearance must not demote a review this
+    /// session is genuinely running.
+    @ObservationIgnored
+    private var didReconcile = false
+
     public init(workflowID: UUID, database: any DatabaseWriter, worktree: URL) {
         self.workflowID = workflowID
         self.database = database
         self.worktree = worktree
         worktreeMissing = !FileManager.default.fileExists(atPath: worktree.path)
-
-        // Window open: with no live orchestrator yet, any `running` row is stale (a crash/quit during a
-        // prior run), so demote it to `failed` before observing — mirrors reconcileStaleInProgressIssues.
-        @Dependency(\.date.now) var now
-        try? database.reconcileStaleRunningReviews(workflowID: workflowID, now: now)
-
         _reviews = Fetch(
             wrappedValue: [],
             WorkflowReviewsRequest(workflowID: workflowID),
@@ -70,9 +69,15 @@ public final class ValidateModel {
     static let reviewPrompt =
         "Review the work on the current branch and report your findings as instructed."
 
-    /// Re-reads the review rows from disk. A relaunched window observes its own writes, but the eager load
-    /// mirrors Execute so the surface is current the instant it appears.
+    /// Re-reads the review rows from disk, reconciling stale `running` rows to `failed` the first time the
+    /// surface appears (window open). With no live orchestrator at that point any `running` row is stale
+    /// (a crash/quit during a prior run), so it's demoted — mirrors reconcileStaleInProgressIssues. The
+    /// once-guard keeps a re-appearance during a live run from wrongly failing it.
     public func refresh() async {
+        if !didReconcile {
+            didReconcile = true
+            try? database.reconcileStaleRunningReviews(workflowID: workflowID, now: now)
+        }
         try? await $reviews.load()
     }
 

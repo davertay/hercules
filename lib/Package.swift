@@ -122,6 +122,7 @@ let package = Package(
                 "IssueGraph",
                 "IssueMCP",
                 "TestChat",
+                "Validate",
                 "WorkflowContainer",
             ]
         ),
@@ -271,6 +272,7 @@ let package = Package(
             name: "Validate",
             dependencies: [
                 "Agent",
+                "DAGGraphUI",
                 "Material",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
@@ -304,6 +306,7 @@ let package = Package(
                 "Execute",
                 "PRD",
                 "Store",
+                "Validate",
                 "Worktree",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
