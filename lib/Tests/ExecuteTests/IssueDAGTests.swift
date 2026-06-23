@@ -104,7 +104,16 @@ struct IssueDAGTests {
         #expect(mapStatus("done") == .done)
         #expect(mapStatus("failed") == .failed)
         #expect(mapStatus("skipped") == .skipped)
+        #expect(mapStatus("proposed") == .proposed)
         #expect(mapStatus("something-unexpected") == .pending)
+    }
+
+    @Test("A proposed Issue stays .proposed and is exempt from the vacuous-ready promotion")
+    func proposedOverridesReadyDerivation() {
+        // A root proposed Issue would derive .ready if it mapped to .pending; it must not.
+        let nodes = dagNodes(from: [issue(8, status: "proposed")])
+
+        #expect(nodes[0].status == .proposed)
     }
 
     private func issue(

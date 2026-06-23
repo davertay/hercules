@@ -38,6 +38,15 @@ public final class ValidateModel {
     @ObservationIgnored
     private let worktree: URL
 
+    /// The Workflow's directory, holding `workflow.sqlite` — passed to the propose-issue MCP server so it
+    /// writes proposed Issues into this Workflow's Store.
+    @ObservationIgnored
+    private let workflowDirectory: URL
+
+    /// The Hercules app binary, re-executed as the stdio propose-issue MCP server (ADR 0006).
+    @ObservationIgnored
+    private let mcpServerCommand: String
+
     /// Evaluated once when the window opens; `true` means the worktree was pruned or deleted outside
     /// Hercules, which blocks the Phase rather than reviewing the user's raw checkout.
     public let worktreeMissing: Bool
@@ -47,10 +56,18 @@ public final class ValidateModel {
     @ObservationIgnored
     private var didReconcile = false
 
-    public init(workflowID: UUID, database: any DatabaseWriter, worktree: URL) {
+    public init(
+        workflowID: UUID,
+        database: any DatabaseWriter,
+        worktree: URL,
+        workflowDirectory: URL,
+        mcpServerCommand: String
+    ) {
         self.workflowID = workflowID
         self.database = database
         self.worktree = worktree
+        self.workflowDirectory = workflowDirectory
+        self.mcpServerCommand = mcpServerCommand
         worktreeMissing = !FileManager.default.fileExists(atPath: worktree.path)
         _reviews = Fetch(
             wrappedValue: [],
@@ -143,7 +160,8 @@ public final class ValidateModel {
                     workflowID: workflowID,
                     kind: .validate,
                     skillFiles: [resource.fileUrl],
-                    addDirs: [resource.folderUrl]
+                    addDirs: [resource.folderUrl],
+                    mcpServers: [proposeServer()]
                 )
             )
             try? database.setReviewSession(
@@ -163,6 +181,24 @@ public final class ValidateModel {
                 workflowID: workflowID, kind: kind, to: .failed, failureReason: reason, now: now
             )
         }
+    }
+
+    /// The propose-issue MCP server granted to each read-only review Session (like Allocate's create-issue
+    /// server). The DB path and workflow id are fixed launch args, so a Persona can't target another
+    /// Workflow's Store; `--propose` selects the host-numbered `proposed` tool.
+    private func proposeServer() -> MCPServer {
+        let databasePath = workflowDirectory.appendingPathComponent("workflow.sqlite").path
+        return MCPServer(
+            name: "hercules",
+            command: mcpServerCommand,
+            args: [
+                "--mcp-issue-server",
+                "--propose",
+                "--db", databasePath,
+                "--workflow-id", workflowID.uuidString,
+            ],
+            tools: ["propose_issue"]
+        )
     }
 
     /// `nonisolated` so the window's teardown can cancel from any isolation. Cancelling throws each live

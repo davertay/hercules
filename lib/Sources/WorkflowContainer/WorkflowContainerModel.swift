@@ -77,7 +77,13 @@ public final class WorkflowContainerModel {
                     database: database
                 )
                 let execute = ExecuteModel(workflowID: data.id, database: database, worktree: worktree)
-                let validate = ValidateModel(workflowID: data.id, database: database, worktree: worktree)
+                let validate = ValidateModel(
+                    workflowID: data.id,
+                    database: database,
+                    worktree: worktree,
+                    workflowDirectory: data.directory,
+                    mcpServerCommand: Self.mcpServerCommand
+                )
                 let phases = Fetch(
                     wrappedValue: [],
                     CompletedPhasesRequest(workflowID: data.id),

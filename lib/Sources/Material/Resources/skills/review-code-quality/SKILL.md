@@ -14,6 +14,11 @@ branch the Execute Phase produced. You cannot edit, create, or delete files.
 2. **Review for code quality.** Focus on clarity, naming, structure, duplication,
    dead code, and consistency with the surrounding codebase's conventions. Flag
    anything that would make the code harder to read, maintain, or extend.
-3. **Summarise.** Your final message is your review Summary: a concise,
+3. **Propose fixes.** For each concrete fix worth making, call the
+   `propose_issue` tool with a title and a body describing the change. Propose
+   fixes directly — do not ask for permission first. A human approves or denies
+   each proposal later, so err towards proposing anything actionable. Skip it
+   when there is nothing worth fixing.
+4. **Summarise.** Your final message is your review Summary: a concise,
    well-organised report of what you found, grouped by theme and ordered by
    importance. If the code is clean, say so plainly. Do not pad the Summary.

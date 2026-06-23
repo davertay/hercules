@@ -47,7 +47,9 @@ struct ValidateModelTests {
         } operation: {
             ValidateModel(
                 workflowID: workflowID, database: database,
-                worktree: FileManager.default.temporaryDirectory
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory,
+                mcpServerCommand: "/path/to/Hercules"
             )
         }
 
@@ -61,7 +63,13 @@ struct ValidateModelTests {
         #expect(request.issueNumber == nil)
         #expect(request.skillFiles == [resource.fileUrl])
         #expect(request.addDirs == [resource.folderUrl])
-        #expect(request.mcpServers.isEmpty)
+        // The read-only review Session is granted the propose-issue tool.
+        let server = try #require(request.mcpServers.first)
+        #expect(server.tools == ["propose_issue"])
+        #expect(server.command == "/path/to/Hercules")
+        #expect(server.args.contains("--propose"))
+        #expect(server.args.contains("--mcp-issue-server"))
+        #expect(server.args.contains(workflowID.uuidString))
 
         let row = try #require(try Self.review(database, workflowID: workflowID, kind: "code-quality"))
         #expect(row.status == "reviewed")
@@ -84,7 +92,9 @@ struct ValidateModelTests {
         } operation: {
             ValidateModel(
                 workflowID: workflowID, database: database,
-                worktree: FileManager.default.temporaryDirectory
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory,
+                mcpServerCommand: "/path/to/Hercules"
             )
         }
 
@@ -116,7 +126,9 @@ struct ValidateModelTests {
         } operation: {
             ValidateModel(
                 workflowID: workflowID, database: database,
-                worktree: FileManager.default.temporaryDirectory
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory,
+                mcpServerCommand: "/path/to/Hercules"
             )
         }
 
@@ -151,7 +163,9 @@ struct ValidateModelTests {
         } operation: {
             ValidateModel(
                 workflowID: workflowID, database: database,
-                worktree: FileManager.default.temporaryDirectory
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory,
+                mcpServerCommand: "/path/to/Hercules"
             )
         }
         await model.refresh()
