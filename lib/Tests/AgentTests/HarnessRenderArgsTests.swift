@@ -37,8 +37,14 @@ struct HarnessRenderArgsTests {
         #expect(args[args.index(after: sessionIdIdx)] == sessionId.rawValue.uuidString)
 
         #expect(!args.contains("--resume"))
-        #expect(!args.contains("--allowedTools"))
         #expect(!args.contains("--mcp-config"))
+
+        // Write mode runs under acceptEdits (never bypassPermissions, which managed policy can forbid)
+        // and allowlists Bash so build/test/git run unattended; Write/Edit are covered by the mode.
+        let permIdx = args.firstIndex(of: "--permission-mode")!
+        #expect(args[permIdx + 1] == "acceptEdits")
+        let allowedIdx = args.firstIndex(of: "--allowedTools")!
+        #expect(args[allowedIdx + 1] == "Bash")
     }
 
     @Test func startWriteWithInputs() throws {
@@ -60,7 +66,6 @@ struct HarnessRenderArgsTests {
         let addDirIdx = args.firstIndex(of: "--add-dir")!
         #expect(args[args.index(after: addDirIdx)] == inputsRoot.path)
         #expect(!args.contains("--resume"))
-        #expect(!args.contains("--allowedTools"))
     }
 
     @Test func resumeReadOnlyWithInputs() throws {
@@ -316,7 +321,7 @@ struct HarnessRenderArgsTests {
         #expect(!args.contains("mcp__hercules__create_issue"))
     }
 
-    @Test func writeModeWithMCPServerConfiguresButDoesNotAddAllowlist() throws {
+    @Test func writeModeWithMCPServerAllowlistsBashAndMCPTools() throws {
         let dataDir = makeSessionDataDir()
         defer { try? FileManager.default.removeItem(at: dataDir) }
 
@@ -333,8 +338,10 @@ struct HarnessRenderArgsTests {
 
         // The server is configured regardless of mode...
         #expect(args.contains("--mcp-config"))
-        // ...but write mode has no allowlist to extend.
-        #expect(!args.contains("--allowedTools"))
+        // ...and write mode allowlists Bash plus the MCP tools (acceptEdits won't auto-approve either).
+        let allowedIdx = args.firstIndex(of: "--allowedTools")!
+        #expect(args[allowedIdx + 1] == "Bash")
+        #expect(args[allowedIdx + 2] == "mcp__hercules__create_issue")
     }
 
     @Test func noMCPServerLeavesArgsUnchanged() throws {

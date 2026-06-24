@@ -5,11 +5,13 @@
   [3]: "--input-format",
   [4]: "stream-json",
   [5]: "--permission-mode",
-  [6]: "bypassPermissions",
+  [6]: "acceptEdits",
   [7]: "--setting-sources",
   [8]: "user,project,local",
   [9]: "--verbose",
   [10]: "--include-partial-messages",
   [11]: "--session-id",
-  [12]: "00000000-0000-0000-0000-000000000001"
+  [12]: "00000000-0000-0000-0000-000000000001",
+  [13]: "--allowedTools",
+  [14]: "Bash"
 ]
