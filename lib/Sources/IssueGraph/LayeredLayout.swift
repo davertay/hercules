@@ -6,7 +6,8 @@ extension IssueGraph {
         public let id: Int
         /// Column within the level; nodes at the same `y` are ordered by `number` ascending.
         public let x: Int
-        /// Level (longest path from any root). Roots have `y == 0`; a child is `1 + max(y of each dep)`.
+        /// Level (row). A node is always drawn below every node it depends on; see `layeredLayout` for how
+        /// dependency-free nodes are placed.
         public let y: Int
 
         public init(id: Int, x: Int, y: Int) {
@@ -18,9 +19,14 @@ extension IssueGraph {
 
     /// Layered DAG layout coordinates, returned sorted `(y, x)` ascending (row-major).
     ///
-    /// `y` is the longest path from any root — not shortest, so a node is drawn *below* every node it
-    /// depends on even when multiple paths to a root exist. `x` orders by `number` within the level;
-    /// edge-crossing minimisation is deferred.
+    /// A *connected* node's level is its longest path from any root — not shortest, so it's drawn *below*
+    /// every node it depends on even when multiple paths to a root exist. `x` orders by `number` within
+    /// the level; edge-crossing minimisation is deferred.
+    ///
+    /// A node that is *fully isolated* — no dependencies and nothing depending on it — carries no
+    /// dependency-depth signal, so rather than letting longest-path pile every such node onto the root row
+    /// (where appended HITL Proposed Issues would otherwise distort the real graph), isolated nodes are
+    /// parked together in a band one row below the deepest connected node, ordered by number.
     ///
     /// Precondition: a validated DAG (acyclic, all dependencies declared); behaviour on a malformed
     /// graph is unspecified.
@@ -43,9 +49,34 @@ extension IssueGraph {
         return layout
     }
 
+    /// Longest-path levels for connected nodes, with fully isolated nodes (no deps, no dependents) moved to
+    /// a band one row below the deepest connected node. Connected graphs are unaffected — an isolated node
+    /// is free to sit at any depth without breaking the invariant that a node is below all its
+    /// dependencies, so parking it at the bottom only changes where dependency-free orphans land.
+    private static func computeLevels(_ nodes: [DAGNode]) -> [Int: Int] {
+        let asap = longestPathLevels(nodes)
+        let dependedUpon = Set(nodes.flatMap(\.dependencies))
+
+        func isIsolated(_ node: DAGNode) -> Bool {
+            node.dependencies.isEmpty && !dependedUpon.contains(node.number)
+        }
+
+        let maxConnectedLevel = nodes
+            .filter { !isIsolated($0) }
+            .map { asap[$0.number, default: 0] }
+            .max()
+        let bandLevel = maxConnectedLevel.map { $0 + 1 } ?? 0
+
+        var levels: [Int: Int] = [:]
+        for node in nodes {
+            levels[node.number] = isIsolated(node) ? bandLevel : asap[node.number, default: 0]
+        }
+        return levels
+    }
+
     /// Each node's level via memoised longest-path-from-roots. Assumed acyclic, so the recursion
     /// terminates without an explicit visited set.
-    private static func computeLevels(_ nodes: [DAGNode]) -> [Int: Int] {
+    private static func longestPathLevels(_ nodes: [DAGNode]) -> [Int: Int] {
         let byNumber: [Int: DAGNode] = Dictionary(uniqueKeysWithValues: nodes.map { ($0.number, $0) })
         var levels: [Int: Int] = [:]
 
