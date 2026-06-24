@@ -41,6 +41,10 @@ public final class WorkflowContainerModel {
     @ObservationIgnored
     @Fetch var completedPhases: [PhaseRow] = []
 
+    /// Set when ``destroy()`` removed the Workflow but a git cleanup step failed — the view surfaces it as
+    /// a brief non-blocking notice before closing the window.
+    public var cleanupNotice: String?
+
     public init(data: WorkflowWindowData) {
         id = data.id
         directory = data.directory
@@ -112,6 +116,36 @@ public final class WorkflowContainerModel {
     deinit {
         executeModel?.cancelRun()
         validateModel?.cancelAll()
+    }
+
+    /// `true` while any one of the five Phases' agents is running — the chat Phases (Design/PRD/Allocate)
+    /// mid-Turn, the Execute run loop in flight, or any Validate Persona reviewing. The single aggregate
+    /// the toolbar consumes: ``isIdle`` gates Destroy, and this will gate Stop in a later slice.
+    public var isRunning: Bool {
+        designModel?.isBusy == true
+            || prdModel?.isBusy == true
+            || allocateModel?.isBusy == true
+            || executeModel?.isRunning == true
+            || validateModel?.isAnyRunning == true
+    }
+
+    /// The whole Workflow is quiescent — none of the five Phases' agents are running.
+    public var isIdle: Bool { !isRunning }
+
+    /// Tears down the Workflow via ``deleteWorkflow(data:root:)``. Folder removal is the operation of
+    /// record, so the Workflow always disappears; the caller should close the window afterwards. Returns
+    /// `true` on a fully clean teardown. On a git-step failure it sets ``cleanupNotice`` and returns
+    /// `false` so the caller can surface the notice before closing — the removal is still treated as done.
+    @discardableResult
+    public func destroy() -> Bool {
+        let root = directory.deletingLastPathComponent()
+        let data = WorkflowWindowData(id: id, directory: directory, repoPath: repoPath)
+        let result = deleteWorkflow(data: data, root: root)
+        guard result.didGitCleanupSucceed else {
+            cleanupNotice = "Workflow removed, but its git branch or worktree may need manual cleanup."
+            return false
+        }
+        return true
     }
 
     /// The first Phase is always unlocked; every other unlocks once the Phase it consumes has completed.

@@ -66,6 +66,10 @@ public final class PRDModel {
 
     public var isIdle: Bool { engine.isIntake }
 
+    /// Whether this Phase's chat agent is mid-Turn — the PRD contribution to the Workflow's aggregate
+    /// running state. A thin reflection of the engine's run flag.
+    public var isBusy: Bool { engine.isRunning }
+
     /// Unavailable once the Phase is complete — re-running is the separate Regenerate action.
     public var isGenerateAvailable: Bool {
         !engine.isRunning && prdSavedURL == nil

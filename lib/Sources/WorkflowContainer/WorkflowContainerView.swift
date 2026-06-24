@@ -8,6 +8,8 @@ import Validate
 public struct WorkflowContainerView: View {
     let model: WorkflowContainerModel
     @State private var selectedPhase: Phase? = .design
+    @State private var isConfirmingDestroy = false
+    @Environment(\.dismiss) private var dismiss
 
     public init(model: WorkflowContainerModel) {
         self.model = model
@@ -74,6 +76,69 @@ public struct WorkflowContainerView: View {
                 ContentUnavailableView("Select a Phase", systemImage: "sidebar.left")
             }
         }
+        .toolbar {
+            ToolbarItem {
+                Button(role: .destructive) {
+                    isConfirmingDestroy = true
+                } label: {
+                    Label("Destroy Workflow", systemImage: "trash")
+                }
+                // Always visible, but only while the whole Workflow is quiescent — destroying mid-run would
+                // pull the rug from under a live agent.
+                .disabled(!model.isIdle)
+                .help("Permanently remove this Workflow — enabled only while it's idle")
+            }
+        }
+        .confirmationDialog(
+            "Destroy this Workflow?",
+            isPresented: $isConfirmingDestroy,
+            titleVisibility: .visible
+        ) {
+            Button("Destroy Workflow", role: .destructive) { destroy() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "This permanently removes the Workflow and destroys any commits that aren't merged elsewhere. This can't be undone."
+            )
+        }
+        .overlay(alignment: .bottom) {
+            if let notice = model.cleanupNotice {
+                CleanupNotice(message: notice)
+            }
+        }
+    }
+
+    /// Tears down the Workflow and closes the window. A clean teardown closes immediately; a git-cleanup
+    /// failure first surfaces a brief non-blocking notice — the removal is done regardless — then closes.
+    private func destroy() {
+        if model.destroy() {
+            dismiss()
+        } else {
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                dismiss()
+            }
+        }
+    }
+}
+
+/// The transient bottom toast warning that teardown left git state needing manual cleanup. Mirrors the
+/// Validate Phase's pushed-confirmation toast.
+private struct CleanupNotice: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+            Text(message)
+                .font(.callout.weight(.medium))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.thinMaterial, in: Capsule())
+        .padding(.bottom, 16)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
 

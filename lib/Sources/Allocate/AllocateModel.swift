@@ -77,6 +77,10 @@ public final class AllocateModel {
 
     public var isIntake: Bool { engine.isIntake }
 
+    /// Whether this Phase's chat agent is mid-Turn — the Allocate contribution to the Workflow's aggregate
+    /// running state. A thin reflection of the engine's run flag.
+    public var isBusy: Bool { engine.isRunning }
+
     public var isProposeAvailable: Bool { !engine.isRunning }
 
     /// Available only once a proposal conversation exists.

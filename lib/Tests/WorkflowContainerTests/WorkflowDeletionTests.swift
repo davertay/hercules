@@ -94,6 +94,58 @@ struct WorkflowDeletionTests {
         #expect(listWorkflows(root: root).isEmpty)
     }
 
+    @Test
+    @MainActor
+    func modelDestroyTearsDownCleanlyWithoutANotice() throws {
+        let root = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try withDependencies {
+            $0.context = .live
+            $0.uuid = .incrementing
+            $0.date.now = Self.fixedDate
+            $0.worktreeClient = .testValue
+        } operation: {
+            let data = try createWorkflow(repo: URL(fileURLWithPath: "/path/to/repo"), root: root)
+            let model = WorkflowContainerModel(data: data)
+
+            #expect(model.destroy() == true)
+            // A clean teardown leaves no notice, and the Workflow is gone.
+            #expect(model.cleanupNotice == nil)
+            #expect(!FileManager.default.fileExists(atPath: data.directory.path))
+            #expect(listWorkflows(root: root).isEmpty)
+        }
+    }
+
+    @Test
+    @MainActor
+    func modelDestroySurfacesNoticeButStillRemovesOnGitFailure() throws {
+        let root = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        struct RemoveFailure: Error {}
+        try withDependencies {
+            $0.context = .live
+            $0.uuid = .incrementing
+            $0.date.now = Self.fixedDate
+            $0.worktreeClient = .testValue
+        } operation: {
+            let data = try createWorkflow(repo: URL(fileURLWithPath: "/path/to/repo"), root: root)
+            let model = WorkflowContainerModel(data: data)
+
+            withDependencies {
+                $0.worktreeClient.remove = { @Sendable _ in throw RemoveFailure() }
+            } operation: {
+                // The removal is still treated as done — destroy returns false only to flag the notice.
+                #expect(model.destroy() == false)
+            }
+
+            #expect(model.cleanupNotice != nil)
+            #expect(!FileManager.default.fileExists(atPath: data.directory.path))
+            #expect(listWorkflows(root: root).isEmpty)
+        }
+    }
+
     private static func makeTempDir() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("WorkflowContainerTests-\(UUID().uuidString)", isDirectory: true)
