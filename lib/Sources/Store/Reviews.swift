@@ -87,3 +87,21 @@ extension DatabaseWriter {
         }
     }
 }
+
+/// A Workflow's non-deleted review rows. Lazy by design — a Persona has no row until its first run — so
+/// the Validate view renders the full catalog and treats a missing row as idle.
+public struct WorkflowReviewsRequest: FetchKeyRequest {
+    public var workflowID: UUID
+
+    public init(workflowID: UUID = UUID()) {
+        self.workflowID = workflowID
+    }
+
+    public func fetch(_ db: Database) throws -> [ReviewRow] {
+        try ReviewRow
+            .where { $0.workflowID.eq(workflowID) }
+            .where { !$0.isDeleted }
+            .order { $0.kind.asc() }
+            .fetchAll(db)
+    }
+}

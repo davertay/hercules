@@ -3,6 +3,7 @@ import Design
 import Execute
 import PRD
 import SwiftUI
+import Validate
 
 public struct WorkflowContainerView: View {
     let model: WorkflowContainerModel
@@ -52,6 +53,15 @@ public struct WorkflowContainerView: View {
             case .execute:
                 if let executeModel = model.executeModel {
                     ExecuteView(model: executeModel)
+                } else {
+                    ContentUnavailableView(
+                        "Workflow store unavailable",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                }
+            case .validate:
+                if let validateModel = model.validateModel {
+                    ValidateView(model: validateModel)
                 } else {
                     ContentUnavailableView(
                         "Workflow store unavailable",

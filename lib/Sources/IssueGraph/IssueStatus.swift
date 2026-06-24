@@ -10,4 +10,7 @@ public enum IssueStatus: CaseIterable, Equatable, Hashable, Sendable {
     case failed
     /// Marked terminally complete without being worked.
     case skipped
+    /// A HITL fix proposed by a Validate Persona, awaiting human approval before it can run. The stored
+    /// `"proposed"` maps here, overriding the vacuous-ready derivation so it stays visually distinct.
+    case proposed
 }

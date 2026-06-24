@@ -11,6 +11,32 @@ import Store
 /// The Harness allowlist entry is the qualified `mcp__hercules__create_issue`.
 public let createIssueToolName = "create_issue"
 
+/// Validate's HITL proposal tool; allowlist entry `mcp__hercules__propose_issue`.
+public let proposeIssueToolName = "propose_issue"
+
+let proposeIssueTool = Tool(
+    name: proposeIssueToolName,
+    description: """
+        Propose a fix as a HITL Issue in the current Workflow, for a human to approve before it runs. \
+        Supply only the title and body — the Workflow, the Issue number, and its proposed status are \
+        fixed by the host.
+        """,
+    inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+            "title": .object([
+                "type": .string("string"),
+                "description": .string("A short title for the proposed fix."),
+            ]),
+            "body": .object([
+                "type": .string("string"),
+                "description": .string("The bulk one-shot spec for the fix."),
+            ]),
+        ]),
+        "required": .array([.string("title"), .string("body")]),
+    ])
+)
+
 let createIssueTool = Tool(
     name: createIssueToolName,
     description: """
@@ -42,10 +68,13 @@ let createIssueTool = Tool(
     ])
 )
 
-/// A malformed call returns a tool error rather than tearing down the connection.
+/// Serves one tool, selected by `propose`: Allocate's `create_issue` (model-numbered, `new`) or Validate's
+/// `propose_issue` (host-numbered, `proposed`). A malformed call returns a tool error rather than tearing
+/// down the connection.
 public func makeIssueMCPServer(
     workflowID: UUID,
-    database: any DatabaseWriter
+    database: any DatabaseWriter,
+    propose: Bool = false
 ) async -> Server {
     let server = Server(
         name: "hercules",
@@ -53,28 +82,41 @@ public func makeIssueMCPServer(
         capabilities: .init(tools: .init(listChanged: false))
     )
 
+    let tool = propose ? proposeIssueTool : createIssueTool
+
     await server.withMethodHandler(ListTools.self) { _ in
-        ListTools.Result(tools: [createIssueTool])
+        ListTools.Result(tools: [tool])
     }
 
     await server.withMethodHandler(CallTool.self) { params in
-        guard params.name == createIssueToolName else {
+        guard params.name == tool.name else {
             return CallTool.Result(
                 content: [.text(text: "Unknown tool \(params.name).", annotations: nil, _meta: nil)],
                 isError: true
             )
         }
         do {
-            let arguments = try CreateIssueArguments(mcpArguments: params.arguments)
-            let row = try createIssue(arguments, workflowID: workflowID, into: database)
-            return CallTool.Result(
-                content: [.text(text: "Created Issue #\(row.number).", annotations: nil, _meta: nil)]
-            )
+            let row: IssueRow
+            if propose {
+                row = try proposeIssue(
+                    ProposeIssueArguments(mcpArguments: params.arguments),
+                    workflowID: workflowID, into: database
+                )
+                return CallTool.Result(
+                    content: [.text(text: "Proposed Issue #\(row.number).", annotations: nil, _meta: nil)]
+                )
+            } else {
+                row = try createIssue(
+                    CreateIssueArguments(mcpArguments: params.arguments),
+                    workflowID: workflowID, into: database
+                )
+                return CallTool.Result(
+                    content: [.text(text: "Created Issue #\(row.number).", annotations: nil, _meta: nil)]
+                )
+            }
         } catch {
             return CallTool.Result(
-                content: [
-                    .text(text: "create_issue failed: \(error)", annotations: nil, _meta: nil)
-                ],
+                content: [.text(text: "\(tool.name) failed: \(error)", annotations: nil, _meta: nil)],
                 isError: true
             )
         }
@@ -86,15 +128,20 @@ public func makeIssueMCPServer(
 /// The `@main` re-exec branch, kept off the GUI path so the CLI invocation never initialises AppKit.
 public enum IssueMCPLaunch {
     public static let subcommand = "--mcp-issue-server"
+    /// Selects the `propose_issue` tool (host-numbered, `proposed`) over `create_issue`.
+    public static let proposeFlag = "--propose"
 
     public struct Configuration: Equatable, Sendable {
         /// Path to the Workflow's `workflow.sqlite` file.
         public var databasePath: String
         public var workflowID: UUID
+        /// When `true`, serve `propose_issue` instead of `create_issue`.
+        public var propose: Bool
 
-        public init(databasePath: String, workflowID: UUID) {
+        public init(databasePath: String, workflowID: UUID, propose: Bool = false) {
             self.databasePath = databasePath
             self.workflowID = workflowID
+            self.propose = propose
         }
     }
 
@@ -106,7 +153,11 @@ public enum IssueMCPLaunch {
             let workflowIDString = value(of: "--workflow-id", in: arguments),
             let workflowID = UUID(uuidString: workflowIDString)
         else { return nil }
-        return Configuration(databasePath: databasePath, workflowID: workflowID)
+        return Configuration(
+            databasePath: databasePath,
+            workflowID: workflowID,
+            propose: arguments.contains(proposeFlag)
+        )
     }
 
     /// Runs the stdio server until the client closes the connection.
@@ -114,7 +165,7 @@ public enum IssueMCPLaunch {
         let directory = URL(fileURLWithPath: configuration.databasePath).deletingLastPathComponent()
         let database = try openWorkflowDatabase(at: directory)
         let server = await makeIssueMCPServer(
-            workflowID: configuration.workflowID, database: database
+            workflowID: configuration.workflowID, database: database, propose: configuration.propose
         )
         try await server.start(transport: StdioTransport())
         await server.waitUntilCompleted()

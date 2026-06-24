@@ -209,6 +209,20 @@ public final class ExecuteModel {
         }
     }
 
+    /// Approves a HITL Proposed Issue (ADR 0007): `proposed` → `new`, so the next run picks it up in
+    /// dependency order. A proposed Issue has no dependencies, so it's immediately ready. The observed
+    /// rows recolour it from proposed to ready without a manual refresh.
+    public func approve(_ number: Int) {
+        try? database.approveIssue(workflowID: workflowID, number: number, now: now)
+    }
+
+    /// Denies a HITL Proposed Issue: soft-deletes it so it leaves the graph, clearing the selection it
+    /// was occupying.
+    public func deny(_ number: Int) {
+        try? database.denyIssue(workflowID: workflowID, number: number, now: now)
+        if selectedID == number { selectedID = nil }
+    }
+
     /// Resets a `failed` Issue to `new` and immediately resumes the run from it. The run loop already
     /// starts at the lowest ready `new` Issue, so this both retries the failure and continues downstream.
     public func retry(_ number: Int) {

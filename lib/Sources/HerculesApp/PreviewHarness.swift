@@ -5,6 +5,7 @@ import Execute
 import Foundation
 import IssueGraph
 import SwiftUI
+import Validate
 import WorkflowContainer
 
 /// Debug-only preview harness — renders a single feature surface when `HERCULES_PREVIEW` is set,
@@ -16,6 +17,7 @@ public enum PreviewTarget: String, CaseIterable, Sendable {
     case allocateCommitted
     case dagGraph
     case flowExecute
+    case flowValidate
 
     public static func fromEnvironment() -> PreviewTarget? {
         guard
@@ -81,7 +83,49 @@ public struct PreviewHarnessView: View {
             DAGGraphPreviewHost()
         case .flowExecute:
             FlowExecutePreviewHost()
+        case .flowValidate:
+            FlowValidatePreviewHost()
         }
+    }
+}
+
+/// Renders the Validate Phase end-to-end over a reviewed Persona seeded into a fresh Workflow database.
+private struct FlowValidatePreviewHost: View {
+    @State private var container: WorkflowContainerModel
+
+    init() {
+        let id = UUID()
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("workflow-flow-validate-\(id.uuidString)", isDirectory: true)
+        try? ValidateModel.seedReviewsPreview(at: directory, workflowID: id)
+        // Stand in a worktree so Validate's health check passes and the cards render.
+        try? FileManager.default.createDirectory(
+            at: workflowWorktree(in: directory), withIntermediateDirectories: true
+        )
+        _container = State(
+            wrappedValue: WorkflowContainerModel(
+                data: WorkflowWindowData(id: id, directory: directory, repoPath: "/path/to/repo")
+            )
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            if let validateModel = container.validateModel {
+                ValidateView(model: validateModel)
+                    .task {
+                        await validateModel.loadReviewsForPreview()
+                        // Pre-select the Persona so the inspector renders with its Summary.
+                        validateModel.selectNode(.codeQuality)
+                    }
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        }
+        .frame(minWidth: 800, minHeight: 600)
     }
 }
 

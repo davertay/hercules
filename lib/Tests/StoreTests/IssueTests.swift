@@ -325,6 +325,73 @@ struct IssueTests {
         #expect(reasons.isEmpty)
     }
 
+    // MARK: - approveIssue / denyIssue
+
+    @Test("Approve flips a proposed Issue to new so the run loop picks it up")
+    func approveProposedIssueBecomesNew() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 8, status: "proposed")
+
+        try database.approveIssue(
+            workflowID: workflowID, number: 8, now: Self.fixedDate.addingTimeInterval(60)
+        )
+
+        let row = try #require(try database.read { db in try IssueRow.fetchOne(db) })
+        #expect(row.status == "new")
+        #expect(row.isDeleted == false)
+        #expect(row.updatedAt == Self.fixedDate.addingTimeInterval(60))
+    }
+
+    @Test("Approve only touches proposed Issues, not a normal one of the same number")
+    func approveScopedToProposed() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 3, status: "in_progress")
+
+        try database.approveIssue(workflowID: workflowID, number: 3, now: Self.fixedDate)
+
+        let row = try #require(try database.read { db in try IssueRow.fetchOne(db) })
+        #expect(row.status == "in_progress")
+    }
+
+    @Test("Deny soft-deletes a proposed Issue so it leaves the graph")
+    func denyProposedIssueIsSoftDeleted() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 8, status: "proposed")
+
+        try database.denyIssue(
+            workflowID: workflowID, number: 8, now: Self.fixedDate.addingTimeInterval(60)
+        )
+
+        let row = try #require(try database.read { db in try IssueRow.fetchOne(db) })
+        #expect(row.isDeleted == true)
+        #expect(row.updatedAt == Self.fixedDate.addingTimeInterval(60))
+        // And it's gone from the live request.
+        let visible = try database.read { db in
+            try WorkflowIssuesRequest(workflowID: workflowID).fetch(db)
+        }
+        #expect(visible.isEmpty)
+    }
+
+    @Test("Deny only touches proposed Issues, not a normal one")
+    func denyScopedToProposed() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 3, status: "done")
+
+        try database.denyIssue(workflowID: workflowID, number: 3, now: Self.fixedDate)
+
+        let row = try #require(try database.read { db in try IssueRow.fetchOne(db) })
+        #expect(row.isDeleted == false)
+        #expect(row.status == "done")
+    }
+
     // MARK: - Helpers
 
     private static func makeDatabase() throws -> any DatabaseWriter {

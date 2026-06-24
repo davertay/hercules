@@ -50,10 +50,11 @@ public struct ExecuteView: View {
                         .layoutPriority(1)
                         InspectorPane(
                             issue: model.selectedIssue,
-                            failureReason: model.selectedIssue.flatMap { model.failureReason(for: $0) }
-                        ) {
-                            model.retry($0)
-                        }
+                            failureReason: model.selectedIssue.flatMap { model.failureReason(for: $0) },
+                            onRetry: { model.retry($0) },
+                            onApprove: { model.approve($0) },
+                            onDeny: { model.deny($0) }
+                        )
                         .frame(minWidth: 260, idealWidth: 320, maxWidth: 480, maxHeight: .infinity)
                     }
                     // `HSplitView` proposes only its panes' ideal height; without this the row collapses to
@@ -92,8 +93,11 @@ private struct InspectorPane: View {
     let issue: IssueRow?
     let failureReason: String?
     let onRetry: (Int) -> Void
+    let onApprove: (Int) -> Void
+    let onDeny: (Int) -> Void
 
     private var isFailed: Bool { issue?.status == IssueRunStatus.failed.rawValue }
+    private var isProposed: Bool { issue?.status == "proposed" }
 
     var body: some View {
         if let issue {
@@ -113,6 +117,12 @@ private struct InspectorPane: View {
                             Text(issue.dependencies.map { "#\($0)" }.joined(separator: ", "))
                         }
                         .font(.callout)
+                    }
+                    if isProposed {
+                        ProposalCallout(
+                            onApprove: { onApprove(issue.number) },
+                            onDeny: { onDeny(issue.number) }
+                        )
                     }
                     if isFailed {
                         FailureCallout(reason: failureReason) {
@@ -149,6 +159,33 @@ private struct InspectorPane: View {
             return Text(attributed)
         }
         return Text(text)
+    }
+}
+
+/// A HITL Proposed Issue's resolution actions, shown inline in the inspector: Approve enters it into the
+/// run flow, Deny removes it from the graph. Mirrors the Retry affordance (ADR 0007).
+private struct ProposalCallout: View {
+    let onApprove: () -> Void
+    let onDeny: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Proposed fix", systemImage: "sparkles")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.purple)
+            Text("A Validate Persona proposed this fix. Approve it to run on the next Execute run, or deny it to remove it.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack {
+                Button("Approve", systemImage: "checkmark.circle", action: onApprove)
+                    .buttonStyle(.borderedProminent)
+                Button("Deny", systemImage: "trash", action: onDeny)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.purple.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
