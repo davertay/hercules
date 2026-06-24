@@ -196,15 +196,15 @@ public final class ChatEngine {
     /// Starts the Session on the first call and resumes it thereafter, returning once the Turn ends.
     /// `inputs` carries reference documents: their root is exposed to the Harness and listed in the
     /// rendered prompt (ADR 0004).
-    /// `mcpServers` overrides the Session's pinned servers for this single resume Turn only; `nil`
-    /// falls back to `session.mcpServers` (ADR 0001). Ignored on the first call, which starts the
-    /// Session with its configured servers.
-    public func send(_ prompt: String, inputs: InputBundle? = nil, mcpServers: [MCPServer]? = nil) async throws {
+    /// `overrideMCPServers` overrides the Session's pinned servers for this single resume Turn only;
+    /// `nil` falls back to `session.mcpServers` (ADR 0001). Ignored on the first call, which starts
+    /// the Session with its configured (pinned) servers.
+    public func send(_ prompt: String, inputs: InputBundle? = nil, overrideMCPServers: [MCPServer]? = nil) async throws {
         if let existing = session {
             session = try await agentClient.send(
                 SendRequest(
                     prompt: prompt, session: existing, inputs: inputs, database: database,
-                    mcpServers: mcpServers
+                    mcpServers: overrideMCPServers
                 )
             )
         } else {

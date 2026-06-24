@@ -275,7 +275,7 @@ struct ChatEngineTests {
         }
 
         // The rediscovered Session lets this resume; the override rides the single Turn (ADR 0001).
-        try await engine.send("propose issues", mcpServers: override)
+        try await engine.send("propose issues", overrideMCPServers: override)
 
         #expect(captured.value?.mcpServers == override)
     }
