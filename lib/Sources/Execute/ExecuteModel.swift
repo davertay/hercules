@@ -15,6 +15,12 @@ public final class ExecuteModel {
     @ObservationIgnored
     @Fetch var issues: [IssueRow] = []
 
+    /// Per-Issue failure reasons recovered from the transcript (the latest errored `turn.finalAnswer`),
+    /// observed so a relaunched window shows a failed Issue's reason even though the live in-process
+    /// `failureReason` write didn't outlast the previous process.
+    @ObservationIgnored
+    @Fetch var transcriptFailureReasons: [Int: String] = [:]
+
     public var selectedID: Int?
 
     /// The DAG recolors off the observed Issue rows, not this flag.
@@ -61,6 +67,11 @@ public final class ExecuteModel {
             WorkflowIssuesRequest(workflowID: workflowID),
             animation: .default
         )
+        _transcriptFailureReasons = Fetch(
+            wrappedValue: [:],
+            IssueFailureReasonsRequest(workflowID: workflowID),
+            animation: .default
+        )
     }
 
     public var worktreeMessage: String? {
@@ -69,6 +80,22 @@ public final class ExecuteModel {
     }
 
     public var isEmpty: Bool { issues.isEmpty }
+
+    /// Re-reads the Issue rows from disk. The Allocate Phase writes Issues out-of-process through the
+    /// create-issue MCP server (ADR 0006), and cross-process commits don't fire this `@Fetch`'s
+    /// observation — so the view forces a reload when it appears rather than trusting the snapshot taken
+    /// when the window opened.
+    public func refresh() async {
+        try? await $issues.load()
+        try? await $transcriptFailureReasons.load()
+    }
+
+    /// The reason to show for a `failed` Issue: the Harness's own words from the transcript when present,
+    /// else the reason stored on the Issue row (which covers failures thrown before any Turn existed,
+    /// e.g. a missing harness binary).
+    public func failureReason(for issue: IssueRow) -> String? {
+        transcriptFailureReasons[issue.number] ?? issue.failureReason
+    }
 
     public var nodes: [DAGNode] { dagNodes(from: issues) }
 
@@ -109,6 +136,13 @@ public final class ExecuteModel {
     public var selectedIssue: IssueRow? {
         guard let selectedID else { return nil }
         return issues.first { $0.number == selectedID }
+    }
+
+    /// The lowest-numbered `failed` Issue — the one that halted the last run. Drives the halt banner.
+    public var haltingFailure: IssueRow? {
+        issues
+            .filter { $0.status == IssueRunStatus.failed.rawValue }
+            .min { $0.number < $1.number }
     }
 
     /// Tapping a node's own card again clears the selection.
@@ -163,8 +197,38 @@ public final class ExecuteModel {
             )
             try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .done, now: now)
         } catch {
-            try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .failed, now: now)
+            // The agent can throw before any `turn` row exists (e.g. a missing harness binary), so record
+            // the reason on the Issue itself rather than relying on the transcript.
+            try? database.setIssueStatus(
+                workflowID: workflowID,
+                number: issueNumber,
+                to: .failed,
+                failureReason: error.localizedDescription,
+                now: now
+            )
         }
+    }
+
+    /// Approves a HITL Proposed Issue (ADR 0007): `proposed` → `new`, so the next run picks it up in
+    /// dependency order. A proposed Issue has no dependencies, so it's immediately ready. The observed
+    /// rows recolour it from proposed to ready without a manual refresh.
+    public func approve(_ number: Int) {
+        try? database.approveIssue(workflowID: workflowID, number: number, now: now)
+    }
+
+    /// Denies a HITL Proposed Issue: soft-deletes it so it leaves the graph, clearing the selection it
+    /// was occupying.
+    public func deny(_ number: Int) {
+        try? database.denyIssue(workflowID: workflowID, number: number, now: now)
+        if selectedID == number { selectedID = nil }
+    }
+
+    /// Resets a `failed` Issue to `new` and immediately resumes the run from it. The run loop already
+    /// starts at the lowest ready `new` Issue, so this both retries the failure and continues downstream.
+    public func retry(_ number: Int) {
+        guard !isRunning else { return }
+        try? database.resetIssue(workflowID: workflowID, number: number, now: now)
+        start()
     }
 
     /// Runs every ready Issue sequentially in dependency order, halting on the first failure. Reconciles

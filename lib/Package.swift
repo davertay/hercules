@@ -122,6 +122,7 @@ let package = Package(
                 "IssueGraph",
                 "IssueMCP",
                 "TestChat",
+                "Validate",
                 "WorkflowContainer",
             ]
         ),
@@ -271,10 +272,41 @@ let package = Package(
             ]
         ),
         .target(
+            name: "Validate",
+            dependencies: [
+                "Agent",
+                "DAGGraphUI",
+                "Material",
+                "Store",
+                "Worktree",
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .testTarget(
+            name: "ValidateTests",
+            dependencies: [
+                "Validate",
+                "Agent",
+                "Material",
+                "Store",
+                "Worktree",
+                .product(name: "CustomDump", package: "swift-custom-dump"),
+                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .target(
             name: "Worktree",
             dependencies: [
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "DependenciesMacros", package: "swift-dependencies"),
+            ]
+        ),
+        .testTarget(
+            name: "WorktreeTests",
+            dependencies: [
+                "Worktree",
             ]
         ),
         .target(
@@ -285,6 +317,7 @@ let package = Package(
                 "Execute",
                 "PRD",
                 "Store",
+                "Validate",
                 "Worktree",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),

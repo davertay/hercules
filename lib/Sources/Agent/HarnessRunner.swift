@@ -153,6 +153,7 @@ struct HarnessRunner {
             status: outcome.terminationStatus,
             sessionId: sessionId,
             lastMalformedLine: sink.withLock { $0.lastMalformedLine },
+            errorResultText: sink.withLock { $0.lastErrorResult },
             stderrTail: outcome.stderrTail,
             durationMs: durationMs,
             recordFailure: { ms in sink.withLock { $0.recordFailure(durationMs: ms) } }

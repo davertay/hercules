@@ -7,6 +7,7 @@ import Observation
 import PRD
 import SQLiteData
 import Store
+import Validate
 
 @MainActor
 @Observable
@@ -32,6 +33,9 @@ public final class WorkflowContainerModel {
     @ObservationIgnored
     public let executeModel: ExecuteModel?
 
+    @ObservationIgnored
+    public let validateModel: ValidateModel?
+
     /// Gates the sidebar: a Phase unlocks once the Phase before it appears here, so completing one
     /// re-fires this observation and unlocks the next without any manual refresh.
     @ObservationIgnored
@@ -50,7 +54,7 @@ public final class WorkflowContainerModel {
         self.database = database
         if let database {
             // Scope `defaultDatabase` so the models' fetches observe this Workflow's Store.
-            let (model, prd, allocate, execute, phases): (DesignModel, PRDModel, AllocateModel, ExecuteModel, Fetch<[PhaseRow]>) = withDependencies {
+            let (model, prd, allocate, execute, validate, phases): (DesignModel, PRDModel, AllocateModel, ExecuteModel, ValidateModel, Fetch<[PhaseRow]>) = withDependencies {
                 $0.defaultDatabase = database
             } operation: {
                 let model = DesignModel(
@@ -73,31 +77,41 @@ public final class WorkflowContainerModel {
                     database: database
                 )
                 let execute = ExecuteModel(workflowID: data.id, database: database, worktree: worktree)
+                let validate = ValidateModel(
+                    workflowID: data.id,
+                    database: database,
+                    worktree: worktree,
+                    workflowDirectory: data.directory,
+                    mcpServerCommand: Self.mcpServerCommand
+                )
                 let phases = Fetch(
                     wrappedValue: [],
                     CompletedPhasesRequest(workflowID: data.id),
                     animation: .default
                 )
-                return (model, prd, allocate, execute, phases)
+                return (model, prd, allocate, execute, validate, phases)
             }
             designModel = model
             prdModel = prd
             allocateModel = allocate
             executeModel = execute
+            validateModel = validate
             _completedPhases = phases
         } else {
             designModel = nil
             prdModel = nil
             allocateModel = nil
             executeModel = nil
+            validateModel = nil
             _completedPhases = Fetch(wrappedValue: [])
         }
     }
 
-    /// Ends any in-flight Execute run when the window closes. `cancelRun` is `nonisolated` and a no-op
-    /// when idle, so it's safe from the deinitializer.
+    /// Ends any in-flight Execute run and Validate reviews when the window closes. Both cancels are
+    /// `nonisolated` and no-ops when idle, so they're safe from the deinitializer.
     deinit {
         executeModel?.cancelRun()
+        validateModel?.cancelAll()
     }
 
     /// The first Phase is always unlocked; every other unlocks once the Phase it consumes has completed.

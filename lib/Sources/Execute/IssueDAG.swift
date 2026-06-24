@@ -25,8 +25,9 @@ func dagNodes(from issues: [IssueRow]) -> [DAGNode] {
     }
 }
 
-/// `"new"` (the post-commit starting state) maps to `.pending`; an unrecognised value degrades to
-/// `.pending` rather than crashing the view.
+/// `"new"` (the post-commit starting state) maps to `.pending`; `"proposed"` (a HITL fix) maps to
+/// `.proposed`, which — being not `.pending` — is exempt from the vacuous-ready promotion above. An
+/// unrecognised value degrades to `.pending` rather than crashing the view.
 func mapStatus(_ raw: String) -> IssueStatus {
     switch raw {
     case "new", "pending": .pending
@@ -35,6 +36,7 @@ func mapStatus(_ raw: String) -> IssueStatus {
     case "done": .done
     case "failed": .failed
     case "skipped": .skipped
+    case "proposed": .proposed
     default: .pending
     }
 }

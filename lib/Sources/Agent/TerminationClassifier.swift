@@ -9,10 +9,14 @@ struct TerminationClassifier {
         status: TerminationStatus,
         sessionId: Session.ID,
         lastMalformedLine: (raw: String, error: any Error)? = nil,
+        errorResultText: String? = nil,
         stderrTail: String,
         durationMs: Int,
         recordFailure: (Int) -> Void
     ) throws {
+        // The Harness writes its failure reason as an `is_error` result on stdout, then exits non-zero
+        // with an empty stderr — so prefer that reason, falling back to the stderr tail.
+        let detail = errorResultText.flatMap { $0.isEmpty ? nil : $0 } ?? stderrTail
         switch status {
         case .exited(let code) where code == 0:
             return
@@ -25,10 +29,10 @@ struct TerminationClassifier {
             if stderrTail.contains("No conversation found with session ID:") {
                 throw AgentError.sessionNotFound(id: sessionId)
             }
-            throw AgentError.harnessFailed(exitCode: code, stderrTail: stderrTail)
+            throw AgentError.harnessFailed(exitCode: code, stderrTail: detail)
         case .signaled(let signal):
             recordFailure(durationMs)
-            throw AgentError.harnessCrashed(signal: signal, stderrTail: stderrTail)
+            throw AgentError.harnessCrashed(signal: signal, stderrTail: detail)
         }
     }
 }

@@ -8,19 +8,23 @@ public struct StatusPalette: Sendable {
     public let inProgress: Color
     public let complete: Color
     public let failed: Color
+    /// HITL Proposed Issues — distinct from the run-lifecycle colours so they read as "awaiting approval".
+    public let proposed: Color
 
     public init(
         pending: Color,
         ready: Color,
         inProgress: Color,
         complete: Color,
-        failed: Color
+        failed: Color,
+        proposed: Color = .purple
     ) {
         self.pending = pending
         self.ready = ready
         self.inProgress = inProgress
         self.complete = complete
         self.failed = failed
+        self.proposed = proposed
     }
 
     public static let `default` = StatusPalette(
@@ -28,7 +32,8 @@ public struct StatusPalette: Sendable {
         ready: .blue,
         inProgress: .orange,
         complete: .green,
-        failed: .red
+        failed: .red,
+        proposed: .purple
     )
 
     /// `.skipped` reuses the pending grey — the view's slash overlay carries the skipped cue.
@@ -40,6 +45,7 @@ public struct StatusPalette: Sendable {
         case .done: complete
         case .failed: failed
         case .skipped: pending
+        case .proposed: proposed
         }
     }
 
@@ -52,6 +58,7 @@ public struct StatusPalette: Sendable {
         case .done: .white
         case .failed: .white
         case .skipped: .primary
+        case .proposed: .white
         }
     }
 }

@@ -148,6 +148,9 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
     @Column(as: [Int].JSONRepresentation.self)
     public var dependencies: [Int]
     public var status: String
+    /// Why the last Execute run of this Issue failed; `nil` unless `status` is `failed`. Captured even
+    /// when the agent throws before any `turn` row exists (e.g. the harness binary can't be found).
+    public var failureReason: String?
     public var createdAt: Date
     public var updatedAt: Date
     public var isDeleted: Bool
@@ -160,6 +163,7 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
         body: String = "",
         dependencies: [Int] = [],
         status: String = "new",
+        failureReason: String? = nil,
         createdAt: Date,
         updatedAt: Date,
         isDeleted: Bool = false
@@ -171,6 +175,50 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
         self.body = body
         self.dependencies = dependencies
         self.status = status
+        self.failureReason = failureReason
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.isDeleted = isDeleted
+    }
+}
+
+@Table("review")
+public struct ReviewRow: Identifiable, Equatable, Sendable {
+    public let id: UUID
+    public var workflowID: UUID
+    /// The review Persona this row belongs to (`ReviewPersona` rawValue); one row per (workflowID, kind),
+    /// upserted on each run — no run history.
+    public var kind: String
+    public var status: String
+    /// The Persona's captured Summary; set on `reviewed`, `nil` otherwise.
+    public var summary: String?
+    /// Why the last run of this Persona failed; `nil` unless `status` is `failed`.
+    public var failureReason: String?
+    /// Forward link to the run's Session, for a future transcript viewer; `nil` until the run records one.
+    public var sessionID: UUID?
+    public var createdAt: Date
+    public var updatedAt: Date
+    public var isDeleted: Bool
+
+    public init(
+        id: UUID,
+        workflowID: UUID,
+        kind: String,
+        status: String,
+        summary: String? = nil,
+        failureReason: String? = nil,
+        sessionID: UUID? = nil,
+        createdAt: Date,
+        updatedAt: Date,
+        isDeleted: Bool = false
+    ) {
+        self.id = id
+        self.workflowID = workflowID
+        self.kind = kind
+        self.status = status
+        self.summary = summary
+        self.failureReason = failureReason
+        self.sessionID = sessionID
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDeleted = isDeleted

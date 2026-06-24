@@ -5,7 +5,8 @@ import Store
 
 extension ExecuteModel {
     /// Seeds a committed dependency graph for the preview harness so the Execute surface renders its DAG
-    /// without an Agent. Statuses span the vocabulary so every node colour is exercised.
+    /// without an Agent. Statuses span the vocabulary so every node colour is exercised, and two HITL
+    /// Proposed Issues (dependency-free) exercise the isolated-node band at the bottom of the layout.
     public static func seedCommittedIssuesPreview(at directory: URL, workflowID: UUID) throws {
         let database = try openWorkflowDatabase(at: directory)
         let now = Date(timeIntervalSince1970: 1_700_000_000)
@@ -38,9 +39,16 @@ extension ExecuteModel {
                 IssueRow(id: UUID(), workflowID: workflowID, number: 5, title: "Recovery branch",
                          dependencies: [3], status: "new", createdAt: now, updatedAt: now),
                 IssueRow(id: UUID(), workflowID: workflowID, number: 6, title: "Wire end-to-end",
-                         dependencies: [3, 4], status: "failed", createdAt: now, updatedAt: now),
+                         dependencies: [3, 4], status: "failed",
+                         failureReason: "Harness binary not found at /Users/admin/.local/bin/claude.",
+                         createdAt: now, updatedAt: now),
                 IssueRow(id: UUID(), workflowID: workflowID, number: 7, title: "Cancelled spike",
                          dependencies: [2], status: "skipped", createdAt: now, updatedAt: now),
+                // HITL Proposed Issues from a Validate review — dependency-free, so they park in the band.
+                IssueRow(id: UUID(), workflowID: workflowID, number: 8, title: "Don't persist blank rows",
+                         dependencies: [], status: "proposed", createdAt: now, updatedAt: now),
+                IssueRow(id: UUID(), workflowID: workflowID, number: 9, title: "Remove duplicate modifier",
+                         dependencies: [], status: "proposed", createdAt: now, updatedAt: now),
             ]
             for issue in issues {
                 try IssueRow.insert { issue }.execute(db)
