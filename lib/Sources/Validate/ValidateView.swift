@@ -61,15 +61,27 @@ public struct ValidateView: View {
         }
         .toolbar {
             ToolbarItem {
-                Button("Open Pull Request", systemImage: "arrow.triangle.pull") {
+                Button {
                     Task {
                         if let url = await model.openPullRequest() {
                             openURL(url)
                         }
                     }
+                } label: {
+                    if model.isOpeningPullRequest {
+                        // Branch-update-and-push in flight — swap the icon for a spinner.
+                        ProgressView().controlSize(.small)
+                        Text("Open Pull Request")
+                    } else {
+                        Label("Open Pull Request", systemImage: "arrow.triangle.pull")
+                    }
                 }
                 .disabled(!model.canOpenPullRequest)
-                .help("Push the branch and open a GitHub pull request — enabled once every Issue is done")
+                .help(
+                    model.isOpeningPullRequest
+                        ? "Updating branch and pushing…"
+                        : "Push the branch and open a GitHub pull request — enabled once every Issue is done"
+                )
             }
         }
     }

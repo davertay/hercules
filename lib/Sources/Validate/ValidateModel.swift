@@ -30,6 +30,10 @@ public final class ValidateModel {
     /// The reason a PR push/compare-URL build failed; `nil` until one does.
     public var pullRequestError: String?
 
+    /// `true` while the branch-update-and-push is underway. Guards re-entrancy (no concurrent
+    /// rebase/force-push on the same branch) and drives the in-flight toolbar state.
+    public var isOpeningPullRequest = false
+
     /// One live run task per Persona, so several reviews proceed at once (vs Execute's single `runTask`).
     /// Boxed so the window's teardown (`cancelAll`) can cancel them off the MainActor.
     @ObservationIgnored
@@ -208,19 +212,25 @@ public final class ValidateModel {
     /// in_progress / failed all count as outstanding work; reviews are NOT required) and no review is
     /// running. Empty is not openable — there's nothing to ship.
     public var canOpenPullRequest: Bool {
-        !isAnyRunning && !issues.isEmpty && issues.allSatisfy { $0.status == "done" }
+        !isAnyRunning && !isOpeningPullRequest && !issues.isEmpty && issues.allSatisfy { $0.status == "done" }
     }
 
-    /// Pushes the worktree's branch to `origin` and returns the GitHub compare URL for the caller to open.
-    /// Does NOT mark Validate complete — we can't confirm a real PR was opened (MVP). The git work runs off
-    /// the MainActor so the network push doesn't block the UI. Returns `nil` (and sets `pullRequestError`)
-    /// on failure.
+    /// Brings the branch up to date with its base, pushes it (force-with-lease), and returns the GitHub
+    /// compare URL for the caller to open. Does NOT mark Validate complete — we can't confirm a real PR was
+    /// opened (MVP). The git work runs off the MainActor so neither the rebase nor the network push blocks
+    /// the UI, and runs in order — `rebaseOntoBase` → `push` → `compareURL` — so a conflict aborts before
+    /// anything is pushed. `isOpeningPullRequest` guards re-entrancy: a second concurrent call no-ops.
+    /// Returns `nil` (and sets `pullRequestError`) on failure.
     public func openPullRequest() async -> URL? {
+        guard !isOpeningPullRequest else { return nil }
+        isOpeningPullRequest = true
+        defer { isOpeningPullRequest = false }
         pullRequestError = nil
         let client = worktreeClient
         let worktree = worktree
         do {
             let url = try await Task.detached {
+                try client.rebaseOntoBase(worktree: worktree)
                 try client.push(worktree: worktree)
                 return try client.compareURL(worktree: worktree)
             }.value
