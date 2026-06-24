@@ -20,12 +20,18 @@ public struct CreateWorktreeRequest: Sendable, Equatable {
 public struct WorktreeClient: Sendable {
     /// Adds a worktree on a new branch cut from the repo's default-branch HEAD.
     public var create: @Sendable (_ request: CreateWorktreeRequest) throws -> Void
-    /// Pushes the worktree's current branch to `origin` with upstream tracking (`git push -u origin
-    /// <branch>`), so the branch exists on GitHub for a PR.
+    /// Pushes the worktree's current branch to `origin` with upstream tracking, forcing with a lease
+    /// (`git push -u --force-with-lease origin <branch>`) so the action is safely re-runnable after a
+    /// rebase rewrites history without clobbering unexpected remote work.
     public var push: @Sendable (_ worktree: URL) throws -> Void
     /// The GitHub compare URL for opening a PR from the worktree's branch against the default base,
     /// deriving owner/repo from `origin` (ssh or https).
     public var compareURL: @Sendable (_ worktree: URL) throws -> URL
+    /// Brings the worktree's branch up to date with its base by fetching `origin` and rebasing onto
+    /// `origin/<base>`. A genuine conflict throws ``WorktreeError/rebaseConflict(base:)`` and leaves
+    /// the worktree untouched (the rebase is aborted); a rebase that refuses to start rethrows the
+    /// underlying ``GitError``.
+    public var rebaseOntoBase: @Sendable (_ worktree: URL) throws -> Void
 }
 
 extension WorktreeClient: DependencyKey {
@@ -38,7 +44,7 @@ extension WorktreeClient: DependencyKey {
         },
         push: { worktree in
             let branch = try LiveGit.currentBranch(in: worktree)
-            try LiveGit.run(["-C", worktree.path, "push", "-u", "origin", branch])
+            try LiveGit.run(["-C", worktree.path, "push", "-u", "--force-with-lease", "origin", branch])
         },
         compareURL: { worktree in
             let branch = try LiveGit.currentBranch(in: worktree)
@@ -48,19 +54,40 @@ extension WorktreeClient: DependencyKey {
                 throw WorktreeError.unsupportedRemote(remote)
             }
             return url
+        },
+        rebaseOntoBase: { worktree in
+            // base == origin/HEAD; revisit if Workflows ever cut from a non-default branch
+            let base = try LiveGit.defaultBranch(in: worktree)
+            // Fetch every remote-tracking ref so `origin/<base>` is current.
+            try LiveGit.run(["-C", worktree.path, "fetch", "origin"])
+            do {
+                try LiveGit.run(["-C", worktree.path, "rebase", "origin/\(base)"])
+            } catch let error as GitError {
+                // Classify by the exit status of `git rebase --abort`, not by sniffing stderr.
+                if LiveGit.succeeds(["-C", worktree.path, "rebase", "--abort"]) {
+                    // Abort succeeded → a rebase was genuinely in progress → real conflict. The abort
+                    // restored the branch via ORIG_HEAD, so the worktree is untouched.
+                    throw WorktreeError.rebaseConflict(base: base)
+                }
+                // Abort failed ("no rebase in progress") → the rebase refused to start (e.g. a dirty
+                // worktree) → rethrow git's original error and stderr.
+                throw error
+            }
         }
     )
 
     public static let testValue = WorktreeClient(
         create: { _ in },
         push: { _ in },
-        compareURL: { _ in URL(string: "https://github.com/owner/repo/compare/main...branch?expand=1")! }
+        compareURL: { _ in URL(string: "https://github.com/owner/repo/compare/main...branch?expand=1")! },
+        rebaseOntoBase: { _ in }
     )
 
     public static let previewValue = WorktreeClient(
         create: { _ in },
         push: { _ in },
-        compareURL: { _ in URL(string: "https://github.com/owner/repo/compare/main...branch?expand=1")! }
+        compareURL: { _ in URL(string: "https://github.com/owner/repo/compare/main...branch?expand=1")! },
+        rebaseOntoBase: { _ in }
     )
 }
 
@@ -89,11 +116,14 @@ func gitHubSlug(from remote: String) -> String? {
 
 public enum WorktreeError: Error, LocalizedError, CustomStringConvertible {
     case unsupportedRemote(String)
+    case rebaseConflict(base: String)
 
     public var description: String {
         switch self {
         case .unsupportedRemote(let remote):
             "The `origin` remote isn't a recognised GitHub URL, so a compare URL can't be built: \(remote)"
+        case .rebaseConflict(let base):
+            "Your branch conflicts with `\(base)`. Resolve the conflicts manually, then open the PR again."
         }
     }
 
@@ -144,6 +174,12 @@ private enum LiveGit {
 
     static func run(_ arguments: [String]) throws {
         _ = try capture(arguments)
+    }
+
+    /// Runs git and reports whether it exited zero, swallowing any error. Used to classify a rebase
+    /// failure by the exit status of `git rebase --abort`.
+    static func succeeds(_ arguments: [String]) -> Bool {
+        (try? run(arguments)) != nil
     }
 
     /// Returns git's trimmed stdout, throwing ``GitError`` on a non-zero exit.
