@@ -14,6 +14,18 @@ public struct CreateWorktreeRequest: Sendable, Equatable {
     }
 }
 
+public struct RemoveWorktreeRequest: Sendable, Equatable {
+    public let repo: URL
+    public let worktree: URL
+    public let branch: String
+
+    public init(repo: URL, worktree: URL, branch: String) {
+        self.repo = repo
+        self.worktree = worktree
+        self.branch = branch
+    }
+}
+
 /// Provisions git worktrees for Workflows. The live value shells out to git; test and preview values
 /// are no-ops so they can build Workflows against placeholder repo paths without touching git.
 @DependencyClient
@@ -32,6 +44,13 @@ public struct WorktreeClient: Sendable {
     /// the worktree untouched (the rebase is aborted); a rebase that refuses to start rethrows the
     /// underlying ``GitError``.
     public var rebaseOntoBase: @Sendable (_ worktree: URL) throws -> Void
+    /// Tears down a Workflow's worktree and its dedicated branch: `git worktree remove --force
+    /// <worktree>` (force because committed or dirty work otherwise refuses removal) followed by
+    /// `git branch -D <branch>` so no trace is left in the user's repo.
+    public var remove: @Sendable (_ request: RemoveWorktreeRequest) throws -> Void
+    /// Prunes stale worktree administrative entries in the repo (`git worktree prune`), a hygiene
+    /// step run after a worktree directory is removed.
+    public var prune: @Sendable (_ repo: URL) throws -> Void
 }
 
 extension WorktreeClient: DependencyKey {
@@ -73,6 +92,15 @@ extension WorktreeClient: DependencyKey {
                 // worktree) → rethrow git's original error and stderr.
                 throw error
             }
+        },
+        remove: { request in
+            // `--force` so a worktree carrying committed work on its branch (or any dirty state)
+            // is removed rather than refused.
+            try LiveGit.run(["-C", request.repo.path, "worktree", "remove", "--force", request.worktree.path])
+            try LiveGit.run(["-C", request.repo.path, "branch", "-D", request.branch])
+        },
+        prune: { repo in
+            try LiveGit.run(["-C", repo.path, "worktree", "prune"])
         }
     )
 
@@ -80,14 +108,18 @@ extension WorktreeClient: DependencyKey {
         create: { _ in },
         push: { _ in },
         compareURL: { _ in URL(string: "https://github.com/owner/repo/compare/main...branch?expand=1")! },
-        rebaseOntoBase: { _ in }
+        rebaseOntoBase: { _ in },
+        remove: { _ in },
+        prune: { _ in }
     )
 
     public static let previewValue = WorktreeClient(
         create: { _ in },
         push: { _ in },
         compareURL: { _ in URL(string: "https://github.com/owner/repo/compare/main...branch?expand=1")! },
-        rebaseOntoBase: { _ in }
+        rebaseOntoBase: { _ in },
+        remove: { _ in },
+        prune: { _ in }
     )
 }
 
