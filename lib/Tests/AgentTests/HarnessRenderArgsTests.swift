@@ -269,6 +269,53 @@ struct HarnessRenderArgsTests {
         #expect(args.contains("mcp__hercules__create_issue"))
     }
 
+    /// A resume Turn carrying a per-Turn override (the server set the override resolves to) renders
+    /// with `--mcp-config` and the derived tool in `--allowedTools`, just as a pinned set would.
+    @Test func resumeWithPerTurnOverrideRendersConfigAndAllowlistedTool() throws {
+        let dataDir = makeSessionDataDir()
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .resume,
+            worktree: worktree,
+            mode: .readOnly,
+            inputs: nil,
+            mcpServers: [herculesServer],
+            sessionDataDirectory: dataDir,
+            sessionId: sessionId
+        )
+
+        #expect(args.contains("--resume"))
+        #expect(args.contains("--mcp-config"))
+
+        let allowedIdx = try #require(args.firstIndex(of: "--allowedTools"))
+        let allowed = args[(allowedIdx + 1)...]
+        #expect(allowed.contains("mcp__hercules__create_issue"))
+    }
+
+    /// The override's absence (empty server set) leaves a resume Turn without `--mcp-config` or the
+    /// derived tool — the fallback path behaves exactly like a plain resume.
+    @Test func resumeWithoutOverrideRendersNoConfigAndNoAllowlistedTool() throws {
+        let dataDir = makeSessionDataDir()
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .resume,
+            worktree: worktree,
+            mode: .readOnly,
+            inputs: nil,
+            mcpServers: [],
+            sessionDataDirectory: dataDir,
+            sessionId: sessionId
+        )
+
+        #expect(args.contains("--resume"))
+        #expect(!args.contains("--mcp-config"))
+        #expect(!args.contains("mcp__hercules__create_issue"))
+    }
+
     @Test func writeModeWithMCPServerConfiguresButDoesNotAddAllowlist() throws {
         let dataDir = makeSessionDataDir()
         defer { try? FileManager.default.removeItem(at: dataDir) }

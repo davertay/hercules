@@ -25,7 +25,7 @@ struct HarnessRunner {
             inputs: request.inputs,
             skillFiles: session.skillFiles,
             addDirs: session.addDirs,
-            mcpServers: session.mcpServers
+            mcpServers: request.mcpServers ?? session.mcpServers
         )
     }
 
