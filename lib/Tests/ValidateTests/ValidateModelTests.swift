@@ -260,18 +260,24 @@ struct ValidateModelTests {
         #expect(model.canOpenPullRequest == false)
     }
 
-    @Test("Open Pull Request pushes the branch, returns the compare URL, and confirms")
-    func openPullRequestPushesAndReturnsURL() async throws {
+    @Test("Open Pull Request rebases onto base before pushing, returns the compare URL, and confirms")
+    func openPullRequestRebasesThenPushesAndReturnsURL() async throws {
         let database = try Self.makeDatabase()
         let workflowID = UUID(0)
         try Self.seedWorkflow(database, workflowID: workflowID)
         let pushed = LockIsolated<URL?>(nil)
+        // Records the git steps in call order so we can assert the rebase ran before the push.
+        let order = LockIsolated<[String]>([])
         let compareURL = URL(string: "https://github.com/acme/widgets/compare/main...feature?expand=1")!
 
         let model = withDependencies {
             $0.defaultDatabase = database
             $0.date.now = fixedDate
-            $0.worktreeClient.push = { @Sendable worktree in pushed.setValue(worktree) }
+            $0.worktreeClient.rebaseOntoBase = { @Sendable _ in order.withValue { $0.append("rebase") } }
+            $0.worktreeClient.push = { @Sendable worktree in
+                order.withValue { $0.append("push") }
+                pushed.setValue(worktree)
+            }
             $0.worktreeClient.compareURL = { @Sendable _ in compareURL }
         } operation: {
             ValidateModel(
@@ -285,9 +291,89 @@ struct ValidateModelTests {
         let url = await model.openPullRequest()
 
         #expect(url == compareURL)
+        #expect(order.value == ["rebase", "push"])
         #expect(pushed.value == URL(fileURLWithPath: "/tmp/worktree"))
-        #expect(model.pullRequestConfirmation != nil)
+        #expect(model.pullRequestConfirmation == "Branch pushed — finish on GitHub")
         #expect(model.pullRequestError == nil)
+        #expect(model.isOpeningPullRequest == false)
+    }
+
+    @Test("A rebase conflict aborts before pushing: no URL, no push, friendly error")
+    func openPullRequestConflictDoesNotPush() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        let pushed = LockIsolated(false)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.worktreeClient.rebaseOntoBase = { @Sendable _ in
+                throw WorktreeError.rebaseConflict(base: "main")
+            }
+            $0.worktreeClient.push = { @Sendable _ in pushed.setValue(true) }
+        } operation: {
+            ValidateModel(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory,
+                mcpServerCommand: "/path/to/Hercules"
+            )
+        }
+
+        let url = await model.openPullRequest()
+
+        #expect(url == nil)
+        #expect(pushed.value == false)
+        #expect(model.pullRequestConfirmation == nil)
+        #expect(model.pullRequestError?.contains("conflicts with `main`") == true)
+        #expect(model.isOpeningPullRequest == false)
+    }
+
+    @Test("A second concurrent Open Pull Request no-ops; git steps don't double")
+    func openPullRequestIsReentrancySafe() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        let rebaseCount = LockIsolated(0)
+        let pushCount = LockIsolated(0)
+        let compareURL = URL(string: "https://github.com/acme/widgets/compare/main...feature?expand=1")!
+        // Holds the first call inside its detached rebase so the second call lands while it's in flight.
+        let gate = DispatchSemaphore(value: 0)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.worktreeClient.rebaseOntoBase = { @Sendable _ in
+                rebaseCount.withValue { $0 += 1 }
+                gate.wait()
+            }
+            $0.worktreeClient.push = { @Sendable _ in pushCount.withValue { $0 += 1 } }
+            $0.worktreeClient.compareURL = { @Sendable _ in compareURL }
+        } operation: {
+            ValidateModel(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory,
+                mcpServerCommand: "/path/to/Hercules"
+            )
+        }
+
+        // First call runs until it suspends inside the (gated) detached rebase, flag now set.
+        let first = Task { await model.openPullRequest() }
+        while rebaseCount.value < 1 { await Task.yield() }
+
+        // Second call sees the in-flight flag and no-ops without touching git.
+        let second = await model.openPullRequest()
+        #expect(second == nil)
+
+        gate.signal()
+        let firstURL = await first.value
+
+        #expect(firstURL == compareURL)
+        #expect(rebaseCount.value == 1)
+        #expect(pushCount.value == 1)
+        #expect(model.isOpeningPullRequest == false)
     }
 
     @Test("A failed push surfaces an error and no URL")
