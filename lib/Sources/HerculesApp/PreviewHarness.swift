@@ -1,5 +1,7 @@
+import Agent
 import Allocate
 import DAGGraphUI
+import Dependencies
 import Design
 import Execute
 import Foundation
@@ -11,13 +13,14 @@ import WorkflowContainer
 /// Debug-only preview harness — renders a single feature surface when `HERCULES_PREVIEW` is set,
 /// bypassing the Launcher and on-disk setup the production Scene requires. For feature screenshots.
 public enum PreviewTarget: String, CaseIterable, Sendable {
-    case workflowEmpty
-    case designIntake
-    case allocateIntake
     case allocateCommitted
+    case allocateIntake
     case dagGraph
+    case designIntake
     case flowExecute
     case flowValidate
+    case settings
+    case workflowEmpty
 
     public static func fromEnvironment() -> PreviewTarget? {
         guard
@@ -83,9 +86,37 @@ public struct PreviewHarnessView: View {
             DAGGraphPreviewHost()
         case .flowExecute:
             FlowExecutePreviewHost()
+        case .settings:
+            SettingsPreviewHost()
         case .flowValidate:
             FlowValidatePreviewHost()
         }
+    }
+}
+
+/// Renders ``SettingsView`` over a fixture config so the form shows a populated path and arguments.
+private struct SettingsPreviewHost: View {
+    @State private var model: SettingsModel
+
+    init() {
+        let config = AppConfig(
+            agentExecutablePath: "~/.local/bin/claude",
+            extraArguments: [
+                ExtraArgument(flag: "--model", value: "claude-opus-4-8"),
+                ExtraArgument(flag: "--verbose", value: nil),
+            ]
+        )
+        let model = withDependencies {
+            $0.appConfigClient.load = { config }
+            $0.appConfigClient.save = { _ in }
+        } operation: {
+            SettingsModel()
+        }
+        _model = State(wrappedValue: model)
+    }
+
+    var body: some View {
+        SettingsView(model: model)
     }
 }
 

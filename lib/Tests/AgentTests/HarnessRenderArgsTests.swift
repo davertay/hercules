@@ -342,4 +342,116 @@ struct HarnessRenderArgsTests {
         let server = MCPServer(name: "hercules", command: "x", tools: ["create_issue", "ask_user"])
         #expect(server.qualifiedToolNames == ["mcp__hercules__create_issue", "mcp__hercules__ask_user"])
     }
+
+    // MARK: - Extra arguments
+
+    @Test func extraArgumentsAppendAfterGeneratedArguments() throws {
+        let inputs = InputBundle(root: inputsRoot, relativePaths: ["a.txt"])
+        let skill = URL(fileURLWithPath: "/skills/grill-me.md")
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            worktree: worktree,
+            mode: .write,
+            inputs: inputs,
+            skillFiles: [skill],
+            addDirs: [URL(fileURLWithPath: "/extra")],
+            extraArguments: [ExtraArgument(flag: "--model", value: "opus")],
+            sessionId: sessionId
+        )
+
+        // The extras land after the last generated argument (the skill file's path).
+        #expect(args.last == "opus")
+        let modelIdx = args.firstIndex(of: "--model")!
+        let skillIdx = args.firstIndex(of: skill.path)!
+        #expect(modelIdx > skillIdx)
+    }
+
+    @Test func extraArgumentWithNilValueRendersBareFlag() throws {
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            worktree: worktree,
+            mode: .write,
+            inputs: nil,
+            extraArguments: [ExtraArgument(flag: "--debug")],
+            sessionId: sessionId
+        )
+
+        #expect(args.last == "--debug")
+        #expect(args.filter { $0 == "--debug" }.count == 1)
+    }
+
+    @Test func extraArgumentWithEmptyValueRendersBareFlag() throws {
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            worktree: worktree,
+            mode: .write,
+            inputs: nil,
+            extraArguments: [ExtraArgument(flag: "--debug", value: "")],
+            sessionId: sessionId
+        )
+
+        #expect(args.last == "--debug")
+    }
+
+    @Test func extraArgumentWithValueRendersFlagThenValue() throws {
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            worktree: worktree,
+            mode: .write,
+            inputs: nil,
+            extraArguments: [ExtraArgument(flag: "--model", value: "opus")],
+            sessionId: sessionId
+        )
+
+        let idx = args.firstIndex(of: "--model")!
+        #expect(args[idx + 1] == "opus")
+    }
+
+    @Test func emptyExtraArgumentsLeaveOutputByteIdentical() throws {
+        let make: ([ExtraArgument]) throws -> [String] = { extras in
+            try Harness.renderArgs(
+                binary: self.binary,
+                operation: .start,
+                worktree: self.worktree,
+                mode: .write,
+                inputs: nil,
+                extraArguments: extras,
+                sessionId: self.sessionId
+            )
+        }
+
+        let baseline = try Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            worktree: worktree,
+            mode: .write,
+            inputs: nil,
+            sessionId: sessionId
+        )
+        #expect(try make([]) == baseline)
+    }
+
+    @Test func whitespaceOnlyFlagsAreSkippedAndOrderPreserved() throws {
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            worktree: worktree,
+            mode: .write,
+            inputs: nil,
+            extraArguments: [
+                ExtraArgument(flag: "--first", value: "1"),
+                ExtraArgument(flag: "   "),
+                ExtraArgument(flag: "", value: "ignored"),
+                ExtraArgument(flag: "--last"),
+            ],
+            sessionId: sessionId
+        )
+
+        let tail = Array(args.suffix(3))
+        #expect(tail == ["--first", "1", "--last"])
+    }
 }

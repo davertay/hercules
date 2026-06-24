@@ -21,5 +21,9 @@ public struct AppScene: Scene {
         WorkflowContainerScene()
 
         TestChatScene(isEnabled: model.testChatEnabled)
+
+        Settings {
+            SettingsView()
+        }
     }
 }

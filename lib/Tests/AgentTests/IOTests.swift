@@ -265,6 +265,25 @@ struct IOTests {
         }
     }
 
+    @Test func unrunnableBinaryThrowsHarnessNotFound() async throws {
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // A resolved-but-unrunnable path (e.g. a misconfigured agentExecutablePath) surfaces at run time.
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+
+        do {
+            _ = try await client(missing).start(startRequest(database: database, workflowID: workflowID))
+            Issue.record("Expected AgentError.harnessNotFound to be thrown")
+        } catch let err as AgentError {
+            guard case .harnessNotFound(let triedPath) = err else {
+                Issue.record("Expected .harnessNotFound, got \(err)")
+                return
+            }
+            #expect(triedPath == missing)
+        }
+    }
+
     @Test func crashThrowsHarnessFailed() async throws {
         let fixture = try fixtureURL("crash.sh")
         let (database, workflowID, root) = try WorkflowFixture.make()
