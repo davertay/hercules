@@ -116,11 +116,75 @@ struct SettingsModelTests {
             SettingsModel()
         }
 
+        // A blank row is added to the form but filtered out of the persisted projection.
         model.addArgument()
-        #expect(saved.value?.extraArguments.count == 1)
+        #expect(model.arguments.count == 1)
+        #expect(saved.value?.extraArguments.isEmpty == true)
+
+        // Once the flag is typed and re-saved, the row persists.
+        model.arguments[0].flag = "--verbose"
+        model.save()
+        #expect(saved.value?.extraArguments == [ExtraArgument(flag: "--verbose", value: nil)])
 
         model.deleteArgument(model.arguments[0])
         #expect(saved.value?.extraArguments.isEmpty == true)
+    }
+
+    @Test func addArgumentDoesNotPersistBlankRow() throws {
+        let saved = LockIsolated<AppConfig?>(nil)
+        let model = withDependencies {
+            $0.appConfigClient.load = { AppConfig() }
+            $0.appConfigClient.save = { saved.setValue($0) }
+        } operation: {
+            SettingsModel()
+        }
+
+        // Adding a row leaves an editable blank in the form...
+        model.addArgument()
+        #expect(model.arguments.count == 1)
+        model.save()
+
+        // ...but nothing empty reaches disk.
+        #expect(saved.value?.extraArguments.isEmpty == true)
+    }
+
+    @Test func blankRowAddedThenFilledPersists() throws {
+        let saved = LockIsolated<AppConfig?>(nil)
+        let model = withDependencies {
+            $0.appConfigClient.load = { AppConfig() }
+            $0.appConfigClient.save = { saved.setValue($0) }
+        } operation: {
+            SettingsModel()
+        }
+
+        model.addArgument()
+        model.arguments[0].flag = "--model"
+        model.arguments[0].value = "claude-opus-4-8"
+        model.save()
+
+        #expect(saved.value?.extraArguments == [
+            ExtraArgument(flag: "--model", value: "claude-opus-4-8")
+        ])
+    }
+
+    @Test func whitespaceOnlyFlagIsNotPersisted() throws {
+        let saved = LockIsolated<AppConfig?>(nil)
+        let model = withDependencies {
+            $0.appConfigClient.load = { AppConfig() }
+            $0.appConfigClient.save = { saved.setValue($0) }
+        } operation: {
+            SettingsModel()
+        }
+
+        model.arguments = [
+            ArgumentRow(flag: "--model", value: "claude-opus-4-8"),
+            ArgumentRow(flag: "   ", value: "stray"),
+        ]
+        model.save()
+
+        #expect(saved.value?.extraArguments == [
+            ExtraArgument(flag: "--model", value: "claude-opus-4-8")
+        ])
     }
 
     @Test func emptyPathPersistsAsNotConfigured() throws {

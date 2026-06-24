@@ -40,12 +40,17 @@ public final class SettingsModel {
     }
 
     /// Writes the current visible state back through ``AppConfigClient``. Called on every mutation;
-    /// swallows write errors, matching the tolerant read path.
+    /// swallows write errors, matching the tolerant read path. Rows with a blank flag are dropped
+    /// from the persisted projection — mirroring `Harness.renderArgs`, which skips them at render
+    /// time — so a freshly-added (or half-typed) row never lands on disk. The in-memory `arguments`
+    /// array is left untouched so that blank row stays editable in the form.
     public func save() {
         let trimmed = agentExecutablePath.trimmingCharacters(in: .whitespacesAndNewlines)
         let config = AppConfig(
             agentExecutablePath: trimmed.isEmpty ? nil : trimmed,
-            extraArguments: arguments.map(\.extraArgument)
+            extraArguments: arguments
+                .filter { !$0.flag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .map(\.extraArgument)
         )
         try? appConfigClient.save(config)
     }
