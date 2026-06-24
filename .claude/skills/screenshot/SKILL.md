@@ -47,7 +47,7 @@ To add a new target: extend the `PreviewTarget` enum and the `PreviewHarnessView
 1. `make build` (xcodebuild, no code signing)
 2. Resolves the built `.app` via `xcodebuild -showBuildSettings`
 3. Kills any prior instance, then `open -a` the bundle (with `--env HERCULES_PREVIEW=…` when a target is supplied)
-4. Polls `System Events` (AppleScript) for `process "hercules1"` window 1
+4. Polls `System Events` (AppleScript) for `process "Hercules"` window 1
 5. Reads window position + size, calls `screencapture -x -o -R x,y,w,h`
 6. Quits the app (override with `HERCULES_KEEP_OPEN=1`)
 
