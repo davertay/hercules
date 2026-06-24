@@ -18,6 +18,7 @@
   [16]: "Glob",
   [17]: "WebFetch",
   [18]: "WebSearch",
-  [19]: "--add-dir",
-  [20]: "/tmp/inputs"
+  [19]: "Bash(gh:*)",
+  [20]: "--add-dir",
+  [21]: "/tmp/inputs"
 ]

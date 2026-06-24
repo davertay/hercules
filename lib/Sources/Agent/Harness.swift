@@ -46,7 +46,10 @@ public enum Harness {
         let mcpTools = mcpServers.flatMap(\.qualifiedToolNames)
         switch mode {
         case .readOnly:
-            args += ["--allowedTools"] + ["Read", "Grep", "Glob", "WebFetch", "WebSearch"] + mcpTools
+            // `gh` is allowlisted so the agent can read GitHub issues/PRs without prompting. Note this
+            // also exposes gh's write subcommands; the read-only guarantee covers the local filesystem
+            // and DB, not remote GitHub state.
+            args += ["--allowedTools"] + ["Read", "Grep", "Glob", "WebFetch", "WebSearch", "Bash(gh:*)"] + mcpTools
         case .write:
             // `acceptEdits` already covers Write/Edit; Bash (build/test/lint/git) is the one broad
             // capability execute needs that it won't auto-approve, so allowlist it explicitly.

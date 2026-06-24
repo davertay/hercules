@@ -27,6 +27,25 @@ struct SubProcess {
         signal(SIGPIPE, SIG_IGN)
     }()
 
+    /// Directories prepended to the child's `PATH`. A macOS app launched from Finder/Dock inherits
+    /// launchd's minimal `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), which omits Homebrew — so the
+    /// agent's Bash tool can't find user-installed CLIs like `gh`. We add the common Homebrew/user
+    /// bin dirs so those tools resolve. (The harness binary itself is resolved separately, by path.)
+    static let pathAdditions = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin"]
+
+    /// Prepends `additions` to the inherited `PATH`, dropping any already present so their existing
+    /// position is preserved. Pure, so it's unit-testable without touching the process environment.
+    static func augmentedPath(
+        inherited: String?,
+        additions: [String] = pathAdditions
+    ) -> String {
+        let existing = (inherited ?? "/usr/bin:/bin:/usr/sbin:/sbin")
+            .split(separator: ":", omittingEmptySubsequences: true).map(String.init)
+        let existingSet = Set(existing)
+        let prefix = additions.filter { !existingSet.contains($0) }
+        return (prefix + existing).joined(separator: ":")
+    }
+
     struct Outcome {
         let stderrTail: String
         let terminationStatus: TerminationStatus
@@ -53,7 +72,9 @@ struct SubProcess {
         let result = try await Subprocess.run(
             .path(FilePath(executable.path)),
             arguments: Arguments(arguments),
-            environment: .inherit,
+            environment: .inherit.updating([
+                "PATH": Self.augmentedPath(inherited: ProcessInfo.processInfo.environment["PATH"])
+            ]),
             workingDirectory: FilePath(workingDirectory.path),
             platformOptions: platformOptions,
             input: .inputWriter,
