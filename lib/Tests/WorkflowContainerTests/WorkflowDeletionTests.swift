@@ -146,6 +146,29 @@ struct WorkflowDeletionTests {
         }
     }
 
+    @Test
+    @MainActor
+    func modelRegistersOpenWorkflowOnConstruction() throws {
+        let root = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try withDependencies {
+            $0.context = .live
+            $0.uuid = .incrementing
+            $0.date.now = Self.fixedDate
+            $0.worktreeClient = .testValue
+        } operation: {
+            let data = try createWorkflow(repo: URL(fileURLWithPath: "/path/to/repo"), root: root)
+            let registry = OpenWorkflowRegistry()
+            #expect(registry.isOpen(data.id) == false)
+
+            let model = WorkflowContainerModel(data: data, registry: registry)
+            #expect(registry.isOpen(data.id))
+            // Hold the model past the assertion so its registration isn't torn down early.
+            withExtendedLifetime(model) {}
+        }
+    }
+
     private static func makeTempDir() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("WorkflowContainerTests-\(UUID().uuidString)", isDirectory: true)

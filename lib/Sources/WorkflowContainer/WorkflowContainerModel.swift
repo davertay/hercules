@@ -45,10 +45,17 @@ public final class WorkflowContainerModel {
     /// a brief non-blocking notice before closing the window.
     public var cleanupNotice: String?
 
-    public init(data: WorkflowWindowData) {
+    /// The launcher's open-window registry, if this window was opened from the app. The model registers its
+    /// id on construction and unregisters on teardown so the launcher can tell which Workflows are open.
+    @ObservationIgnored
+    private let registry: OpenWorkflowRegistry?
+
+    public init(data: WorkflowWindowData, registry: OpenWorkflowRegistry? = nil) {
         id = data.id
         directory = data.directory
         repoPath = data.repoPath
+        self.registry = registry
+        registry?.register(data.id)
 
         // The worktree path is a pure convention derived from the directory, so a state-restored reopen
         // recomputes it and reads the already-existing on-disk worktree without re-creating it.
@@ -116,6 +123,7 @@ public final class WorkflowContainerModel {
     deinit {
         executeModel?.cancelRun()
         validateModel?.cancelAll()
+        registry?.unregisterOnTeardown(id)
     }
 
     /// `true` while any one of the five Phases' agents is running — the chat Phases (Design/PRD/Allocate)
