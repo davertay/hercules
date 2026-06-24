@@ -17,5 +17,6 @@
   [15]: "Grep",
   [16]: "Glob",
   [17]: "WebFetch",
-  [18]: "WebSearch"
+  [18]: "WebSearch",
+  [19]: "Bash(gh:*)"
 ]

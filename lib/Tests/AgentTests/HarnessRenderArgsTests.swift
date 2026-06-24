@@ -142,6 +142,7 @@ struct HarnessRenderArgsTests {
         #expect(args[allowedIdx + 3] == "Glob")
         #expect(args[allowedIdx + 4] == "WebFetch")
         #expect(args[allowedIdx + 5] == "WebSearch")
+        #expect(args[allowedIdx + 6] == "Bash(gh:*)")
         #expect(!args.contains("--resume"))
     }
 
@@ -251,7 +252,8 @@ struct HarnessRenderArgsTests {
         #expect(args[allowedIdx + 3] == "Glob")
         #expect(args[allowedIdx + 4] == "WebFetch")
         #expect(args[allowedIdx + 5] == "WebSearch")
-        #expect(args[allowedIdx + 6] == "mcp__hercules__create_issue")
+        #expect(args[allowedIdx + 6] == "Bash(gh:*)")
+        #expect(args[allowedIdx + 7] == "mcp__hercules__create_issue")
     }
 
     @Test func resumeRepassesMCPConfig() throws {
@@ -363,7 +365,7 @@ struct HarnessRenderArgsTests {
         #expect(!FileManager.default.fileExists(atPath: dataDir.path))
         let allowedIdx = args.firstIndex(of: "--allowedTools")!
         #expect(args[allowedIdx + 1] == "Read")
-        #expect(args.last == "WebSearch")
+        #expect(args.last == "Bash(gh:*)")
     }
 
     @Test func mcpServerWithoutDataDirectoryThrows() {
