@@ -5,7 +5,7 @@
   [3]: "--input-format",
   [4]: "stream-json",
   [5]: "--permission-mode",
-  [6]: "bypassPermissions",
+  [6]: "default",
   [7]: "--setting-sources",
   [8]: "user,project,local",
   [9]: "--verbose",

@@ -20,12 +20,14 @@ public enum Harness {
         extraArguments: [ExtraArgument] = [],
         sessionId: Session.ID
     ) throws -> [String] {
+        // We deliberately avoid `bypassPermissions`: enterprise-managed policy can forbid it
+        let permissionMode = mode == .readOnly ? "default" : "acceptEdits"
         var args: [String] = [
             "--print",
             "--output-format", "stream-json",
             // Realtime input keeps stdin open so we can interrupt mid-Turn on a question (see `SubProcess`).
             "--input-format", "stream-json",
-            "--permission-mode", "bypassPermissions",
+            "--permission-mode", permissionMode,
             "--setting-sources", "user,project,local",
             "--verbose",
             "--include-partial-messages",
@@ -38,12 +40,17 @@ public enum Harness {
             args += ["--resume", sessionId.rawValue.uuidString]
         }
 
-        if mode == .readOnly {
-            // MCP tools are allowed too: they write to the database, not the worktree, so the
-            // read-only guarantee holds. Deriving from the descriptors keeps configured-and-allowed in step.
-            var allowed = ["Read", "Grep", "Glob", "WebFetch", "WebSearch"]
-            allowed += mcpServers.flatMap(\.qualifiedToolNames)
-            args += ["--allowedTools"] + allowed
+        // MCP tools are allowlisted in both modes: in readOnly they write only to the database (so the
+        // read-only guarantee holds), and in write mode `acceptEdits` doesn't auto-approve them.
+        // Deriving from the descriptors keeps configured-and-allowed in step.
+        let mcpTools = mcpServers.flatMap(\.qualifiedToolNames)
+        switch mode {
+        case .readOnly:
+            args += ["--allowedTools"] + ["Read", "Grep", "Glob", "WebFetch", "WebSearch"] + mcpTools
+        case .write:
+            // `acceptEdits` already covers Write/Edit; Bash (build/test/lint/git) is the one broad
+            // capability execute needs that it won't auto-approve, so allowlist it explicitly.
+            args += ["--allowedTools"] + ["Bash"] + mcpTools
         }
 
         if !mcpServers.isEmpty {
