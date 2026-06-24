@@ -87,7 +87,7 @@ func gitHubSlug(from remote: String) -> String? {
     return nil
 }
 
-public enum WorktreeError: Error, CustomStringConvertible {
+public enum WorktreeError: Error, LocalizedError, CustomStringConvertible {
     case unsupportedRemote(String)
 
     public var description: String {
@@ -96,6 +96,10 @@ public enum WorktreeError: Error, CustomStringConvertible {
             "The `origin` remote isn't a recognised GitHub URL, so a compare URL can't be built: \(remote)"
         }
     }
+
+    /// Surface `description` so `localizedDescription` shows the real message rather than the
+    /// generic "The operation couldn't be completed." system fallback.
+    public var errorDescription: String? { description }
 }
 
 extension DependencyValues {
@@ -106,7 +110,7 @@ extension DependencyValues {
 }
 
 /// Carries git's own stderr so the message is clear (e.g. "fatal: a branch named '…' already exists").
-public struct GitError: Error, CustomStringConvertible {
+public struct GitError: Error, LocalizedError, CustomStringConvertible {
     public let arguments: [String]
     public let status: Int32
     public let stderr: String
@@ -115,6 +119,10 @@ public struct GitError: Error, CustomStringConvertible {
         let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         return "git \(arguments.joined(separator: " ")) failed (status \(status)): \(detail)"
     }
+
+    /// Surface `description` so `localizedDescription` shows git's real stderr rather than the
+    /// generic "The operation couldn't be completed." system fallback.
+    public var errorDescription: String? { description }
 }
 
 private enum LiveGit {
