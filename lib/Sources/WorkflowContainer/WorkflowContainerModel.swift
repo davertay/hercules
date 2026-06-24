@@ -132,6 +132,18 @@ public final class WorkflowContainerModel {
     /// The whole Workflow is quiescent — none of the five Phases' agents are running.
     public var isIdle: Bool { !isRunning }
 
+    /// Stops every running agent across all five Phases in one call — the Workflow-level "stop
+    /// everything". The three chat Phases cancel their in-flight Turn, Execute cancels its run loop (which
+    /// leaves the in-flight Issue `failed`), and Validate cancels every in-flight Persona. Each cancel is
+    /// a no-op when its Phase is idle, so this is safe to call at any time.
+    public func stopAll() {
+        designModel?.cancel()
+        prdModel?.cancel()
+        allocateModel?.cancel()
+        executeModel?.cancelRun()
+        validateModel?.cancelAll()
+    }
+
     /// Tears down the Workflow via ``deleteWorkflow(data:root:)``. Folder removal is the operation of
     /// record, so the Workflow always disappears; the caller should close the window afterwards. Returns
     /// `true` on a fully clean teardown. On a git-step failure it sets ``cleanupNotice`` and returns

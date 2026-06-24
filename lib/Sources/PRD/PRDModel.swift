@@ -70,6 +70,12 @@ public final class PRDModel {
     /// running state. A thin reflection of the engine's run flag.
     public var isBusy: Bool { engine.isRunning }
 
+    /// Cancels an in-flight chat Turn — the PRD contribution to the Workflow-level stop-all. No-op when
+    /// idle.
+    public func cancel() {
+        engine.cancel()
+    }
+
     /// Unavailable once the Phase is complete — re-running is the separate Regenerate action.
     public var isGenerateAvailable: Bool {
         !engine.isRunning && prdSavedURL == nil

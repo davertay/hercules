@@ -129,6 +129,60 @@ struct WorkflowRunningStateTests {
         }
     }
 
+    @Test("stopAll cancels in-flight work across every Phase, returning the Workflow to idle")
+    func stopAllCancelsEveryPhase() async throws {
+        let root = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let id = UUID(0)
+        let directory = root.appending(component: id.uuidString)
+        try FileManager.default.createDirectory(
+            at: workflowWorktree(in: directory), withIntermediateDirectories: true
+        )
+
+        // Every Phase's agent and its Store writes read dependencies at call time, so all the in-flight
+        // work lives inside the scope that overrides them.
+        try await withDependencies {
+            $0.context = .live
+            $0.uuid = .incrementing
+            $0.date.now = Self.fixedDate
+            // Each started agent hangs on a cancellable sleep so its Phase stays running until stopAll.
+            $0.agentClient.start = { @Sendable _ in
+                try await Task.sleep(for: .seconds(60))
+                throw CancellationError()
+            }
+            $0.agentClient.send = { @Sendable _ in throw CancellationError() }
+        } operation: {
+            let model = WorkflowContainerModel(
+                data: WorkflowWindowData(id: id, directory: directory, repoPath: "/repo")
+            )
+            let design = try #require(model.designModel)
+            let execute = try #require(model.executeModel)
+            let validate = try #require(model.validateModel)
+            let database = try #require(model.database)
+            try Self.seedReadyIssue(database, workflowID: id)
+            try await execute.$issues.load()
+
+            #expect(model.isIdle)
+
+            // Light up a chat Phase mid-Turn, the Execute run loop, and a Validate Persona at once.
+            design.engine.draftText = "design something"
+            design.engine.submit()
+            execute.start()
+            validate.run(.codeQuality)
+            await Self.waitUntil { execute.isRunning && validate.isAnyRunning }
+            #expect(model.isRunning)
+            #expect(!model.isIdle)
+
+            // One press stops everything across all five Phases.
+            model.stopAll()
+            await design.engine.runTask?.value
+            await execute.runTask.value?.value
+            await Self.waitUntil { model.isIdle }
+            #expect(model.isIdle)
+        }
+    }
+
     // MARK: - Helpers
 
     /// Polls `condition`, yielding between checks so the MainActor run task can make progress.

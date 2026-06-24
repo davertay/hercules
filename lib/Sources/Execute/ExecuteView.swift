@@ -76,14 +76,6 @@ public struct ExecuteView: View {
                 }
                 .disabled(!model.canRun)
                 .help("Run the Issues sequentially in dependency order")
-
-                Button {
-                    model.stop()
-                } label: {
-                    Label("Stop", systemImage: "stop.fill")
-                }
-                .disabled(!model.isRunning)
-                .help("Stop the run and mark the in-flight Issue failed")
             }
         }
     }

@@ -81,6 +81,12 @@ public final class AllocateModel {
     /// running state. A thin reflection of the engine's run flag.
     public var isBusy: Bool { engine.isRunning }
 
+    /// Cancels an in-flight chat Turn — the Allocate contribution to the Workflow-level stop-all. No-op
+    /// when idle.
+    public func cancel() {
+        engine.cancel()
+    }
+
     public var isProposeAvailable: Bool { !engine.isRunning }
 
     /// Available only once a proposal conversation exists.

@@ -78,6 +78,17 @@ public struct WorkflowContainerView: View {
         }
         .toolbar {
             ToolbarItem {
+                Button {
+                    model.stopAll()
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                }
+                // Always visible; enabled only while the Workflow is busy. Stop and Destroy are mutually
+                // exclusive, so their greyed states read as the Workflow's busy/idle status at a glance.
+                .disabled(!model.isRunning)
+                .help("Stop every running agent across all Phases — enabled only while the Workflow is busy")
+            }
+            ToolbarItem {
                 Button(role: .destructive) {
                     isConfirmingDestroy = true
                 } label: {
