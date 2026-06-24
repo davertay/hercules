@@ -255,6 +255,55 @@ struct ChatEngineTests {
     }
 
     @Test
+    func sendWithPerTurnOverrideFlowsIntoSendRequest() async throws {
+        let database = try Self.makeDatabase()
+        let sessionID = UUID(-2)
+        try Self.seedSession(database, sessionID: sessionID, kind: .design)
+        let override = [
+            MCPServer(name: "hercules", command: "/repo/.build/hercules", tools: ["create_issue"])
+        ]
+        let captured = LockIsolated<SendRequest?>(nil)
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.send = { @Sendable request in
+                captured.setValue(request)
+                return request.session
+            }
+        } operation: {
+            Self.makeEngine(database: database, kind: .design)
+        }
+
+        // The rediscovered Session lets this resume; the override rides the single Turn (ADR 0001).
+        try await engine.send("propose issues", overrideMCPServers: override)
+
+        #expect(captured.value?.mcpServers == override)
+    }
+
+    @Test
+    func sendWithoutOverrideLeavesSendRequestServersAbsentForFallback() async throws {
+        let database = try Self.makeDatabase()
+        let sessionID = UUID(-2)
+        try Self.seedSession(database, sessionID: sessionID, kind: .design)
+        let captured = LockIsolated<SendRequest?>(nil)
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.send = { @Sendable request in
+                captured.setValue(request)
+                return request.session
+            }
+        } operation: {
+            Self.makeEngine(database: database, kind: .design)
+        }
+
+        try await engine.send("follow up")
+
+        // Absent override → nil, the signal for HarnessRunner to fall back to session.mcpServers.
+        #expect(captured.value?.mcpServers == nil)
+    }
+
+    @Test
     func followUpSubmitResumesSameSession() async throws {
         let database = try Self.makeDatabase()
         let startedSession = Session(

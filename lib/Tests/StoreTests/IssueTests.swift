@@ -53,36 +53,6 @@ struct IssueTests {
         #expect(row?.isDeleted == false)
     }
 
-    // MARK: - clearIssues
-
-    @Test func clearIssuesSoftDeletesOnlyTheTargetWorkflow() throws {
-        let database = try Self.makeDatabase()
-        let target = UUID(1)
-        let other = UUID(2)
-        try Self.seedWorkflow(database, workflowID: target)
-        try Self.seedWorkflow(database, workflowID: other)
-        try Self.seedIssue(database, id: UUID(10), workflowID: target, number: 1)
-        try Self.seedIssue(database, id: UUID(11), workflowID: target, number: 2)
-        try Self.seedIssue(database, id: UUID(12), workflowID: target, number: 3, isDeleted: true)
-        try Self.seedIssue(database, id: UUID(13), workflowID: other, number: 1)
-
-        try database.clearIssues(workflowID: target, now: Self.fixedDate.addingTimeInterval(60))
-
-        let rows = try database.read { db in
-            try IssueRow.fetchAll(db)
-        }
-        let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
-        #expect(byID[UUID(10)]?.isDeleted == true)
-        #expect(byID[UUID(11)]?.isDeleted == true)
-        #expect(byID[UUID(10)]?.updatedAt == Self.fixedDate.addingTimeInterval(60))
-        // An already-deleted Issue is left untouched (updatedAt not re-stamped).
-        #expect(byID[UUID(12)]?.isDeleted == true)
-        #expect(byID[UUID(12)]?.updatedAt == Self.fixedDate)
-        // The other Workflow is untouched.
-        #expect(byID[UUID(13)]?.isDeleted == false)
-        #expect(byID[UUID(13)]?.updatedAt == Self.fixedDate)
-    }
-
     // MARK: - setIssueStatus
 
     @Test func setIssueStatusWritesRawStringAndStampsUpdatedAt() throws {

@@ -8,9 +8,11 @@ import SQLiteData
 import Store
 
 /// Drives the Allocate Phase: a conversation with a button-gated commit. `propose()` reads the PRD and
-/// Design summary and presents an Issue breakdown as text; `acceptAndWrite()` clears any prior Issues,
-/// runs the commit Turn that writes the agreed set via the create-issue MCP tool, then marks the Phase
-/// complete only if the write produced at least one Issue (its Artifact is rows, not a file).
+/// Design summary and presents an Issue breakdown as text — writer-free, like every chat Turn. Only
+/// `acceptAndWrite()` carries the create-issue writer (on its commit Turn), and it commits the agreed
+/// set transactionally: snapshot the prior ids, write, then clear the snapshot and complete the Phase
+/// only if the write produced a new, non-empty set — so a failed or empty commit leaves the prior set
+/// intact and doesn't falsely unlock Execute (its Artifact is rows, not a file).
 @MainActor
 @Observable
 public final class AllocateModel {
@@ -28,13 +30,14 @@ public final class AllocateModel {
     @ObservationIgnored
     private let workflowID: UUID
 
-    /// The PRD and Design Artifacts live beneath this and are attached by their relative `phases/...`
-    /// paths.
     @ObservationIgnored
     private let workflowDirectory: URL
 
     @ObservationIgnored
     private let skill: SkillResource
+
+    @ObservationIgnored
+    private let mcpServerCommand: String
 
     @ObservationIgnored
     @Fetch var issues: [IssueRow] = []
@@ -43,8 +46,7 @@ public final class AllocateModel {
     var runTask: Task<Void, Never>?
 
     /// - Parameter mcpServerCommand: the Hercules app binary, re-executed as the stdio create-issue MCP
-    ///   server. The DB path and workflow id are fixed as launch args, so it can't target another
-    ///   Workflow's database.
+    ///   server. The DB path and workflow id are fixed as launch args, so it can't target another Workflow's database.
     public init(
         worktree: URL,
         workflowID: UUID,
@@ -55,6 +57,7 @@ public final class AllocateModel {
         self.workflowID = workflowID
         self.workflowDirectory = workflowDirectory
         self.database = database
+        self.mcpServerCommand = mcpServerCommand
         self.skill = loadSkill(.toIssues)
         self.engine = ChatEngine(
             worktree: worktree,
@@ -63,7 +66,6 @@ public final class AllocateModel {
             kind: .allocate,
             skillFiles: [skill.fileUrl],
             addDirs: [skill.folderUrl],
-            mcpServers: [Self.issueServer(command: mcpServerCommand, workflowDirectory: workflowDirectory, workflowID: workflowID)],
             database: database
         )
         _issues = Fetch(
@@ -89,8 +91,14 @@ public final class AllocateModel {
         """
     }
 
-    static let commitPrompt =
-        "Write the agreed set of Issues now, one create_issue call per Issue."
+    /// Idempotent by construction: a full rewrite of the agreed set from scratch, one `create_issue` per
+    /// Issue, even if Issues were created in an earlier Turn — so a re-commit doesn't no-op with "already
+    /// created". The prior set is soft-deleted out-of-band once this write succeeds (see `acceptAndWrite`).
+    static let commitPrompt = """
+        Write the agreed set of Issues now from scratch: make exactly one create_issue call per Issue in \
+        the set, even if you already created Issues in an earlier Turn. Recreate every Issue in the agreed \
+        set — do not skip any as "already created".
+        """
 
     /// Reads the PRD and Design summary locations from their completed Phase rows, attaches both, and
     /// sends the proposal prompt. Starts the Session the first time, resumes it on a re-propose.
@@ -117,9 +125,20 @@ public final class AllocateModel {
         }
     }
 
-    /// Clears any prior Issues so a re-commit replaces the set cleanly, then writes via the MCP tool.
-    /// Completes the Phase only if the write produced at least one Issue, so an empty commit doesn't
-    /// falsely unlock Execute.
+    /// The single path that commits Issues and completes the Allocate Phase, structured transactionally so
+    /// a failed or empty commit can never zero out a previously-good set:
+    ///
+    /// 1. Snapshot the live Issue ids before sending the commit prompt.
+    /// 2. Run the commit Turn — the only Turn that carries the create-issue writer, via the per-turn
+    ///    `mcpServers` override.
+    /// 3. The new write is the Issues whose ids aren't in the snapshot.
+    /// 4. Only on a non-throwing return with a non-empty new write, soft-delete the snapshotted ids and
+    ///    complete the Phase. `runTurn` throws on a failed/crashed Turn, so a broken commit lands in
+    ///    `catch` before any delete/complete — the transactional ordering yields the completion gate for
+    ///    free, and the old set stays fully intact.
+    ///
+    /// The brief window where old and new Issues coexist with duplicate numbers is harmless (plain index,
+    /// no uniqueness constraint) and invisible mid-Turn.
     public func acceptAndWrite() {
         guard isAcceptAvailable else { return }
         engine.errorText = nil
@@ -127,10 +146,20 @@ public final class AllocateModel {
 
         runTask = Task { [self] in
             do {
-                try database.clearIssues(workflowID: workflowID, now: now)
-                try await engine.send(Self.commitPrompt)
-                let written = try currentIssues()
-                if !written.isEmpty {
+                let priorIDs = Set(try currentIssues().map(\.id))
+                try await engine.send(
+                    Self.commitPrompt,
+                    overrideMCPServers: [
+                        Self.issueServer(
+                            command: mcpServerCommand,
+                            workflowDirectory: workflowDirectory,
+                            workflowID: workflowID
+                        )
+                    ]
+                )
+                let newWrite = try currentIssues().filter { !priorIDs.contains($0.id) }
+                if !newWrite.isEmpty {
+                    try database.clearIssues(ids: priorIDs, workflowID: workflowID, now: now)
                     try database.completePhase(
                         workflowID: workflowID, kind: "allocate", id: uuid(), now: now
                     )

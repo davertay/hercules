@@ -29,3 +29,23 @@ The cost we accept is ~1–2 s of Harness bootstrap latency per Turn. For a chat
 spends longer reading the response than waiting for the next Turn to start, this is acceptable.
 If profiling ever shows this is unacceptable for a specific flow, the long-lived model can be
 introduced behind the same `AgentClient` API without breaking callers.
+
+## Per-Turn capability overrides are sanctioned
+
+The framing above — each Turn after the first replays the Session's pinned servers via
+`--resume` — describes the *default*. It is deliberately not an invariant. A `resume` Turn may
+carry a server that its `start` Turn never had: the per-Turn `mcpServers` override lets a single
+Turn add capability the rest of the Session lacks.
+
+The motivating case is Allocate (see [ADR 0006](0006-mcp-write-tools-via-stdio-store-bridge.md) and
+the Allocate Phase PRD). The proposal and refinement Turns run read-only — the agent proposes Issues
+as text and writes nothing. **Write capability exists only during the commit Turn**, the single Turn
+run by the **Accept & Write Issues** button, which attaches the `create_issue` writer via the
+per-Turn override. Every other Turn in that Session, including the `start`, is writer-free.
+
+This is a feature, not a violation. Because per-Turn invocation makes each Turn its own process with
+its own argument vector, scoping a tool to exactly one Turn costs nothing and needs no special
+machinery — the writer simply isn't in the other Turns' argv. The "replay the Session's pinned
+servers" framing is the convenient default for chat continuity, not a guarantee the model relies on;
+gating a dangerous capability (an Issue writer that mutates the Store) to one deliberately-triggered
+Turn is exactly the kind of control this architecture is meant to make cheap.

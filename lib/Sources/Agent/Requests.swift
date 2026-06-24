@@ -51,12 +51,22 @@ public struct SendRequest: Sendable {
     public let session: Session
     public let inputs: InputBundle?
     public let database: any DatabaseWriter
+    /// Overrides the Session's pinned servers for this single resume Turn only — no Session mutation.
+    /// `nil` falls back to `session.mcpServers`, so existing callers behave unchanged (ADR 0001).
+    public let mcpServers: [MCPServer]?
 
-    public init(prompt: String, session: Session, inputs: InputBundle? = nil, database: any DatabaseWriter) {
+    public init(
+        prompt: String,
+        session: Session,
+        inputs: InputBundle? = nil,
+        database: any DatabaseWriter,
+        mcpServers: [MCPServer]? = nil
+    ) {
         self.prompt = prompt
         self.session = session
         self.inputs = inputs
         self.database = database
+        self.mcpServers = mcpServers
     }
 }
 

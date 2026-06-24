@@ -29,7 +29,7 @@ struct AllocateModelTests {
     // MARK: - propose
 
     @Test
-    func proposeRunsOneReadOnlyAllocateTurnWithBothArtifactsSkillAndMCPServer() async throws {
+    func proposeRunsOneReadOnlyAllocateTurnWithBothArtifactsAndSkillButNoWriter() async throws {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
         let prdPath = Self.artifactPath(workflowDirectory, "phases/prd/prd.md")
@@ -67,19 +67,9 @@ struct AllocateModelTests {
         let inputs = try #require(request.inputs)
         #expect(inputs.root == workflowDirectory)
         #expect(inputs.relativePaths == ["phases/prd/prd.md", "phases/design/summary.md"])
-        let databasePath = workflowDirectory.appendingPathComponent("workflow.sqlite").path
-        #expect(request.mcpServers == [
-            MCPServer(
-                name: "hercules",
-                command: mcpServerCommand,
-                args: [
-                    "--mcp-issue-server",
-                    "--db", databasePath,
-                    "--workflow-id", UUID(-1).uuidString,
-                ],
-                tools: ["create_issue"]
-            )
-        ])
+        // The propose/chat Turn is writer-free: the create-issue server is attached only on the
+        // acceptAndWrite() commit Turn.
+        #expect(request.mcpServers.isEmpty)
         #expect(model.engine.errorText == nil)
         #expect(!model.engine.isRunning)
     }
@@ -122,26 +112,29 @@ struct AllocateModelTests {
     // MARK: - acceptAndWrite
 
     @Test
-    func acceptAndWriteClearsPriorIssuesBeforeCommitAndCompletesPhaseWhenIssuesExist() async throws {
+    func acceptAndWriteAttachesWriterClearsPriorIssuesAfterSuccessAndCompletesPhase() async throws {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
         try Self.seedWorkflow(database)
         // A prior committed Issue and Allocate Session, as found when reopening after a propose/accept.
         try Self.seedIssue(database, id: UUID(-10), number: 1, title: "Stale issue")
         try Self.seedSession(database, id: UUID(100))
-        let clearedAt = LockIsolated<Bool?>(nil)
+        let priorLiveAtCommit = LockIsolated<Bool?>(nil)
+        let committedServers = LockIsolated<[MCPServer]?>(nil)
 
         let model = withDependencies {
             $0.defaultDatabase = database
             $0.uuid = .incrementing
             $0.date.now = fixedDate
             $0.agentClient.send = { @Sendable request in
-                // The prior Issue must already be cleared by now; the MCP child's writes are stubbed
-                // by seeding fresh rows.
-                let priorDeleted = try await request.database.read { db in
-                    try IssueRow.find(UUID(-10)).fetchOne(db)?.isDeleted ?? false
+                // Transactional ordering: the prior Issue is still live while the commit Turn runs; it is
+                // soft-deleted only once this write has succeeded.
+                let priorLive = try await request.database.read { db in
+                    try !(IssueRow.find(UUID(-10)).fetchOne(db)?.isDeleted ?? true)
                 }
-                clearedAt.setValue(priorDeleted)
+                priorLiveAtCommit.setValue(priorLive)
+                committedServers.setValue(request.mcpServers)
+                // The MCP child's out-of-process writes are stubbed by seeding fresh rows.
                 try await Self.seedIssues(request.database, count: 2)
                 return try await Self.resumeSession(for: request, turnID: UUID(201))
             }
@@ -153,8 +146,25 @@ struct AllocateModelTests {
         model.acceptAndWrite()
         await model.runTask?.value
 
-        // clearIssues ran before the commit Turn.
-        #expect(clearedAt.value == true)
+        // The prior Issue was still live while the commit Turn ran.
+        #expect(priorLiveAtCommit.value == true)
+        // The create-issue writer is attached, but only as this commit Turn's per-turn override.
+        let databasePath = workflowDirectory.appendingPathComponent("workflow.sqlite").path
+        #expect(committedServers.value == [
+            MCPServer(
+                name: "hercules",
+                command: mcpServerCommand,
+                args: [
+                    "--mcp-issue-server",
+                    "--db", databasePath,
+                    "--workflow-id", UUID(-1).uuidString,
+                ],
+                tools: ["create_issue"]
+            )
+        ])
+        // The prior Issue is soft-deleted only after the write succeeded, leaving just the new set.
+        let prior = try await database.read { db in try IssueRow.find(UUID(-10)).fetchOne(db) }
+        #expect(prior?.isDeleted == true)
         let current = try await database.read { db in
             try WorkflowIssuesRequest(workflowID: UUID(-1)).fetch(db)
         }
@@ -170,10 +180,49 @@ struct AllocateModelTests {
     }
 
     @Test
-    func acceptAndWriteDoesNotCompletePhaseWhenCommitWroteNoIssues() async throws {
+    func acceptAndWriteLeavesPriorIssuesIntactWhenCommitTurnThrows() async throws {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
         try Self.seedWorkflow(database)
+        try Self.seedIssue(database, id: UUID(-10), number: 1, title: "Good issue")
+        try Self.seedSession(database, id: UUID(100))
+
+        struct CommitFailed: Error {}
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable _ in
+                // A failed/crashed commit Turn throws out of runTurn before any delete/complete.
+                throw CommitFailed()
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.acceptAndWrite()
+        await model.runTask?.value
+
+        // The prior set is fully intact, and the Phase is not completed.
+        let current = try await database.read { db in
+            try WorkflowIssuesRequest(workflowID: UUID(-1)).fetch(db)
+        }
+        #expect(current.map(\.title) == ["Good issue"])
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
+        }
+        #expect(phase == nil)
+        #expect(model.engine.errorText != nil)
+        #expect(!model.engine.isRunning)
+    }
+
+    @Test
+    func acceptAndWriteLeavesPriorIssuesIntactWhenCommitWroteNoIssues() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedIssue(database, id: UUID(-10), number: 1, title: "Good issue")
         try Self.seedSession(database, id: UUID(100))
 
         let model = withDependencies {
@@ -181,6 +230,7 @@ struct AllocateModelTests {
             $0.uuid = .incrementing
             $0.date.now = fixedDate
             $0.agentClient.send = { @Sendable request in
+                // The commit Turn returns without writing any Issue.
                 try await Self.resumeSession(for: request, turnID: UUID(201))
             }
         } operation: {
@@ -190,6 +240,11 @@ struct AllocateModelTests {
         model.acceptAndWrite()
         await model.runTask?.value
 
+        // An empty write leaves the prior set intact and does not complete the Phase.
+        let current = try await database.read { db in
+            try WorkflowIssuesRequest(workflowID: UUID(-1)).fetch(db)
+        }
+        #expect(current.map(\.title) == ["Good issue"])
         let phase = try await database.read { db in
             try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
         }

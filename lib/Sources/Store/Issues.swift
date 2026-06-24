@@ -5,11 +5,14 @@ import SQLiteData
 // write tool (ADR 0006); status writes the orchestrator owns directly, so they live here.
 
 extension DatabaseWriter {
-    /// Soft-deletes every non-deleted Issue so re-committing replaces the prior set cleanly.
-    public func clearIssues(workflowID: UUID, now: Date) throws {
+    /// Soft-deletes the given Issues by id. The transactional Allocate commit snapshots the prior set's
+    /// ids, runs the writer Turn, and only clears those ids once the write has produced a non-empty new set.
+    public func clearIssues(ids: Set<UUID>, workflowID: UUID, now: Date) throws {
+        guard !ids.isEmpty else { return }
         try write { db in
             try IssueRow
                 .where { $0.workflowID.eq(workflowID) }
+                .where { $0.id.in(ids) }
                 .where { !$0.isDeleted }
                 .update {
                     $0.isDeleted = true

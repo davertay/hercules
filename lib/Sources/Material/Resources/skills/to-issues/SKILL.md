@@ -9,9 +9,13 @@ Propose the Issue list as plain text only; do not write anything yet. Each propo
 number, title, a body of spec, and its dependencies. Refine the breakdown conversationally with the
 user.
 
-Only when the user explicitly instructs you to commit, write each agreed Issue by calling the
-`create_issue` tool once per Issue. Assign the Issues numbers 1…N and express each Issue's
-dependencies as the set of those numbers it depends on.
+You have **no Issue writer during the conversation** — proposal and refinement Turns are read-only,
+so you cannot create Issues while you chat. When the user casually signals approval (e.g. "ok", "LGTM",
+"looks good", "ship it"), do **not** claim you have written, created, or saved anything. Instead, 
+tell the user to press the **Accept & Write Issues** button to commit the agreed set. That button 
+runs a separate commit Turn — the only Turn that carries the create-issue writer — which instructs 
+you to write each agreed Issue by calling the `create_issue` tool once per Issue. Assign the Issues
+numbers 1…N and express each Issue's dependencies as the set of those numbers it depends on.
 
 
 ## Process
@@ -52,12 +56,16 @@ Ask the user:
 - Are the dependency relationships correct?
 - Should any slices be merged or split further?
 
-Iterate until the user approves the breakdown.
+Iterate until the user approves the breakdown. When they signal approval, remember you have no
+writer in this conversation: do not say you have written or saved the Issues. Direct the user to
+press **Accept & Write Issues** to commit the set.
 
-### 5. Publish the issues to the issue tracker
+### 5. Write the issues — only in the commit Turn
 
-For each approved slice, publish a new issue to the issue tracker by calling the
-`create_issue` tool. Use the issue body template below.
+You never reach this step by being told "commit" in the chat. It happens only when the user presses
+**Accept & Write Issues**, which runs a dedicated commit Turn that hands you the create-issue writer
+and instructs you to write the agreed set. In that Turn, publish each approved slice to the issue
+tracker by calling the `create_issue` tool. Use the issue body template below.
 
 Publish issues in dependency order (blockers first) so you can reference real issue identifiers in the "dependencies" field.
 
