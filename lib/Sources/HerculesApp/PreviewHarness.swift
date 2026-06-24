@@ -113,7 +113,6 @@ private struct SettingsPreviewHost: View {
 
     var body: some View {
         SettingsView(model: model)
-            .frame(minWidth: 480, minHeight: 360)
     }
 }
 
