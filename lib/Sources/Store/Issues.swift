@@ -19,6 +19,24 @@ extension DatabaseWriter {
         }
     }
 
+    /// Soft-deletes the given Issues by id. The transactional Allocate commit snapshots the prior set's
+    /// ids, runs the writer Turn, and only clears those ids once the write has produced a non-empty new
+    /// set — so a failed or empty commit can't zero out a previously-good set.
+    public func clearIssues(ids: Set<UUID>, workflowID: UUID, now: Date) throws {
+        guard !ids.isEmpty else { return }
+        try write { db in
+            try IssueRow
+                .where { $0.workflowID.eq(workflowID) }
+                .where { $0.id.in(ids) }
+                .where { !$0.isDeleted }
+                .update {
+                    $0.isDeleted = true
+                    $0.updatedAt = now
+                }
+                .execute(db)
+        }
+    }
+
     /// Writes the run status, and the `failureReason` alongside it: the caller passes the reason when
     /// moving to `failed`, and `nil` for every other transition clears any stale reason.
     public func setIssueStatus(
