@@ -6,8 +6,7 @@ import SQLiteData
 
 extension DatabaseWriter {
     /// Soft-deletes the given Issues by id. The transactional Allocate commit snapshots the prior set's
-    /// ids, runs the writer Turn, and only clears those ids once the write has produced a non-empty new
-    /// set — so a failed or empty commit can't zero out a previously-good set.
+    /// ids, runs the writer Turn, and only clears those ids once the write has produced a non-empty new set.
     public func clearIssues(ids: Set<UUID>, workflowID: UUID, now: Date) throws {
         guard !ids.isEmpty else { return }
         try write { db in

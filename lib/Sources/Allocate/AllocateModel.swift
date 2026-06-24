@@ -30,17 +30,12 @@ public final class AllocateModel {
     @ObservationIgnored
     private let workflowID: UUID
 
-    /// The PRD and Design Artifacts live beneath this and are attached by their relative `phases/...`
-    /// paths.
     @ObservationIgnored
     private let workflowDirectory: URL
 
     @ObservationIgnored
     private let skill: SkillResource
 
-    /// The Hercules binary re-executed as the stdio create-issue MCP server. Held rather than passed to
-    /// the engine: the writer is attached only on the `acceptAndWrite()` commit Turn (ADR 0006), so chat
-    /// and `propose()` run writer-free.
     @ObservationIgnored
     private let mcpServerCommand: String
 
@@ -51,8 +46,7 @@ public final class AllocateModel {
     var runTask: Task<Void, Never>?
 
     /// - Parameter mcpServerCommand: the Hercules app binary, re-executed as the stdio create-issue MCP
-    ///   server. The DB path and workflow id are fixed as launch args, so it can't target another
-    ///   Workflow's database.
+    ///   server. The DB path and workflow id are fixed as launch args, so it can't target another Workflow's database.
     public init(
         worktree: URL,
         workflowID: UUID,
@@ -65,8 +59,6 @@ public final class AllocateModel {
         self.database = database
         self.mcpServerCommand = mcpServerCommand
         self.skill = loadSkill(.toIssues)
-        // No `mcpServers`: chat and `propose()` run writer-free. The create-issue server is attached only
-        // on the `acceptAndWrite()` commit Turn, as a per-turn override (ADR 0006).
         self.engine = ChatEngine(
             worktree: worktree,
             mode: .readOnly,
@@ -157,7 +149,7 @@ public final class AllocateModel {
                 let priorIDs = Set(try currentIssues().map(\.id))
                 try await engine.send(
                     Self.commitPrompt,
-                    mcpServers: [
+                    overrideMCPServers: [
                         Self.issueServer(
                             command: mcpServerCommand,
                             workflowDirectory: workflowDirectory,

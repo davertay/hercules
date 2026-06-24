@@ -203,7 +203,10 @@ public final class ChatEngine {
         if let existing = session {
             session = try await agentClient.send(
                 SendRequest(
-                    prompt: prompt, session: existing, inputs: inputs, database: database,
+                    prompt: prompt,
+                    session: existing,
+                    inputs: inputs,
+                    database: database,
                     mcpServers: overrideMCPServers
                 )
             )
@@ -219,7 +222,7 @@ public final class ChatEngine {
                     kind: kind,
                     skillFiles: skillFiles,
                     addDirs: addDirs,
-                    mcpServers: self.mcpServers
+                    mcpServers: mcpServers
                 )
             )
         }
