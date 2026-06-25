@@ -1,6 +1,7 @@
 import Allocate
 import Design
 import Execute
+import Material
 import PRD
 import SwiftUI
 import Validate
@@ -114,7 +115,7 @@ public struct WorkflowContainerView: View {
         }
         .overlay(alignment: .bottom) {
             if let notice = model.cleanupNotice {
-                CleanupNotice(message: notice)
+                TransientToast(message: notice, systemImage: "exclamationmark.triangle.fill", tint: .yellow)
             }
         }
     }
@@ -133,25 +134,6 @@ public struct WorkflowContainerView: View {
     }
 }
 
-/// The transient bottom toast warning that teardown left git state needing manual cleanup. Mirrors the
-/// Validate Phase's pushed-confirmation toast.
-private struct CleanupNotice: View {
-    let message: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
-            Text(message)
-                .font(.callout.weight(.medium))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.thinMaterial, in: Capsule())
-        .padding(.bottom, 16)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-}
 
 struct PhaseSidebarRow: View {
     let phase: Phase

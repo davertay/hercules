@@ -1,4 +1,5 @@
 import DAGGraphUI
+import Material
 import Store
 import SwiftUI
 
@@ -40,7 +41,7 @@ public struct ValidateView: View {
         .task { await model.refresh() }
         .overlay(alignment: .bottom) {
             if let confirmation = model.pullRequestConfirmation {
-                PushedConfirmation(message: confirmation)
+                TransientToast(message: confirmation, systemImage: "checkmark.circle.fill", tint: .green)
                     .task {
                         // Transient — clears itself after a beat.
                         try? await Task.sleep(for: .seconds(4))
@@ -87,24 +88,6 @@ public struct ValidateView: View {
     }
 }
 
-/// The transient "branch pushed" toast shown after a successful PR push.
-private struct PushedConfirmation: View {
-    let message: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-            Text(message)
-                .font(.callout.weight(.medium))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.thinMaterial, in: Capsule())
-        .padding(.bottom, 16)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-}
 
 /// The row of Persona cards. Personas have no dependencies on one another, so this is a simple wrapping
 /// flow rather than a layered DAG.

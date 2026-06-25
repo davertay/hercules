@@ -315,6 +315,7 @@ let package = Package(
                 "Allocate",
                 "Design",
                 "Execute",
+                "Material",
                 "PRD",
                 "Store",
                 "Validate",
