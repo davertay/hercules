@@ -6,6 +6,7 @@ import Material
 import SQLiteData
 import Store
 import Testing
+import Worktree
 
 @testable import Execute
 
@@ -154,13 +155,16 @@ struct ExecuteRunLoopTests {
 
     // MARK: - Helpers
 
-    /// `send` traps so a run never resumes a Session.
+    /// `send` traps so a run never resumes a Session. `headSHA` advances on every call so each Issue's
+    /// before/after reads differ — i.e. every successful run looks like it committed, which keeps these
+    /// loop tests focused on selection/halt order rather than the commit gate (covered in runIssue tests).
     private static func model(
         database: any DatabaseWriter,
         workflowID: UUID,
         start: @escaping @Sendable (StartRequest) async throws -> Session
     ) -> ExecuteModel {
-        withDependencies {
+        let head = LockIsolated(0)
+        return withDependencies {
             $0.defaultDatabase = database
             $0.date.now = fixedDate
             $0.uuid = .incrementing
@@ -169,6 +173,7 @@ struct ExecuteRunLoopTests {
                 Issue.record("ExecuteModel.run must not resume a Session")
                 throw CancellationError()
             }
+            $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
         } operation: {
             ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
         }

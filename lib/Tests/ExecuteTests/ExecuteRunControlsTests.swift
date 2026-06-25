@@ -6,6 +6,7 @@ import Material
 import SQLiteData
 import Store
 import Testing
+import Worktree
 
 @testable import Execute
 
@@ -169,7 +170,8 @@ struct ExecuteRunControlsTests {
         workflowID: UUID,
         start: @escaping @Sendable (StartRequest) async throws -> Session
     ) -> ExecuteModel {
-        withDependencies {
+        let head = LockIsolated(0)
+        return withDependencies {
             $0.defaultDatabase = database
             $0.date.now = fixedDate
             $0.uuid = .incrementing
@@ -178,6 +180,9 @@ struct ExecuteRunControlsTests {
                 Issue.record("Execute run must not resume a Session")
                 throw CancellationError()
             }
+            // HEAD advances per call so a non-throwing run looks committed and reaches `done`; the
+            // cancellation tests throw out of `start`, so the commit gate is never the deciding factor.
+            $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
         } operation: {
             ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
         }

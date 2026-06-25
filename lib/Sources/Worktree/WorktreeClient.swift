@@ -51,6 +51,12 @@ public struct WorktreeClient: Sendable {
     /// Prunes stale worktree administrative entries in the repo (`git worktree prune`), a hygiene
     /// step run after a worktree directory is removed.
     public var prune: @Sendable (_ repo: URL) throws -> Void
+    /// The worktree's current commit (`git rev-parse HEAD`). Execute reads it either side of an Issue's
+    /// run to confirm the agent committed — HEAD advancing is the sole evidence of work (issue #127).
+    public var headSHA: @Sendable (_ worktree: URL) throws -> String
+    /// Whether the worktree has uncommitted changes (`git status --porcelain` is non-empty). Throws on a
+    /// genuine git error (non-zero exit), distinct from a clean tree's empty-but-successful output.
+    public var isDirty: @Sendable (_ worktree: URL) throws -> Bool
 }
 
 extension WorktreeClient: DependencyKey {
@@ -101,6 +107,14 @@ extension WorktreeClient: DependencyKey {
         },
         prune: { repo in
             try LiveGit.run(["-C", repo.path, "worktree", "prune"])
+        },
+        headSHA: { worktree in
+            try LiveGit.capture(["-C", worktree.path, "rev-parse", "HEAD"])
+        },
+        isDirty: { worktree in
+            // `capture` trims output, so a clean tree yields "" (not dirty); it throws on a non-zero exit,
+            // so a genuine git error surfaces rather than being read as "clean".
+            try !LiveGit.capture(["-C", worktree.path, "status", "--porcelain"]).isEmpty
         }
     )
 
@@ -110,7 +124,11 @@ extension WorktreeClient: DependencyKey {
         compareURL: { _ in URL(string: "https://github.com/owner/repo/compare/main...branch?expand=1")! },
         rebaseOntoBase: { _ in },
         remove: { _ in },
-        prune: { _ in }
+        prune: { _ in },
+        // A fixed SHA means HEAD never appears to advance, so tests must opt into a successful run by
+        // stubbing `headSHA` to return distinct values — the safe default is "no work was verified".
+        headSHA: { _ in "HEAD" },
+        isDirty: { _ in false }
     )
 
     public static let previewValue = WorktreeClient(
@@ -119,7 +137,9 @@ extension WorktreeClient: DependencyKey {
         compareURL: { _ in URL(string: "https://github.com/owner/repo/compare/main...branch?expand=1")! },
         rebaseOntoBase: { _ in },
         remove: { _ in },
-        prune: { _ in }
+        prune: { _ in },
+        headSHA: { _ in "HEAD" },
+        isDirty: { _ in false }
     )
 }
 
