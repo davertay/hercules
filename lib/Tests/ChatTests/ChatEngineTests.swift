@@ -358,6 +358,50 @@ struct ChatEngineTests {
         #expect(!engine.isRunning)
     }
 
+    @Test
+    func cancelStopsInFlightTurnClearsRunningAndLeavesEngineReadyForAFreshTurn() async throws {
+        let database = try Self.makeDatabase()
+        let startCount = LockIsolated(0)
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.start = { @Sendable request in
+                startCount.withValue { $0 += 1 }
+                if startCount.value == 1 {
+                    // The first Turn hangs on a cancellable sleep so the engine stays running until stopped.
+                    try await Task.sleep(for: .seconds(60))
+                    throw CancellationError()
+                }
+                // A fresh Turn after cancellation starts a new Session and completes.
+                return Session(
+                    id: Session.ID(rawValue: UUID(100)),
+                    worktree: request.worktree, mode: request.mode, kind: request.kind
+                )
+            }
+        } operation: {
+            Self.makeEngine(database: database)
+        }
+
+        engine.draftText = "first"
+        engine.submit()
+        #expect(engine.isRunning)
+
+        // Cancellation clears the flag immediately, before the cancelled Turn finishes unwinding.
+        engine.cancel()
+        #expect(!engine.isRunning)
+        await engine.runTask?.value
+
+        // The engine accepts and runs a fresh Turn afterwards.
+        engine.draftText = "second"
+        engine.submit()
+        await engine.runTask?.value
+
+        #expect(!engine.isRunning)
+        #expect(engine.errorText == nil)
+        #expect(startCount.value == 2)
+        #expect(engine.session?.id.rawValue == UUID(100))
+    }
+
     // MARK: - Scoping and rediscovery (ADR 0005)
 
     @Test

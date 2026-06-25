@@ -18,7 +18,7 @@ public struct AppScene: Scene {
             }
         }
 
-        WorkflowContainerScene()
+        WorkflowContainerScene(registry: model.openWorkflows)
 
         TestChatScene(isEnabled: model.testChatEnabled)
 

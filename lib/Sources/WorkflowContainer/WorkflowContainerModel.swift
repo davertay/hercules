@@ -41,10 +41,21 @@ public final class WorkflowContainerModel {
     @ObservationIgnored
     @Fetch var completedPhases: [PhaseRow] = []
 
-    public init(data: WorkflowWindowData) {
+    /// Set when ``destroy()`` removed the Workflow but a git cleanup step failed — the view surfaces it as
+    /// a brief non-blocking notice before closing the window.
+    public var cleanupNotice: String?
+
+    /// The launcher's open-window registry, if this window was opened from the app. The model registers its
+    /// id on construction and unregisters on teardown so the launcher can tell which Workflows are open.
+    @ObservationIgnored
+    private let registry: OpenWorkflowRegistry?
+
+    public init(data: WorkflowWindowData, registry: OpenWorkflowRegistry? = nil) {
         id = data.id
         directory = data.directory
         repoPath = data.repoPath
+        self.registry = registry
+        registry?.register(data.id)
 
         // The worktree path is a pure convention derived from the directory, so a state-restored reopen
         // recomputes it and reads the already-existing on-disk worktree without re-creating it.
@@ -112,6 +123,49 @@ public final class WorkflowContainerModel {
     deinit {
         executeModel?.cancelRun()
         validateModel?.cancelAll()
+        registry?.unregisterOnTeardown(id)
+    }
+
+    /// `true` while any one of the five Phases' agents is running — the chat Phases (Design/PRD/Allocate)
+    /// mid-Turn, the Execute run loop in flight, or any Validate Persona reviewing. The single aggregate
+    /// the toolbar consumes: ``isIdle`` gates Destroy, and this will gate Stop in a later slice.
+    public var isRunning: Bool {
+        designModel?.isBusy == true
+            || prdModel?.isBusy == true
+            || allocateModel?.isBusy == true
+            || executeModel?.isRunning == true
+            || validateModel?.isAnyRunning == true
+    }
+
+    /// The whole Workflow is quiescent — none of the five Phases' agents are running.
+    public var isIdle: Bool { !isRunning }
+
+    /// Stops every running agent across all five Phases in one call — the Workflow-level "stop
+    /// everything". The three chat Phases cancel their in-flight Turn, Execute cancels its run loop (which
+    /// leaves the in-flight Issue `failed`), and Validate cancels every in-flight Persona. Each cancel is
+    /// a no-op when its Phase is idle, so this is safe to call at any time.
+    public func stopAll() {
+        designModel?.cancel()
+        prdModel?.cancel()
+        allocateModel?.cancel()
+        executeModel?.cancelRun()
+        validateModel?.cancelAll()
+    }
+
+    /// Tears down the Workflow via ``deleteWorkflow(data:root:)``. Folder removal is the operation of
+    /// record, so the Workflow always disappears; the caller should close the window afterwards. Returns
+    /// `true` on a fully clean teardown. On a git-step failure it sets ``cleanupNotice`` and returns
+    /// `false` so the caller can surface the notice before closing — the removal is still treated as done.
+    @discardableResult
+    public func destroy() -> Bool {
+        let root = directory.deletingLastPathComponent()
+        let data = WorkflowWindowData(id: id, directory: directory, repoPath: repoPath)
+        let result = deleteWorkflow(data: data, root: root)
+        guard result.didGitCleanupSucceed else {
+            cleanupNotice = "Workflow removed, but its git branch or worktree may need manual cleanup."
+            return false
+        }
+        return true
     }
 
     /// The first Phase is always unlocked; every other unlocks once the Phase it consumes has completed.

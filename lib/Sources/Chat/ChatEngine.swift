@@ -193,6 +193,15 @@ public final class ChatEngine {
         }
     }
 
+    /// Cancels an in-flight Turn and clears `isRunning` so the UI reflects the stop immediately. The
+    /// submit task clears the flag in its own completion once the cancelled Turn unwinds; this clears it
+    /// up front rather than waiting for that. A no-op when idle, and the engine is ready for a fresh Turn
+    /// afterwards. Routed up through the chat-host models to the Workflow-level stop-all.
+    public func cancel() {
+        runTask?.cancel()
+        isRunning = false
+    }
+
     /// Starts the Session on the first call and resumes it thereafter, returning once the Turn ends.
     /// `inputs` carries reference documents: their root is exposed to the Harness and listed in the
     /// rendered prompt (ADR 0004).
