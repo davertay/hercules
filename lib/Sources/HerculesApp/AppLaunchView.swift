@@ -61,21 +61,13 @@ public struct AppLaunchView: View {
         }
         .padding(40)
         .task { workflows = listWorkflows() }
-        .confirmationDialog(
-            "Destroy this Workflow?",
+        .destroyWorkflowConfirmationDialog(
             isPresented: Binding(
                 get: { pendingDeletion != nil },
                 set: { if !$0 { pendingDeletion = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: pendingDeletion
-        ) { workflow in
-            Button("Destroy Workflow", role: .destructive) { destroy(workflow) }
-            Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text(
-                "This permanently removes the Workflow and destroys any commits that aren't merged elsewhere. This can't be undone."
             )
+        ) {
+            if let workflow = pendingDeletion { destroy(workflow) }
         }
     }
 

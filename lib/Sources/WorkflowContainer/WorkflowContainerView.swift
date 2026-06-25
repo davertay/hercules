@@ -101,18 +101,7 @@ public struct WorkflowContainerView: View {
                 .help("Permanently remove this Workflow — enabled only while it's idle")
             }
         }
-        .confirmationDialog(
-            "Destroy this Workflow?",
-            isPresented: $isConfirmingDestroy,
-            titleVisibility: .visible
-        ) {
-            Button("Destroy Workflow", role: .destructive) { destroy() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(
-                "This permanently removes the Workflow and destroys any commits that aren't merged elsewhere. This can't be undone."
-            )
-        }
+        .destroyWorkflowConfirmationDialog(isPresented: $isConfirmingDestroy, action: destroy)
         .overlay(alignment: .bottom) {
             if let notice = model.cleanupNotice {
                 TransientToast(message: notice, systemImage: "exclamationmark.triangle.fill", tint: .yellow)
