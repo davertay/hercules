@@ -205,4 +205,15 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         )
         .execute(db)
     }
+
+    // The user-editable Workflow title, shown after the repo name in the window title bar and launcher.
+    // Empty means unnamed — the UI falls back to the bare repo name.
+    migrator.registerMigration("Add title to workflow") { db in
+        try #sql(
+            """
+            ALTER TABLE "workflow" ADD COLUMN "title" TEXT NOT NULL DEFAULT ''
+            """
+        )
+        .execute(db)
+    }
 }

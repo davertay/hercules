@@ -8,6 +8,7 @@ import Validate
 public struct WorkflowContainerView: View {
     let model: WorkflowContainerModel
     @State private var selectedPhase: Phase? = .design
+    @State private var showingSettings = false
 
     public init(model: WorkflowContainerModel) {
         self.model = model
@@ -18,61 +19,79 @@ public struct WorkflowContainerView: View {
             List(Phase.allCases, selection: $selectedPhase) { phase in
                 PhaseSidebarRow(phase: phase, isUnlocked: model.isUnlocked(phase))
             }
-            .navigationTitle(model.title)
         } detail: {
-            switch selectedPhase {
-            case .some(let phase) where !model.isUnlocked(phase):
-                PhasePlaceholderView(phase: phase, isUnlocked: false)
-            case .design:
-                if let designModel = model.designModel {
-                    DesignView(model: designModel)
-                } else {
-                    ContentUnavailableView(
-                        "Workflow store unavailable",
-                        systemImage: "exclamationmark.triangle"
-                    )
+            phaseDetail
+                .navigationTitle(model.title)
+                .navigationSubtitle(model.subtitle(phase: selectedPhase))
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingSettings = true
+                } label: {
+                    Label("Workflow Settings", systemImage: "gearshape")
                 }
-            case .prd:
-                if let prdModel = model.prdModel {
-                    PRDView(model: prdModel)
-                } else {
-                    ContentUnavailableView(
-                        "Workflow store unavailable",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                }
-            case .allocate:
-                if let allocateModel = model.allocateModel {
-                    AllocateView(model: allocateModel)
-                } else {
-                    ContentUnavailableView(
-                        "Workflow store unavailable",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                }
-            case .execute:
-                if let executeModel = model.executeModel {
-                    ExecuteView(model: executeModel)
-                } else {
-                    ContentUnavailableView(
-                        "Workflow store unavailable",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                }
-            case .validate:
-                if let validateModel = model.validateModel {
-                    ValidateView(model: validateModel)
-                } else {
-                    ContentUnavailableView(
-                        "Workflow store unavailable",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                }
-            case .some(let phase):
-                PhasePlaceholderView(phase: phase, isUnlocked: true)
-            case .none:
-                ContentUnavailableView("Select a Phase", systemImage: "sidebar.left")
             }
+        }
+        .sheet(isPresented: $showingSettings) {
+            WorkflowSettingsView(model: model)
+        }
+    }
+
+    @ViewBuilder
+    private var phaseDetail: some View {
+        switch selectedPhase {
+        case .some(let phase) where !model.isUnlocked(phase):
+            PhasePlaceholderView(phase: phase, isUnlocked: false)
+        case .design:
+            if let designModel = model.designModel {
+                DesignView(model: designModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        case .prd:
+            if let prdModel = model.prdModel {
+                PRDView(model: prdModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        case .allocate:
+            if let allocateModel = model.allocateModel {
+                AllocateView(model: allocateModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        case .execute:
+            if let executeModel = model.executeModel {
+                ExecuteView(model: executeModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        case .validate:
+            if let validateModel = model.validateModel {
+                ValidateView(model: validateModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        case .some(let phase):
+            PhasePlaceholderView(phase: phase, isUnlocked: true)
+        case .none:
+            ContentUnavailableView("Select a Phase", systemImage: "sidebar.left")
         }
     }
 }
@@ -105,7 +124,6 @@ struct PhasePlaceholderView: View {
         } description: {
             Text(description)
         }
-        .navigationTitle(phase.title)
     }
 
     private var description: String {

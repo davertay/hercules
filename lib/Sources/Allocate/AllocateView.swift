@@ -28,7 +28,6 @@ public struct AllocateView: View {
             ChatComposer(engine: model.engine)
         }
         .frame(minWidth: 500, minHeight: 400)
-        .navigationTitle("Allocate")
         .toolbar {
             if !model.isIntake {
                 ToolbarItem {

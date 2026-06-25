@@ -41,6 +41,11 @@ public final class WorkflowContainerModel {
     @ObservationIgnored
     @Fetch var completedPhases: [PhaseRow] = []
 
+    /// The Workflow's own row, observed so an edit to its `title` flows live to the window title bar,
+    /// the sidebar, and the settings sheet.
+    @ObservationIgnored
+    @Fetch var workflowRow: WorkflowRow?
+
     public init(data: WorkflowWindowData) {
         id = data.id
         directory = data.directory
@@ -54,7 +59,7 @@ public final class WorkflowContainerModel {
         self.database = database
         if let database {
             // Scope `defaultDatabase` so the models' fetches observe this Workflow's Store.
-            let (model, prd, allocate, execute, validate, phases): (DesignModel, PRDModel, AllocateModel, ExecuteModel, ValidateModel, Fetch<[PhaseRow]>) = withDependencies {
+            let (model, prd, allocate, execute, validate, phases, row): (DesignModel, PRDModel, AllocateModel, ExecuteModel, ValidateModel, Fetch<[PhaseRow]>, Fetch<WorkflowRow?>) = withDependencies {
                 $0.defaultDatabase = database
             } operation: {
                 let model = DesignModel(
@@ -89,7 +94,12 @@ public final class WorkflowContainerModel {
                     CompletedPhasesRequest(workflowID: data.id),
                     animation: .default
                 )
-                return (model, prd, allocate, execute, validate, phases)
+                let row = Fetch(
+                    wrappedValue: nil,
+                    WorkflowRowRequest(workflowID: data.id),
+                    animation: .default
+                )
+                return (model, prd, allocate, execute, validate, phases, row)
             }
             designModel = model
             prdModel = prd
@@ -97,6 +107,7 @@ public final class WorkflowContainerModel {
             executeModel = execute
             validateModel = validate
             _completedPhases = phases
+            _workflowRow = row
         } else {
             designModel = nil
             prdModel = nil
@@ -104,6 +115,7 @@ public final class WorkflowContainerModel {
             executeModel = nil
             validateModel = nil
             _completedPhases = Fetch(wrappedValue: [])
+            _workflowRow = Fetch(wrappedValue: nil)
         }
     }
 
@@ -120,8 +132,35 @@ public final class WorkflowContainerModel {
         return completedPhases.contains { $0.kind == predecessor.rawValue }
     }
 
+    /// The window/sidebar title: the repo name prefix plus the user-editable title.
     var title: String {
-        repoPath.isEmpty ? "Workflow" : URL(fileURLWithPath: repoPath).lastPathComponent
+        workflowWindowDisplayTitle(repoPath: repoPath, title: rawTitle)
+    }
+
+    /// The user-editable title alone (without the repo prefix), as stored. Empty means unnamed.
+    var rawTitle: String {
+        workflowRow?.title ?? ""
+    }
+
+    func subtitle(phase: Phase?) -> String {
+        workflowWindowDisplaySubtitle(repoPath: repoPath, phase: phase)
+    }
+
+    /// Persists a new user-editable title, bumping `updatedAt`. Invoked from the settings sheet's Done.
+    public func updateTitle(_ newTitle: String) {
+        @Dependency(\.date.now) var now
+        guard let database else { return }
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let workflowID = id
+        try? database.write { db in
+            try WorkflowRow
+                .where { $0.id.eq(workflowID) }
+                .update {
+                    $0.title = trimmed
+                    $0.updatedAt = now
+                }
+                .execute(db)
+        }
     }
 
     /// The app binary re-executed — it branches into the stdio server at `@main` before AppKit boots,
@@ -140,5 +179,16 @@ struct CompletedPhasesRequest: FetchKeyRequest {
             .where { $0.status.eq("complete") }
             .where { !$0.isDeleted }
             .fetchAll(db)
+    }
+}
+
+struct WorkflowRowRequest: FetchKeyRequest {
+    let workflowID: UUID
+
+    func fetch(_ db: Database) throws -> WorkflowRow? {
+        try WorkflowRow
+            .where { $0.id.eq(workflowID) }
+            .where { !$0.isDeleted }
+            .fetchOne(db)
     }
 }

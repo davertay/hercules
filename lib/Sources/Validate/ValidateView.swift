@@ -36,7 +36,6 @@ public struct ValidateView: View {
             }
         }
         .frame(minWidth: 700, minHeight: 400)
-        .navigationTitle("Validate")
         .task { await model.refresh() }
         .overlay(alignment: .bottom) {
             if let confirmation = model.pullRequestConfirmation {

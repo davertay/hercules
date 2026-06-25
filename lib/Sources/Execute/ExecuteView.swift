@@ -65,7 +65,6 @@ public struct ExecuteView: View {
             }
         }
         .frame(minWidth: 700, minHeight: 400)
-        .navigationTitle("Execute")
         .task { await model.refresh() }
         .toolbar {
             ToolbarItemGroup {
