@@ -29,7 +29,7 @@ public struct DesignView: View {
         .frame(minWidth: 500, minHeight: 400)
         .toolbar {
             if model.isGenerateSummaryAvailable {
-                ToolbarItem {
+                ToolbarItem(placement: .primaryAction) {
                     Button("Generate Design Summary", systemImage: "doc.text") {
                         model.generateSummary()
                     }

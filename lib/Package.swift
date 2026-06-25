@@ -315,6 +315,7 @@ let package = Package(
                 "Allocate",
                 "Design",
                 "Execute",
+                "Material",
                 "PRD",
                 "Store",
                 "Validate",
@@ -328,6 +329,14 @@ let package = Package(
             dependencies: [
                 "WorkflowContainer",
                 "Worktree",
+                "Agent",
+                "Allocate",
+                "Chat",
+                "Design",
+                "Execute",
+                "PRD",
+                "Store",
+                "Validate",
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
             ]

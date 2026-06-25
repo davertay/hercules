@@ -1,6 +1,7 @@
 import Allocate
 import Design
 import Execute
+import Material
 import PRD
 import SwiftUI
 import Validate
@@ -9,6 +10,8 @@ public struct WorkflowContainerView: View {
     let model: WorkflowContainerModel
     @State private var selectedPhase: Phase? = .design
     @State private var showingSettings = false
+    @State private var isConfirmingDestroy = false
+    @Environment(\.dismiss) private var dismiss
 
     public init(model: WorkflowContainerModel) {
         self.model = model
@@ -25,12 +28,40 @@ public struct WorkflowContainerView: View {
                 .navigationSubtitle(model.subtitle(phase: selectedPhase))
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem(placement: .confirmationAction) {
                 Button {
                     showingSettings = true
                 } label: {
                     Label("Workflow Settings", systemImage: "gearshape")
                 }
+            }
+            ToolbarItem(placement: .cancellationAction) {
+                Button {
+                    model.stopAll()
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                }
+                // Always visible; enabled only while the Workflow is busy. Stop and Destroy are mutually
+                // exclusive, so their greyed states read as the Workflow's busy/idle status at a glance.
+                .disabled(!model.isRunning)
+                .help("Stop every running agent across all Phases — enabled only while the Workflow is busy")
+            }
+            ToolbarItem(placement: .destructiveAction) {
+                Button(role: .destructive) {
+                    isConfirmingDestroy = true
+                } label: {
+                    Label("Destroy Workflow", systemImage: "trash")
+                }
+                // Always visible, but only while the whole Workflow is quiescent — destroying mid-run would
+                // pull the rug from under a live agent.
+                .disabled(!model.isIdle)
+                .help("Permanently remove this Workflow — enabled only while it's idle")
+            }
+        }
+        .destroyWorkflowConfirmationDialog(isPresented: $isConfirmingDestroy, action: destroy)
+        .overlay(alignment: .bottom) {
+            if let notice = model.cleanupNotice {
+                TransientToast(message: notice, systemImage: "exclamationmark.triangle.fill", tint: .yellow)
             }
         }
         .sheet(isPresented: $showingSettings) {
@@ -94,7 +125,21 @@ public struct WorkflowContainerView: View {
             ContentUnavailableView("Select a Phase", systemImage: "sidebar.left")
         }
     }
+
+    /// Tears down the Workflow and closes the window. A clean teardown closes immediately; a git-cleanup
+    /// failure first surfaces a brief non-blocking notice — the removal is done regardless — then closes.
+    private func destroy() {
+        if model.destroy() {
+            dismiss()
+        } else {
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                dismiss()
+            }
+        }
+    }
 }
+
 
 struct PhaseSidebarRow: View {
     let phase: Phase

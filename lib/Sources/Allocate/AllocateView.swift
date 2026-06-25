@@ -30,13 +30,11 @@ public struct AllocateView: View {
         .frame(minWidth: 500, minHeight: 400)
         .toolbar {
             if !model.isIntake {
-                ToolbarItem {
+                ToolbarItemGroup(placement: .primaryAction) {
                     Button("Propose Issues from PRD & Design", systemImage: "list.bullet.rectangle") {
                         model.propose()
                     }
                     .disabled(!model.isProposeAvailable)
-                }
-                ToolbarItem {
                     Button("Accept & Write Issues", systemImage: "checkmark.circle") {
                         model.acceptAndWrite()
                     }
