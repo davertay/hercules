@@ -65,10 +65,9 @@ public struct ExecuteView: View {
             }
         }
         .frame(minWidth: 700, minHeight: 400)
-        .navigationTitle("Execute")
         .task { await model.refresh() }
         .toolbar {
-            ToolbarItemGroup {
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     model.start()
                 } label: {

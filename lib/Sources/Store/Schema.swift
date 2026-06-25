@@ -9,6 +9,8 @@ import StructuredQueries
 public struct WorkflowRow: Identifiable, Equatable, Sendable {
     public let id: UUID
     public var repoPath: String
+    /// The user-editable title. Empty means unnamed; the UI falls back to the bare repo name.
+    public var title: String
     public var createdAt: Date
     public var updatedAt: Date
     public var isDeleted: Bool
@@ -16,12 +18,14 @@ public struct WorkflowRow: Identifiable, Equatable, Sendable {
     public init(
         id: UUID,
         repoPath: String = "",
+        title: String = "",
         createdAt: Date,
         updatedAt: Date,
         isDeleted: Bool = false
     ) {
         self.id = id
         self.repoPath = repoPath
+        self.title = title
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDeleted = isDeleted

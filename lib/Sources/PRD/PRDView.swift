@@ -31,11 +31,10 @@ public struct PRDView: View {
             }
         }
         .frame(minWidth: 500, minHeight: 400)
-        .navigationTitle("PRD")
         .toolbar {
             // Kept reachable so an errored run can be retried; gone once the Phase completes.
             if !model.isIdle && model.isGenerateAvailable {
-                ToolbarItem {
+                ToolbarItem(placement: .primaryAction) {
                     Button("Generate PRD from Design Summary", systemImage: "doc.text") {
                         model.generate()
                     }

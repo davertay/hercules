@@ -28,16 +28,13 @@ public struct AllocateView: View {
             ChatComposer(engine: model.engine)
         }
         .frame(minWidth: 500, minHeight: 400)
-        .navigationTitle("Allocate")
         .toolbar {
             if !model.isIntake {
-                ToolbarItem {
+                ToolbarItemGroup(placement: .primaryAction) {
                     Button("Propose Issues from PRD & Design", systemImage: "list.bullet.rectangle") {
                         model.propose()
                     }
                     .disabled(!model.isProposeAvailable)
-                }
-                ToolbarItem {
                     Button("Accept & Write Issues", systemImage: "checkmark.circle") {
                         model.acceptAndWrite()
                     }

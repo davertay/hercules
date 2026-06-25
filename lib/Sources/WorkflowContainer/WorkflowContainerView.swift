@@ -9,6 +9,7 @@ import Validate
 public struct WorkflowContainerView: View {
     let model: WorkflowContainerModel
     @State private var selectedPhase: Phase? = .design
+    @State private var showingSettings = false
     @State private var isConfirmingDestroy = false
     @Environment(\.dismiss) private var dismiss
 
@@ -21,64 +22,20 @@ public struct WorkflowContainerView: View {
             List(Phase.allCases, selection: $selectedPhase) { phase in
                 PhaseSidebarRow(phase: phase, isUnlocked: model.isUnlocked(phase))
             }
-            .navigationTitle(model.title)
         } detail: {
-            switch selectedPhase {
-            case .some(let phase) where !model.isUnlocked(phase):
-                PhasePlaceholderView(phase: phase, isUnlocked: false)
-            case .design:
-                if let designModel = model.designModel {
-                    DesignView(model: designModel)
-                } else {
-                    ContentUnavailableView(
-                        "Workflow store unavailable",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                }
-            case .prd:
-                if let prdModel = model.prdModel {
-                    PRDView(model: prdModel)
-                } else {
-                    ContentUnavailableView(
-                        "Workflow store unavailable",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                }
-            case .allocate:
-                if let allocateModel = model.allocateModel {
-                    AllocateView(model: allocateModel)
-                } else {
-                    ContentUnavailableView(
-                        "Workflow store unavailable",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                }
-            case .execute:
-                if let executeModel = model.executeModel {
-                    ExecuteView(model: executeModel)
-                } else {
-                    ContentUnavailableView(
-                        "Workflow store unavailable",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                }
-            case .validate:
-                if let validateModel = model.validateModel {
-                    ValidateView(model: validateModel)
-                } else {
-                    ContentUnavailableView(
-                        "Workflow store unavailable",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                }
-            case .some(let phase):
-                PhasePlaceholderView(phase: phase, isUnlocked: true)
-            case .none:
-                ContentUnavailableView("Select a Phase", systemImage: "sidebar.left")
-            }
+            phaseDetail
+                .navigationTitle(model.title)
+                .navigationSubtitle(model.subtitle(phase: selectedPhase))
         }
         .toolbar {
-            ToolbarItem {
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    showingSettings = true
+                } label: {
+                    Label("Workflow Settings", systemImage: "gearshape")
+                }
+            }
+            ToolbarItem(placement: .cancellationAction) {
                 Button {
                     model.stopAll()
                 } label: {
@@ -89,7 +46,7 @@ public struct WorkflowContainerView: View {
                 .disabled(!model.isRunning)
                 .help("Stop every running agent across all Phases — enabled only while the Workflow is busy")
             }
-            ToolbarItem {
+            ToolbarItem(placement: .destructiveAction) {
                 Button(role: .destructive) {
                     isConfirmingDestroy = true
                 } label: {
@@ -106,6 +63,66 @@ public struct WorkflowContainerView: View {
             if let notice = model.cleanupNotice {
                 TransientToast(message: notice, systemImage: "exclamationmark.triangle.fill", tint: .yellow)
             }
+        }
+        .sheet(isPresented: $showingSettings) {
+            WorkflowSettingsView(model: model)
+        }
+    }
+
+    @ViewBuilder
+    private var phaseDetail: some View {
+        switch selectedPhase {
+        case .some(let phase) where !model.isUnlocked(phase):
+            PhasePlaceholderView(phase: phase, isUnlocked: false)
+        case .design:
+            if let designModel = model.designModel {
+                DesignView(model: designModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        case .prd:
+            if let prdModel = model.prdModel {
+                PRDView(model: prdModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        case .allocate:
+            if let allocateModel = model.allocateModel {
+                AllocateView(model: allocateModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        case .execute:
+            if let executeModel = model.executeModel {
+                ExecuteView(model: executeModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        case .validate:
+            if let validateModel = model.validateModel {
+                ValidateView(model: validateModel)
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        case .some(let phase):
+            PhasePlaceholderView(phase: phase, isUnlocked: true)
+        case .none:
+            ContentUnavailableView("Select a Phase", systemImage: "sidebar.left")
         }
     }
 
@@ -152,7 +169,6 @@ struct PhasePlaceholderView: View {
         } description: {
             Text(description)
         }
-        .navigationTitle(phase.title)
     }
 
     private var description: String {

@@ -12,7 +12,7 @@ public struct WorkflowContainerScene: Scene {
             if let data {
                 let model = WorkflowContainerModel(data: data, registry: registry)
                 WorkflowContainerView(model: model)
-                    .navigationTitle(model.title)
+                    .navigationTitle("Scene Title")
             }
         }
         .commands {

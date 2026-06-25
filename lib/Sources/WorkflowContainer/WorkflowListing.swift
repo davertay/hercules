@@ -5,13 +5,14 @@ import Store
 /// An existing Workflow discovered on disk, for the launcher's "open existing" list.
 public struct WorkflowSummary: Identifiable, Hashable, Sendable {
     public var data: WorkflowWindowData
+    public var workflowTitle: String
     public var createdAt: Date
 
     public var id: UUID { data.id }
 
-    /// The repo's folder name, matching the open window's title.
+    /// The repo name plus the user-editable title, matching the open window's title bar.
     public var title: String {
-        data.repoPath.isEmpty ? "Workflow" : URL(fileURLWithPath: data.repoPath).lastPathComponent
+        workflowListingDisplayTitle(repoPath: data.repoPath, title: workflowTitle)
     }
 }
 
@@ -46,6 +47,7 @@ public func listWorkflows(root: URL = defaultWorkflowsRoot()) -> [WorkflowSummar
         summaries.append(
             WorkflowSummary(
                 data: WorkflowWindowData(id: row.id, directory: directory, repoPath: row.repoPath),
+                workflowTitle: row.title,
                 createdAt: row.createdAt
             )
         )

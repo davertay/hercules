@@ -27,10 +27,9 @@ public struct DesignView: View {
             ChatComposer(engine: model.engine)
         }
         .frame(minWidth: 500, minHeight: 400)
-        .navigationTitle("Design")
         .toolbar {
             if model.isGenerateSummaryAvailable {
-                ToolbarItem {
+                ToolbarItem(placement: .primaryAction) {
                     Button("Generate Design Summary", systemImage: "doc.text") {
                         model.generateSummary()
                     }
