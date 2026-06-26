@@ -175,6 +175,7 @@ let package = Package(
                 "IssueGraph",
                 "Material",
                 "Store",
+                "Worktree",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
             ]
@@ -187,6 +188,7 @@ let package = Package(
                 "IssueGraph",
                 "Material",
                 "Store",
+                "Worktree",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),

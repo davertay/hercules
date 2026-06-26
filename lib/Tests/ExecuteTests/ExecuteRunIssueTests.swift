@@ -6,6 +6,7 @@ import Material
 import SQLiteData
 import Store
 import Testing
+import Worktree
 
 @testable import Execute
 
@@ -31,6 +32,7 @@ struct ExecuteRunIssueTests {
         try Self.seedIssue(database, workflowID: workflowID, number: 2, body: "Implement the thing.")
         let skill = loadSkill(.implementIssue)
         let captured = LockIsolated<StartRequest?>(nil)
+        let head = LockIsolated(0)
 
         let model = withDependencies {
             $0.defaultDatabase = database
@@ -44,6 +46,8 @@ struct ExecuteRunIssueTests {
                 Issue.record("ExecuteModel.runIssue must not resume a Session")
                 throw CancellationError()
             }
+            // HEAD advances across the run, standing in for the agent's commit so the gate passes.
+            $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
         } operation: {
             ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
         }
@@ -100,10 +104,127 @@ struct ExecuteRunIssueTests {
         #expect(failed.failureReason == AgentError.cancelled.localizedDescription)
     }
 
+    @Test("Marks failed (not done) when the Turn finishes but HEAD didn't move, with the agent's words as reason")
+    func marksFailedWhenNoCommitUsingFinalAnswer() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, body: "Do it.")
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                try await Self.startSession(
+                    for: request, id: UUID(101),
+                    finalAnswer: "I'm blocked — the file write operations require your permission."
+                )
+            }
+            // HEAD is constant across the run: the agent committed nothing.
+            $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
+        } operation: {
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+        }
+
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        await model.runIssue(issue)
+
+        let failed = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(failed.status == "failed")
+        #expect(failed.failureReason == "I'm blocked — the file write operations require your permission.")
+    }
+
+    @Test("No commit and an empty final answer falls back to the clean-tree default reason")
+    func marksFailedWhenNoCommitCleanTreeDefaultReason() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, body: "Do it.")
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                try await Self.startSession(for: request, id: UUID(101))
+            }
+            $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
+            $0.worktreeClient.isDirty = { @Sendable _ in false }
+        } operation: {
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+        }
+
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        await model.runIssue(issue)
+
+        let failed = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(failed.status == "failed")
+        #expect(failed.failureReason == "The agent produced no commit and made no changes.")
+    }
+
+    @Test("No commit but a dirty tree falls back to the committed-nothing default reason")
+    func marksFailedWhenNoCommitDirtyTreeDefaultReason() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, body: "Do it.")
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                try await Self.startSession(for: request, id: UUID(101))
+            }
+            $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
+            $0.worktreeClient.isDirty = { @Sendable _ in true }
+        } operation: {
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+        }
+
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        await model.runIssue(issue)
+
+        let failed = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(failed.status == "failed")
+        #expect(
+            failed.failureReason
+                == "The agent changed files but committed nothing — Execute requires each Issue's work to be committed."
+        )
+    }
+
+    @Test("Fails closed when HEAD can't be read — an unverifiable run is never done")
+    func marksFailedWhenHeadUnreadable() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, body: "Do it.")
+
+        let started = LockIsolated(false)
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                started.setValue(true)
+                return try await Self.startSession(for: request, id: UUID(101))
+            }
+            // Reading HEAD throws — we can't confirm work, so the run must not reach `done`.
+            $0.worktreeClient.headSHA = { @Sendable _ in throw AgentError.cancelled }
+        } operation: {
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+        }
+
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        await model.runIssue(issue)
+
+        let failed = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(failed.status == "failed")
+        #expect(failed.failureReason?.hasPrefix("Couldn't verify the worktree advanced") == true)
+        // The pre-run HEAD read failed, so the agent was never started.
+        #expect(started.value == false)
+    }
+
     // MARK: - Helpers
 
-    /// Stands in for the live client's `start`, recording the `execute` Session as the Agent would.
-    private static func startSession(for request: StartRequest, id: UUID) async throws -> Session {
+    /// Stands in for the live client's `start`, recording the `execute` Session as the Agent would. The
+    /// Turn's `finalAnswer` defaults empty; the no-commit tests set it to assert it surfaces as the reason.
+    private static func startSession(
+        for request: StartRequest, id: UUID, finalAnswer: String = ""
+    ) async throws -> Session {
         try await request.database.write { db in
             try SessionRow.insert {
                 SessionRow(
@@ -116,7 +237,7 @@ struct ExecuteRunIssueTests {
             try TurnRow.insert {
                 TurnRow(
                     id: UUID(200), sessionID: id, userPrompt: request.prompt,
-                    finalAnswer: "", createdAt: fixedDate, updatedAt: fixedDate
+                    finalAnswer: finalAnswer, createdAt: fixedDate, updatedAt: fixedDate
                 )
             }
             .execute(db)

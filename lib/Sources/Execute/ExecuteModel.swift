@@ -6,6 +6,7 @@ import Material
 import Observation
 import SQLiteData
 import Store
+import Worktree
 
 /// Drives the Execute Phase: a read-only dependency DAG of the Workflow's committed Issues plus a
 /// sequential executor. It owns no chat — it observes the Issue rows and runs each behind the scenes.
@@ -33,6 +34,9 @@ public final class ExecuteModel {
 
     @ObservationIgnored
     @Dependency(\.agentClient) private var agentClient
+
+    @ObservationIgnored
+    @Dependency(\.worktreeClient) private var worktreeClient
 
     @ObservationIgnored
     @Dependency(\.date.now) private var now
@@ -177,12 +181,27 @@ public final class ExecuteModel {
     }
 
     /// Runs one Issue as a behind-the-scenes write agent and writes its status directly via the Store
-    /// (no MCP, no presented chat): `done` if the Turn finished, `failed` if it threw.
+    /// (no MCP, no presented chat). `done` is contingent on the agent committing: HEAD must advance over
+    /// the run (issue #127). A no-op, a blocked agent, or one that ended on a question all leave HEAD
+    /// where it was and are recorded `failed`, never `done`. The catch path covers a throw before any
+    /// Turn exists (e.g. a missing harness binary).
     public func runIssue(_ issue: IssueRow) async {
         let issueNumber = issue.number
         try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .inProgress, now: now)
+
+        // HEAD before the run — the baseline a commit must move off. If we can't read it we can't verify
+        // the work, so fail closed rather than fall through to `done`.
+        let before: String
         do {
-            _ = try await agentClient.start(
+            before = try worktreeClient.headSHA(worktree)
+        } catch {
+            failIssue(issueNumber, reason: verifyFailedReason(error))
+            return
+        }
+
+        let session: Session
+        do {
+            session = try await agentClient.start(
                 StartRequest(
                     prompt: issue.body,
                     worktree: worktree,
@@ -195,18 +214,52 @@ public final class ExecuteModel {
                     addDirs: [skill.folderUrl]
                 )
             )
-            try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .done, now: now)
         } catch {
             // The agent can throw before any `turn` row exists (e.g. a missing harness binary), so record
             // the reason on the Issue itself rather than relying on the transcript.
-            try? database.setIssueStatus(
-                workflowID: workflowID,
-                number: issueNumber,
-                to: .failed,
-                failureReason: error.localizedDescription,
-                now: now
-            )
+            failIssue(issueNumber, reason: error.localizedDescription)
+            return
         }
+
+        // The Turn finished without throwing, but "finished" isn't "did the work". Only a new commit —
+        // HEAD advancing — counts as `done`.
+        let after: String
+        do {
+            after = try worktreeClient.headSHA(worktree)
+        } catch {
+            failIssue(issueNumber, reason: verifyFailedReason(error))
+            return
+        }
+        if after != before {
+            try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .done, now: now)
+        } else {
+            failIssue(issueNumber, reason: noCommitReason(session: session))
+        }
+    }
+
+    private func failIssue(_ number: Int, reason: String) {
+        try? database.setIssueStatus(
+            workflowID: workflowID, number: number, to: .failed, failureReason: reason, now: now
+        )
+    }
+
+    private func verifyFailedReason(_ error: any Error) -> String {
+        "Couldn't verify the worktree advanced — reading HEAD failed: \(error.localizedDescription)"
+    }
+
+    /// Why an Issue produced no commit: the agent's own parting words (the last Turn's final answer) when
+    /// it left any — usually the clearest signal ("I'm blocked …") — else a default keyed to whether the
+    /// worktree was left dirty. `isDirty` only sharpens the wording, so a git error there falls back to
+    /// the clean-tree default rather than masking the real verdict.
+    private func noCommitReason(session: Session) -> String {
+        // `try?` flattens the helper's `String?` to a single optional, so one bind reaches the answer.
+        if let answer = try? database.latestTurnFinalAnswer(sessionID: session.id.rawValue), !answer.isEmpty {
+            return answer
+        }
+        let dirty = (try? worktreeClient.isDirty(worktree)) ?? false
+        return dirty
+            ? "The agent changed files but committed nothing — Execute requires each Issue's work to be committed."
+            : "The agent produced no commit and made no changes."
     }
 
     /// Approves a HITL Proposed Issue (ADR 0007): `proposed` → `new`, so the next run picks it up in
