@@ -19,7 +19,7 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: UUID(0), database: database, worktree: FileManager.default.temporaryDirectory)
+            ExecuteModel(workflowID: UUID(0), database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
         }
 
         #expect(model.isEmpty)
@@ -35,7 +35,7 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
         }
         try await model.$issues.load()
 
@@ -68,7 +68,7 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
         }
         try await model.$issues.load()
 
@@ -87,7 +87,7 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: UUID(0), database: database, worktree: worktree)
+            ExecuteModel(workflowID: UUID(0), database: database, worktree: worktree, workflowDirectory: FileManager.default.temporaryDirectory)
         }
 
         #expect(!model.worktreeMissing)
@@ -103,7 +103,7 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: UUID(0), database: database, worktree: worktree)
+            ExecuteModel(workflowID: UUID(0), database: database, worktree: worktree, workflowDirectory: FileManager.default.temporaryDirectory)
         }
 
         #expect(model.worktreeMissing)

@@ -49,7 +49,7 @@ struct ExecuteRunIssueTests {
             // HEAD advances across the run, standing in for the agent's commit so the gate passes.
             $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 2))
@@ -76,6 +76,114 @@ struct ExecuteRunIssueTests {
         #expect(try Self.status(database, workflowID: workflowID, number: 2) == "done")
     }
 
+    @Test("Standard mode attaches both the PRD and the Design summary, PRD first")
+    func attachesPRDThenDesignSummary() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, body: "Do it.")
+        try Self.seedCompletedPhase(
+            database, workflowID: workflowID, kind: "prd",
+            artifactPath: workflowDirectory.appendingPathComponent("phases/prd/prd.md").path, id: UUID(-2)
+        )
+        try Self.seedCompletedPhase(
+            database, workflowID: workflowID, kind: "design",
+            artifactPath: workflowDirectory.appendingPathComponent("phases/design/summary.md").path, id: UUID(-3)
+        )
+        let captured = LockIsolated<StartRequest?>(nil)
+        let head = LockIsolated(0)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                captured.setValue(request)
+                return try await Self.startSession(for: request, id: UUID(100))
+            }
+            $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
+        } operation: {
+            ExecuteModel(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory, workflowDirectory: workflowDirectory
+            )
+        }
+
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        await model.runIssue(issue)
+
+        let inputs = try #require(captured.value?.inputs)
+        #expect(inputs.root == workflowDirectory)
+        #expect(inputs.relativePaths == ["phases/prd/prd.md", "phases/design/summary.md"])
+    }
+
+    @Test("Small Job mode (no completed-Phase Artifacts) attaches nothing and still runs the Issue")
+    func attachesNothingWhenNoArtifacts() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, body: "Do it.")
+        let captured = LockIsolated<StartRequest?>(nil)
+        let head = LockIsolated(0)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                captured.setValue(request)
+                return try await Self.startSession(for: request, id: UUID(100))
+            }
+            $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
+        } operation: {
+            ExecuteModel(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: Self.makeWorkflowDirectory()
+            )
+        }
+
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        await model.runIssue(issue)
+
+        #expect(captured.value?.inputs == nil)
+        #expect(try Self.status(database, workflowID: workflowID, number: 1) == "done")
+    }
+
+    @Test("Partial: only the present Artifact is attached, the absent one skipped without failing")
+    func attachesOnlyPresentArtifact() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, body: "Do it.")
+        // PRD present, no design summary (e.g. it was never produced).
+        try Self.seedCompletedPhase(
+            database, workflowID: workflowID, kind: "prd",
+            artifactPath: workflowDirectory.appendingPathComponent("phases/prd/prd.md").path, id: UUID(-2)
+        )
+        let captured = LockIsolated<StartRequest?>(nil)
+        let head = LockIsolated(0)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                captured.setValue(request)
+                return try await Self.startSession(for: request, id: UUID(100))
+            }
+            $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
+        } operation: {
+            ExecuteModel(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory, workflowDirectory: workflowDirectory
+            )
+        }
+
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        await model.runIssue(issue)
+
+        let inputs = try #require(captured.value?.inputs)
+        #expect(inputs.relativePaths == ["phases/prd/prd.md"])
+        #expect(try Self.status(database, workflowID: workflowID, number: 1) == "done")
+    }
+
     @Test("Marks the Issue failed when the Turn errors")
     func marksFailedOnTurnError() async throws {
         let database = try Self.makeDatabase()
@@ -91,7 +199,7 @@ struct ExecuteRunIssueTests {
                 throw AgentError.cancelled
             }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -122,7 +230,7 @@ struct ExecuteRunIssueTests {
             // HEAD is constant across the run: the agent committed nothing.
             $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -148,7 +256,7 @@ struct ExecuteRunIssueTests {
             $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
             $0.worktreeClient.isDirty = { @Sendable _ in false }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -174,7 +282,7 @@ struct ExecuteRunIssueTests {
             $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
             $0.worktreeClient.isDirty = { @Sendable _ in true }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -205,7 +313,7 @@ struct ExecuteRunIssueTests {
             // Reading HEAD throws — we can't confirm work, so the run must not reach `done`.
             $0.worktreeClient.headSHA = { @Sendable _ in throw AgentError.cancelled }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -265,6 +373,27 @@ struct ExecuteRunIssueTests {
             }
             .execute(db)
         }
+    }
+
+    private static func seedCompletedPhase(
+        _ database: any DatabaseWriter, workflowID: UUID, kind: String, artifactPath: String, id: UUID
+    ) throws {
+        try database.write { db in
+            try PhaseRow.insert {
+                PhaseRow(
+                    id: id, workflowID: workflowID, kind: kind, status: "complete",
+                    artifactPath: artifactPath, createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+    }
+
+    /// A distinct on-disk-style root per test so the relative-path computation has a stable prefix; the
+    /// paths need not actually exist — attachment keys off the Phase row, not the filesystem.
+    private static func makeWorkflowDirectory() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("ExecuteRunIssueTests-WF-\(UUID().uuidString)", isDirectory: true)
     }
 
     private static func issue(
