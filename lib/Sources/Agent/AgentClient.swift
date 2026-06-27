@@ -87,7 +87,7 @@ final class LiveAgentClient: Sendable {
             }
         }
 
-        let sessionId = Session.ID(rawValue: UUID())
+        let sessionId = Session.ID(rawValue: request.sessionID ?? UUID())
         let session = Session(
             id: sessionId,
             worktree: request.worktree,

@@ -4,9 +4,6 @@ import SQLiteData
 import Store
 
 extension ExecuteModel {
-    /// Seeds a committed dependency graph for the preview harness so the Execute surface renders its DAG
-    /// without an Agent. Statuses span the vocabulary so every node colour is exercised, and two HITL
-    /// Proposed Issues (dependency-free) exercise the isolated-node band at the bottom of the layout.
     public static func seedCommittedIssuesPreview(at directory: URL, workflowID: UUID) throws {
         let database = try openWorkflowDatabase(at: directory)
         let now = Date(timeIntervalSince1970: 1_700_000_000)
@@ -44,7 +41,6 @@ extension ExecuteModel {
                          createdAt: now, updatedAt: now),
                 IssueRow(id: UUID(), workflowID: workflowID, number: 7, title: "Cancelled spike",
                          dependencies: [2], status: "skipped", createdAt: now, updatedAt: now),
-                // HITL Proposed Issues from a Validate review — dependency-free, so they park in the band.
                 IssueRow(id: UUID(), workflowID: workflowID, number: 8, title: "Don't persist blank rows",
                          dependencies: [], status: "proposed", createdAt: now, updatedAt: now),
                 IssueRow(id: UUID(), workflowID: workflowID, number: 9, title: "Remove duplicate modifier",
@@ -53,12 +49,69 @@ extension ExecuteModel {
             for issue in issues {
                 try IssueRow.insert { issue }.execute(db)
             }
+
+            try seedActivityPreview(
+                db, workflowID: workflowID, issueNumber: 1,
+                tools: 21, steps: 9, durationMs: 83_000, costUSD: 0.04, now: now
+            )
+            try seedActivityPreview(
+                db, workflowID: workflowID, issueNumber: 3,
+                tools: 5, steps: 2, durationMs: nil, costUSD: nil, now: now
+            )
+            try seedActivityPreview(
+                db, workflowID: workflowID, issueNumber: 6,
+                tools: 12, steps: 3, durationMs: 12_000, costUSD: 0.01, now: now
+            )
         }
     }
 
-    /// Eagerly loads the Issue fetch so the DAG is populated before the screenshot, not racing it.
+    private static func seedActivityPreview(
+        _ db: Database, workflowID: UUID, issueNumber: Int, tools: Int, steps: Int,
+        durationMs: Int?, costUSD: Double?, now: Date
+    ) throws {
+        let sessionID = UUID()
+        let turnID = UUID()
+        try SessionRow.insert {
+            SessionRow(
+                id: sessionID, workflowID: workflowID, worktreePath: "/worktree",
+                mode: "write", kind: SessionKind.execute.rawValue, issueNumber: issueNumber,
+                createdAt: now, updatedAt: now
+            )
+        }
+        .execute(db)
+        try TurnRow.insert {
+            TurnRow(
+                id: turnID, sessionID: sessionID, durationMs: durationMs, costUSD: costUSD,
+                createdAt: now, updatedAt: now
+            )
+        }
+        .execute(db)
+        var position = 0
+        for _ in 0..<tools {
+            try ContentBlockRow.insert {
+                ContentBlockRow(
+                    id: UUID(), turnID: turnID, position: position, role: "assistant", kind: "tool_use",
+                    toolName: "Edit", createdAt: now, updatedAt: now
+                )
+            }
+            .execute(db)
+            position += 1
+        }
+        for _ in 0..<steps {
+            try ContentBlockRow.insert {
+                ContentBlockRow(
+                    id: UUID(), turnID: turnID, position: position, role: "assistant", kind: "text",
+                    createdAt: now, updatedAt: now
+                )
+            }
+            .execute(db)
+            position += 1
+        }
+    }
+
     public func loadIssuesForPreview() async {
         try? await $issues.load()
+        try? await $activityCounts.load()
     }
 }
 #endif

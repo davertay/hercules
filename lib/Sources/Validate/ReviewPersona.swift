@@ -15,8 +15,6 @@ public enum ReviewPersona: String, CaseIterable, Sendable {
         }
     }
 
-    /// Static catalog text labelling the card and shown in the inspector — there is no per-run headline,
-    /// only the captured Summary.
     public var description: String {
         switch self {
         case .codeQuality:
@@ -26,7 +24,6 @@ public enum ReviewPersona: String, CaseIterable, Sendable {
         }
     }
 
-    /// The bundled Skill driving this Persona's read-only review run.
     public var skill: Skill {
         switch self {
         case .codeQuality: .reviewCodeQuality
@@ -34,7 +31,6 @@ public enum ReviewPersona: String, CaseIterable, Sendable {
         }
     }
 
-    /// The resolved skill resource (prompt file + its folder), loaded from the Material bundle.
     public var skillResource: SkillResource {
         loadSkill(skill)
     }

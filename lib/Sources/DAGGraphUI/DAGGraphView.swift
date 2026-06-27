@@ -5,13 +5,14 @@ import SwiftUI
 /// over a background `EdgesLayer`. Cards publish their frames as `NodeBoundsKey` anchors that
 /// `EdgesLayer` resolves to draw edges — no grid math, edges track the real rendered frames across
 /// reflows. A foundation view with no concept of any Phase; feature surfaces embed it.
-public struct DAGGraphView: View {
+public struct DAGGraphView<NodeContent: View>: View {
     let layoutNodes: [IssueGraph.LayoutNode]
     let nodesByNumber: [Int: DAGNode]
     let metrics: DAGGraphMetrics
     let palette: StatusPalette
     let selectedID: Int?
     let onSelectNode: ((Int) -> Void)?
+    let nodeContent: (DAGNode, _ isSelected: Bool) -> NodeContent
 
     public init(
         layoutNodes: [IssueGraph.LayoutNode],
@@ -19,7 +20,8 @@ public struct DAGGraphView: View {
         metrics: DAGGraphMetrics,
         palette: StatusPalette,
         selectedID: Int? = nil,
-        onSelectNode: ((Int) -> Void)? = nil
+        onSelectNode: ((Int) -> Void)? = nil,
+        @ViewBuilder nodeContent: @escaping (DAGNode, _ isSelected: Bool) -> NodeContent
     ) {
         self.layoutNodes = layoutNodes
         self.nodesByNumber = nodesByNumber
@@ -27,6 +29,29 @@ public struct DAGGraphView: View {
         self.palette = palette
         self.selectedID = selectedID
         self.onSelectNode = onSelectNode
+        self.nodeContent = nodeContent
+    }
+
+    /// Convenience initializer defaulting each card to the built-in `NodeView`, so callers that don't need
+    /// custom card content (previews, the preview harness) keep their existing call site unchanged.
+    public init(
+        layoutNodes: [IssueGraph.LayoutNode],
+        nodesByNumber: [Int: DAGNode],
+        metrics: DAGGraphMetrics,
+        palette: StatusPalette,
+        selectedID: Int? = nil,
+        onSelectNode: ((Int) -> Void)? = nil
+    ) where NodeContent == NodeView {
+        self.init(
+            layoutNodes: layoutNodes,
+            nodesByNumber: nodesByNumber,
+            metrics: metrics,
+            palette: palette,
+            selectedID: selectedID,
+            onSelectNode: onSelectNode
+        ) { node, isSelected in
+            NodeView(node: node, metrics: metrics, palette: palette, isSelected: isSelected)
+        }
     }
 
     private var rows: [Row] {
@@ -67,12 +92,7 @@ public struct DAGGraphView: View {
             ForEach(rows) { row in
                 HStack(alignment: .top, spacing: metrics.columnGap) {
                     ForEach(row.nodes) { node in
-                        NodeView(
-                            node: node,
-                            metrics: metrics,
-                            palette: palette,
-                            isSelected: node.number == selectedID
-                        )
+                        nodeContent(node, node.number == selectedID)
                         .contentShape(
                             RoundedRectangle(cornerRadius: metrics.nodeCornerRadius)
                         )
