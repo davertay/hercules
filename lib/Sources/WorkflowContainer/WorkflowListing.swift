@@ -46,7 +46,12 @@ public func listWorkflows(root: URL = defaultWorkflowsRoot()) -> [WorkflowSummar
 
         summaries.append(
             WorkflowSummary(
-                data: WorkflowWindowData(id: row.id, directory: directory, repoPath: row.repoPath),
+                data: WorkflowWindowData(
+                    id: row.id,
+                    directory: directory,
+                    repoPath: row.repoPath,
+                    mode: WorkflowMode(rawValue: row.mode) ?? .standard
+                ),
                 workflowTitle: row.title,
                 createdAt: row.createdAt
             )

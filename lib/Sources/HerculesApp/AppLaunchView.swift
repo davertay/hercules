@@ -1,3 +1,4 @@
+import Store
 import SwiftUI
 import WorkflowContainer
 
@@ -16,8 +17,14 @@ public struct AppLaunchView: View {
         VStack(spacing: 16) {
             Text("Hercules")
                 .font(.largeTitle)
-            Button("New Workflow") {
-                newWorkflow(openWindow: openWindow)
+            HStack(spacing: 12) {
+                Button("New Workflow") {
+                    newWorkflow(openWindow: openWindow, mode: .standard)
+                }
+                .buttonStyle(.borderedProminent)
+                Button("New Small Job") {
+                    newWorkflow(openWindow: openWindow, mode: .small)
+                }
             }
 
             if !workflows.isEmpty {

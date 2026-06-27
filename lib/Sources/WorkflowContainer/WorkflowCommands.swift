@@ -8,7 +8,10 @@ public struct WorkflowCommands: Commands {
     public var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("New Workflow") {
-                newWorkflow(openWindow: openWindow)
+                newWorkflow(openWindow: openWindow, mode: .standard)
+            }
+            Button("New Small Job") {
+                newWorkflow(openWindow: openWindow, mode: .small)
             }
         }
     }
