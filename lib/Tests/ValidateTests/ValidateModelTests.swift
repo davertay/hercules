@@ -76,7 +76,48 @@ struct ValidateModelTests {
         #expect(row.status == "reviewed")
         #expect(row.summary == "The code reads cleanly.")
         #expect(row.failureReason == nil)
-        #expect(row.sessionID == UUID(100))
+        // Linked before the run to the id the model generated and passed in, not the stub's fallback.
+        #expect(row.sessionID == request.sessionID)
+    }
+
+    @Test("Forward-links the Session before the run starts, so activity maps to the Persona live")
+    func linksSessionBeforeRunStarts() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        let linkedDuringRun = LockIsolated<UUID?>(nil)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.uuid = .incrementing
+            $0.agentClient.start = { @Sendable request in
+                // The forward-link must already exist while the Turn is streaming — that's what lets the
+                // live `@Fetch` attribute the streamed blocks to this Persona's card.
+                let row = try await database.read { db in
+                    try ReviewRow
+                        .where { $0.workflowID.eq(workflowID) && $0.kind.eq("code-quality") }
+                        .fetchOne(db)
+                }
+                linkedDuringRun.setValue(row?.sessionID)
+                return try await Self.startSession(
+                    for: request, id: UUID(100), finalAnswer: "The code reads cleanly."
+                )
+            }
+        } operation: {
+            ValidateModel(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory,
+                mcpServerCommand: "/path/to/Hercules"
+            )
+        }
+
+        await Self.runScoped(model, .codeQuality)
+
+        let row = try #require(try Self.review(database, workflowID: workflowID, kind: "code-quality"))
+        #expect(linkedDuringRun.value == row.sessionID)
+        #expect(row.sessionID != nil)
     }
 
     @Test("Records failed with the reason when the review Turn throws")
@@ -449,11 +490,14 @@ struct ValidateModelTests {
     private static func startSession(
         for request: StartRequest?, id: UUID, finalAnswer: String
     ) async throws -> Session {
+        // Mirror the live client: record under the caller-supplied `sessionID` when present, so the
+        // forward-link the model wrote before the run matches the Session this records the Turn under.
+        let sessionID = request?.sessionID ?? id
         if let request {
             try await request.database.write { db in
                 try SessionRow.insert {
                     SessionRow(
-                        id: id, workflowID: request.workflowID, worktreePath: request.worktree.path,
+                        id: sessionID, workflowID: request.workflowID, worktreePath: request.worktree.path,
                         mode: request.mode.rawValue, kind: request.kind.rawValue,
                         issueNumber: nil, createdAt: fixedDate, updatedAt: fixedDate
                     )
@@ -461,20 +505,20 @@ struct ValidateModelTests {
                 .execute(db)
                 try TurnRow.insert {
                     TurnRow(
-                        id: UUID(), sessionID: id, userPrompt: request.prompt,
+                        id: UUID(), sessionID: sessionID, userPrompt: request.prompt,
                         finalAnswer: finalAnswer, createdAt: fixedDate, updatedAt: fixedDate
                     )
                 }
                 .execute(db)
             }
             return Session(
-                id: Session.ID(rawValue: id), worktree: request.worktree, mode: request.mode,
+                id: Session.ID(rawValue: sessionID), worktree: request.worktree, mode: request.mode,
                 kind: request.kind, skillFiles: request.skillFiles, addDirs: request.addDirs,
                 mcpServers: request.mcpServers
             )
         }
         return Session(
-            id: Session.ID(rawValue: id), worktree: FileManager.default.temporaryDirectory,
+            id: Session.ID(rawValue: sessionID), worktree: FileManager.default.temporaryDirectory,
             mode: .readOnly, kind: .validate
         )
     }

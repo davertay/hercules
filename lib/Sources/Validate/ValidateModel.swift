@@ -50,6 +50,9 @@ public final class ValidateModel {
     @Dependency(\.worktreeClient) private var worktreeClient
 
     @ObservationIgnored
+    @Dependency(\.uuid) private var uuid
+
+    @ObservationIgnored
     private let database: any DatabaseWriter
 
     @ObservationIgnored
@@ -198,10 +201,14 @@ public final class ValidateModel {
 
     func review(_ persona: ReviewPersona) async {
         let kind = persona.rawValue
+        // Forward-link the Session before the run starts (not after), so `ReviewActivityRequest` can map
+        // the streaming Turn back to this Persona and the card's activity updates live.
+        let sessionID = uuid()
         try? database.upsertReview(workflowID: workflowID, kind: kind, to: .running, now: now)
+        try? database.setReviewSession(workflowID: workflowID, kind: kind, sessionID: sessionID, now: now)
         do {
             let resource = persona.skillResource
-            let session = try await agentClient.start(
+            _ = try await agentClient.start(
                 StartRequest(
                     prompt: Self.reviewPrompt,
                     worktree: worktree,
@@ -209,17 +216,15 @@ public final class ValidateModel {
                     database: database,
                     workflowID: workflowID,
                     kind: .validate,
+                    sessionID: sessionID,
                     skillFiles: [resource.fileUrl],
                     addDirs: [resource.folderUrl],
                     mcpServers: [proposeServer()]
                 )
             )
-            try? database.setReviewSession(
-                workflowID: workflowID, kind: kind, sessionID: session.id.rawValue, now: now
-            )
             // The Summary is the Turn's final answer (same mechanism as Design/PRD finalization), but the
             // sink is the row's `summary` column rather than a markdown Artifact.
-            let summary = try? database.latestFinalAnswer(forSession: session.id.rawValue)
+            let summary = try? database.latestFinalAnswer(forSession: sessionID)
             try? database.upsertReview(
                 workflowID: workflowID, kind: kind, to: .reviewed, summary: summary ?? nil, now: now
             )

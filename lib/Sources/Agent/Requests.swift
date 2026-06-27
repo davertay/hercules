@@ -11,6 +11,9 @@ public struct StartRequest: Sendable {
     public let database: any DatabaseWriter
     public let workflowID: UUID
     public let kind: SessionKind
+    /// Pre-generated so the caller can forward-link the Session before the run starts (Validate writes
+    /// `review.sessionID` up front so its card's activity updates live); `nil` mints a fresh id.
+    public let sessionID: UUID?
     /// Set only for `execute`-kind runs, so the Issue's transcript is recoverable; `nil` for chat.
     public let issueNumber: Int?
     /// Rendered as one `--append-system-prompt-file` each (ADR 0004); re-passed on every resume Turn.
@@ -27,6 +30,7 @@ public struct StartRequest: Sendable {
         database: any DatabaseWriter,
         workflowID: UUID,
         kind: SessionKind,
+        sessionID: UUID? = nil,
         issueNumber: Int? = nil,
         skillFiles: [URL] = [],
         addDirs: [URL] = [],
@@ -39,6 +43,7 @@ public struct StartRequest: Sendable {
         self.database = database
         self.workflowID = workflowID
         self.kind = kind
+        self.sessionID = sessionID
         self.issueNumber = issueNumber
         self.skillFiles = skillFiles
         self.addDirs = addDirs
