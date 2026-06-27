@@ -3,6 +3,7 @@ import Design
 import Execute
 import Material
 import PRD
+import SmallJob
 import SwiftUI
 import Validate
 
@@ -19,7 +20,7 @@ public struct WorkflowContainerView: View {
 
     public var body: some View {
         NavigationSplitView {
-            List(Phase.allCases, selection: $selectedPhase) { phase in
+            List(model.mode.phases, selection: $selectedPhase) { phase in
                 PhaseSidebarRow(phase: phase, isUnlocked: model.isUnlocked(phase))
             }
         } detail: {
@@ -73,9 +74,11 @@ public struct WorkflowContainerView: View {
     private var phaseDetail: some View {
         switch selectedPhase {
         case .some(let phase) where !model.isUnlocked(phase):
-            PhasePlaceholderView(phase: phase, isUnlocked: false)
+            PhasePlaceholderView(phase: phase, isUnlocked: false, predecessor: phase.predecessor(in: model.mode))
         case .design:
-            if let designModel = model.designModel {
+            if let smallJobModel = model.smallJobModel {
+                SmallJobView(model: smallJobModel)
+            } else if let designModel = model.designModel {
                 DesignView(model: designModel)
             } else {
                 ContentUnavailableView(
@@ -120,7 +123,7 @@ public struct WorkflowContainerView: View {
                 )
             }
         case .some(let phase):
-            PhasePlaceholderView(phase: phase, isUnlocked: true)
+            PhasePlaceholderView(phase: phase, isUnlocked: true, predecessor: phase.predecessor(in: model.mode))
         case .none:
             ContentUnavailableView("Select a Phase", systemImage: "sidebar.left")
         }
@@ -162,6 +165,8 @@ struct PhaseSidebarRow: View {
 struct PhasePlaceholderView: View {
     let phase: Phase
     let isUnlocked: Bool
+    /// The Phase that gates this one within the Workflow's mode topology, used for the locked-state copy.
+    var predecessor: Phase?
 
     var body: some View {
         ContentUnavailableView {
@@ -174,7 +179,7 @@ struct PhasePlaceholderView: View {
     private var description: String {
         if isUnlocked {
             "The \(phase.title) Phase isn't built yet."
-        } else if let predecessor = phase.predecessor {
+        } else if let predecessor {
             "The \(phase.title) Phase unlocks once the \(predecessor.title) Phase is complete."
         } else {
             "The \(phase.title) Phase isn't available yet."

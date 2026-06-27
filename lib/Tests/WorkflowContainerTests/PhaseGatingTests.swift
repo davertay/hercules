@@ -210,13 +210,79 @@ struct PhaseGatingTests {
         #expect(!model.isUnlocked(.prd))
     }
 
+    // MARK: - Small Job mode
+
+    @Test
     @MainActor
-    private static func makeModel(id: UUID, root: URL) -> WorkflowContainerModel {
+    func smallModeBuildsSmallJobSlotAndSkipsPRDAndAllocate() async throws {
+        let root = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let model = Self.makeModel(id: UUID(0), root: root, mode: .small)
+
+        // The Design slot is driven by the Small Job model; the standard chat Phases are absent.
+        #expect(model.mode == .small)
+        #expect(model.smallJobModel != nil)
+        #expect(model.designModel == nil)
+        #expect(model.prdModel == nil)
+        #expect(model.allocateModel == nil)
+        // Execute and Validate still exist in Small Job.
+        #expect(model.executeModel != nil)
+        #expect(model.validateModel != nil)
+    }
+
+    @Test
+    @MainActor
+    func completingDesignUnlocksExecuteDirectlyInSmallMode() async throws {
+        let root = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let id = UUID(0)
+        let model = Self.makeModel(id: id, root: root, mode: .small)
+        let database = try #require(model.database)
+
+        try await model.$completedPhases.load()
+        // Before any Issues are committed, only Design is open; Execute and Validate are locked.
+        #expect(model.isUnlocked(.design))
+        #expect(!model.isUnlocked(.execute))
+        #expect(!model.isUnlocked(.validate))
+
+        // The Small Job grill commits Issues and completes the Design Phase with a null (rows) Artifact.
+        try await database.write { db in
+            try WorkflowRow.insert {
+                WorkflowRow(
+                    id: id, repoPath: "/repo", mode: WorkflowMode.small.rawValue,
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try PhaseRow.insert {
+                PhaseRow(
+                    id: UUID(-1),
+                    workflowID: id,
+                    kind: "design",
+                    status: "complete",
+                    createdAt: fixedDate,
+                    updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+        try await model.$completedPhases.load()
+
+        // Execute unlocks directly off Design — PRD and Allocate are skipped entirely.
+        #expect(model.isUnlocked(.execute))
+        #expect(!model.isUnlocked(.validate))
+    }
+
+    @MainActor
+    private static func makeModel(id: UUID, root: URL, mode: WorkflowMode = .standard) -> WorkflowContainerModel {
         WorkflowContainerModel(
             data: WorkflowWindowData(
                 id: id,
                 directory: root.appending(component: id.uuidString),
-                repoPath: "/repo"
+                repoPath: "/repo",
+                mode: mode
             )
         )
     }

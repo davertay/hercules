@@ -216,4 +216,14 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         )
         .execute(db)
     }
+
+    // The Workflow mode (`WorkflowMode`). Pre-existing rows predate Small Job and are all `standard`.
+    migrator.registerMigration("Add mode to workflow") { db in
+        try #sql(
+            """
+            ALTER TABLE "workflow" ADD COLUMN "mode" TEXT NOT NULL DEFAULT 'standard'
+            """
+        )
+        .execute(db)
+    }
 }

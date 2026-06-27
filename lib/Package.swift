@@ -70,6 +70,29 @@ let package = Package(
             ]
         ),
         .target(
+            name: "SmallJob",
+            dependencies: [
+                "Agent",
+                "Chat",
+                "Material",
+                "Store",
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .testTarget(
+            name: "SmallJobTests",
+            dependencies: [
+                "SmallJob",
+                "Agent",
+                "Material",
+                "Store",
+                .product(name: "CustomDump", package: "swift-custom-dump"),
+                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ]
+        ),
+        .target(
             name: "Chat",
             dependencies: [
                 "Agent",
@@ -121,6 +144,7 @@ let package = Package(
                 "Execute",
                 "IssueGraph",
                 "IssueMCP",
+                "Store",
                 "TestChat",
                 "Validate",
                 "WorkflowContainer",
@@ -319,6 +343,7 @@ let package = Package(
                 "Execute",
                 "Material",
                 "PRD",
+                "SmallJob",
                 "Store",
                 "Validate",
                 "Worktree",
@@ -337,6 +362,7 @@ let package = Package(
                 "Design",
                 "Execute",
                 "PRD",
+                "SmallJob",
                 "Store",
                 "Validate",
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
