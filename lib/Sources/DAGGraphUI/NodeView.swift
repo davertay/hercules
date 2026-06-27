@@ -1,10 +1,7 @@
 import IssueGraph
 import SwiftUI
 
-/// One Issue node in `DAGGraphView`: a rounded-rect card with status-coloured border, `#number` badge,
-/// and wrapping title. `.skipped` gets a diagonal slash; `.inProgress` alpha-pulses the border (only
-/// opacity animates, not the colour, so the hue stays stable on wide-gamut displays).
-struct NodeView: View {
+public struct NodeView: View {
     let node: DAGNode
     let metrics: DAGGraphMetrics
     let palette: StatusPalette
@@ -12,7 +9,7 @@ struct NodeView: View {
 
     @State private var pulseActive: Bool = false
 
-    init(
+    public init(
         node: DAGNode,
         metrics: DAGGraphMetrics,
         palette: StatusPalette,
@@ -24,7 +21,7 @@ struct NodeView: View {
         self.isSelected = isSelected
     }
 
-    var body: some View {
+    public var body: some View {
         PulsingNodeView(
             color: palette.color(for: node.status),
             metrics: metrics,

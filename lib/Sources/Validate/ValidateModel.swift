@@ -1,4 +1,5 @@
 import Agent
+import DAGGraphUI
 import Dependencies
 import Foundation
 import Material
@@ -17,25 +18,25 @@ public final class ValidateModel {
     @ObservationIgnored
     @Fetch var reviews: [ReviewRow] = []
 
-    /// The Workflow's committed Issues, observed to gate the PR button (it opens only once every
-    /// non-deleted Issue is `done`).
     @ObservationIgnored
     @Fetch var issues: [IssueRow] = []
 
+    @ObservationIgnored
+    @Fetch var reviewActivity: [String: ActivityCounts] = [:]
+
+    public private(set) var clock: Date = .distantPast
+
+    @ObservationIgnored
+    let tickTask = LockIsolated<Task<Void, Never>?>(nil)
+
     public var selectedPersona: ReviewPersona?
 
-    /// Transient "branch pushed" confirmation, shown after a successful PR push; the view clears it.
     public var pullRequestConfirmation: String?
 
-    /// The reason a PR push/compare-URL build failed; `nil` until one does.
     public var pullRequestError: String?
 
-    /// `true` while the branch-update-and-push is underway. Guards re-entrancy (no concurrent
-    /// rebase/force-push on the same branch) and drives the in-flight toolbar state.
     public var isOpeningPullRequest = false
 
-    /// One live run task per Persona, so several reviews proceed at once (vs Execute's single `runTask`).
-    /// Boxed so the window's teardown (`cancelAll`) can cancel them off the MainActor.
     @ObservationIgnored
     let runTasks = LockIsolated<[ReviewPersona: Task<Void, Never>]>([:])
 
@@ -57,21 +58,14 @@ public final class ValidateModel {
     @ObservationIgnored
     private let worktree: URL
 
-    /// The Workflow's directory, holding `workflow.sqlite` — passed to the propose-issue MCP server so it
-    /// writes proposed Issues into this Workflow's Store.
     @ObservationIgnored
     private let workflowDirectory: URL
 
-    /// The Hercules app binary, re-executed as the stdio propose-issue MCP server (ADR 0006).
     @ObservationIgnored
     private let mcpServerCommand: String
 
-    /// Evaluated once when the window opens; `true` means the worktree was pruned or deleted outside
-    /// Hercules, which blocks the Phase rather than reviewing the user's raw checkout.
     public let worktreeMissing: Bool
 
-    /// Guards the once-per-window reconcile in `refresh`; a re-appearance must not demote a review this
-    /// session is genuinely running.
     @ObservationIgnored
     private var didReconcile = false
 
@@ -98,6 +92,11 @@ public final class ValidateModel {
             WorkflowIssuesRequest(workflowID: workflowID),
             animation: .default
         )
+        _reviewActivity = Fetch(
+            wrappedValue: [:],
+            ReviewActivityRequest(workflowID: workflowID),
+            animation: .default
+        )
     }
 
     public var worktreeMessage: String? {
@@ -105,15 +104,9 @@ public final class ValidateModel {
         return "This Workflow's git worktree is missing — expected at \(worktree.path). It may have been pruned or deleted outside Hercules. Recreating it isn't supported yet, so the Validate Phase can't run until it's restored."
     }
 
-    /// The behind-the-scenes Validate runs commit nothing and never finish a conversation — the Persona
-    /// skill carries the review instructions, so the prompt only kicks the single Turn off.
     static let reviewPrompt =
         "Review the work on the current branch and report your findings as instructed."
 
-    /// Re-reads the review rows from disk, reconciling stale `running` rows to `failed` the first time the
-    /// surface appears (window open). With no live orchestrator at that point any `running` row is stale
-    /// (a crash/quit during a prior run), so it's demoted — mirrors reconcileStaleInProgressIssues. The
-    /// once-guard keeps a re-appearance during a live run from wrongly failing it.
     public func refresh() async {
         if !didReconcile {
             didReconcile = true
@@ -121,25 +114,42 @@ public final class ValidateModel {
         }
         try? await $reviews.load()
         try? await $issues.load()
+        try? await $reviewActivity.load()
     }
 
-    /// The persisted row for `persona`, or `nil` when the Persona has never run (idle).
+    public func activity(for persona: ReviewPersona) -> NodeActivity? {
+        guard let counts = reviewActivity[persona.rawValue] else { return nil }
+        let running = isRunning(persona) || status(for: persona) == .running
+        let elapsed: Duration?
+        if running, let startedAt = counts.startedAt {
+            elapsed = .seconds(max(0, clock.timeIntervalSince(startedAt)))
+        } else if let durationMs = counts.durationMs {
+            elapsed = .milliseconds(durationMs)
+        } else {
+            elapsed = nil
+        }
+        let cost = (!running && (counts.costUSD ?? 0) > 0) ? counts.costUSD : nil
+        return NodeActivity(
+            steps: counts.steps,
+            tools: counts.tools,
+            elapsed: elapsed,
+            cost: cost,
+            isRunning: running
+        )
+    }
+
     public func reviewRow(for persona: ReviewPersona) -> ReviewRow? {
         reviews.first { $0.kind == persona.rawValue }
     }
 
-    /// The Persona's lifecycle status; `nil` (idle) when no row exists yet.
     public func status(for persona: ReviewPersona) -> ReviewStatus? {
         reviewRow(for: persona).flatMap { ReviewStatus(rawValue: $0.status) }
     }
 
-    /// `true` while a run task for this Persona is live. Drives the per-card action and run-gating; the
-    /// node colour comes from the observed row instead.
     public func isRunning(_ persona: ReviewPersona) -> Bool {
         runTasks.withValue { $0[persona] != nil }
     }
 
-    /// `true` if any review is currently running — used to gate the terminal PR action.
     public var isAnyRunning: Bool {
         runTasks.withValue { !$0.isEmpty }
     }
@@ -153,24 +163,39 @@ public final class ValidateModel {
         return reviewRow(for: selectedPersona)
     }
 
-    /// Tapping a node's own card again clears the selection.
     public func selectNode(_ persona: ReviewPersona) {
         selectedPersona = selectedPersona == persona ? nil : persona
     }
 
-    /// Starts (or re-runs) a Persona. The task is retained in `runTasks` so `cancelAll` can cancel it.
     public func run(_ persona: ReviewPersona) {
         guard canRun(persona) else { return }
+        startClockIfNeeded()
         let task = Task { [self] in
             await review(persona)
             runTasks.withValue { $0[persona] = nil }
+            stopClockIfIdle()
         }
         runTasks.withValue { $0[persona] = task }
     }
 
-    /// Runs one Persona's review as a read-only behind-the-scenes Session and writes its status directly
-    /// via the Store (no presented chat): `reviewed` with the captured Summary if the Turn finished,
-    /// `failed` with the reason if it threw (an interrupt is recorded distinctly).
+    private func startClockIfNeeded() {
+        clock = now
+        guard tickTask.value == nil else { return }
+        let task = Task { [self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                clock = now
+            }
+        }
+        tickTask.setValue(task)
+    }
+
+    private func stopClockIfIdle() {
+        guard !isAnyRunning else { return }
+        tickTask.value?.cancel()
+        tickTask.setValue(nil)
+    }
+
     func review(_ persona: ReviewPersona) async {
         let kind = persona.rawValue
         try? database.upsertReview(workflowID: workflowID, kind: kind, to: .running, now: now)
@@ -208,19 +233,10 @@ public final class ValidateModel {
         }
     }
 
-    /// The terminal PR action opens only once every non-deleted Issue is `done` (proposed / new /
-    /// in_progress / failed all count as outstanding work; reviews are NOT required) and no review is
-    /// running. Empty is not openable — there's nothing to ship.
     public var canOpenPullRequest: Bool {
         !isAnyRunning && !isOpeningPullRequest && !issues.isEmpty && issues.allSatisfy { $0.status == "done" }
     }
 
-    /// Brings the branch up to date with its base, pushes it (force-with-lease), and returns the GitHub
-    /// compare URL for the caller to open. Does NOT mark Validate complete — we can't confirm a real PR was
-    /// opened (MVP). The git work runs off the MainActor so neither the rebase nor the network push blocks
-    /// the UI, and runs in order — `rebaseOntoBase` → `push` → `compareURL` — so a conflict aborts before
-    /// anything is pushed. `isOpeningPullRequest` guards re-entrancy: a second concurrent call no-ops.
-    /// Returns `nil` (and sets `pullRequestError`) on failure.
     public func openPullRequest() async -> URL? {
         guard !isOpeningPullRequest else { return nil }
         isOpeningPullRequest = true
@@ -246,9 +262,6 @@ public final class ValidateModel {
         pullRequestConfirmation = nil
     }
 
-    /// The propose-issue MCP server granted to each read-only review Session (like Allocate's create-issue
-    /// server). The DB path and workflow id are fixed launch args, so a Persona can't target another
-    /// Workflow's Store; `--propose` selects the host-numbered `proposed` tool.
     private func proposeServer() -> MCPServer {
         let databasePath = workflowDirectory.appendingPathComponent("workflow.sqlite").path
         return MCPServer(
@@ -264,11 +277,10 @@ public final class ValidateModel {
         )
     }
 
-    /// `nonisolated` so the window's teardown can cancel from any isolation. Cancelling throws each live
-    /// run's Turn, which the `review` catch records as a failed "Interrupted" row.
     public nonisolated func cancelAll() {
         runTasks.withValue { tasks in
             for task in tasks.values { task.cancel() }
         }
+        tickTask.value?.cancel()
     }
 }

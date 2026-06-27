@@ -1,4 +1,5 @@
 import Agent
+import DAGGraphUI
 import Dependencies
 import Foundation
 import IssueGraph
@@ -21,6 +22,14 @@ public final class ExecuteModel {
     /// `failureReason` write didn't outlast the previous process.
     @ObservationIgnored
     @Fetch var transcriptFailureReasons: [Int: String] = [:]
+
+    @ObservationIgnored
+    @Fetch var activityCounts: [Int: ActivityCounts] = [:]
+
+    public private(set) var clock: Date = .distantPast
+
+    @ObservationIgnored
+    let tickTask = LockIsolated<Task<Void, Never>?>(nil)
 
     public var selectedID: Int?
 
@@ -76,6 +85,11 @@ public final class ExecuteModel {
             IssueFailureReasonsRequest(workflowID: workflowID),
             animation: .default
         )
+        _activityCounts = Fetch(
+            wrappedValue: [:],
+            IssueActivityRequest(workflowID: workflowID),
+            animation: .default
+        )
     }
 
     public var worktreeMessage: String? {
@@ -92,6 +106,32 @@ public final class ExecuteModel {
     public func refresh() async {
         try? await $issues.load()
         try? await $transcriptFailureReasons.load()
+        try? await $activityCounts.load()
+    }
+
+    /// The render-ready activity for one node: live counts always, elapsed live-ticking while the node is
+    /// `.inProgress` and frozen at the run's duration once done, cost shown only once finalized. Returns
+    /// `nil` for a node that has never run (no Session yet) so its card shows no footer.
+    public func activity(for node: DAGNode) -> NodeActivity? {
+        guard let counts = activityCounts[node.number] else { return nil }
+        let running = node.status == .inProgress
+        let elapsed: Duration?
+        if running, let startedAt = counts.startedAt {
+            elapsed = .seconds(max(0, clock.timeIntervalSince(startedAt)))
+        } else if let durationMs = counts.durationMs {
+            elapsed = .milliseconds(durationMs)
+        } else {
+            elapsed = nil
+        }
+        // A genuine `$0.00` reads as broken, so a finalized zero (e.g. fully cached) shows nothing.
+        let cost = (!running && (counts.costUSD ?? 0) > 0) ? counts.costUSD : nil
+        return NodeActivity(
+            steps: counts.steps,
+            tools: counts.tools,
+            elapsed: elapsed,
+            cost: cost,
+            isRunning: running
+        )
     }
 
     /// The reason to show for a `failed` Issue: the Harness's own words from the transcript when present,
@@ -162,12 +202,32 @@ public final class ExecuteModel {
     public func start() {
         guard canRun else { return }
         isRunning = true
+        startClock()
         let task = Task { [self] in
             await run()
             isRunning = false
             runTask.setValue(nil)
+            stopClock()
         }
         runTask.setValue(task)
+    }
+
+    /// Advances `clock` once a second while a run is underway, so in-progress cards' elapsed counts up.
+    /// One timer for the whole run, cancelled when it ends — an idle window runs no timer at all.
+    private func startClock() {
+        clock = now
+        let task = Task { [self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                clock = now
+            }
+        }
+        tickTask.setValue(task)
+    }
+
+    private func stopClock() {
+        tickTask.value?.cancel()
+        tickTask.setValue(nil)
     }
 
     public func stop() {
@@ -178,6 +238,7 @@ public final class ExecuteModel {
     /// which leaves the worked Issue `failed`.
     public nonisolated func cancelRun() {
         runTask.value?.cancel()
+        tickTask.value?.cancel()
     }
 
     /// Runs one Issue as a behind-the-scenes write agent and writes its status directly via the Store
