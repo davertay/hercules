@@ -138,15 +138,8 @@ public final class PRDModel {
     }
 
     private func designSummaryURL() throws -> URL {
-        let row = try database.read { db in
-            try PhaseRow
-                .where { $0.workflowID.eq(workflowID) }
-                .where { $0.kind.eq("design") }
-                .where { $0.status.eq("complete") }
-                .where { !$0.isDeleted }
-                .fetchOne(db)
-        }
-        guard let path = row?.artifactPath else { throw PRDError.designSummaryMissing }
+        guard let path = try database.completedArtifactPath(workflowID: workflowID, kind: "design")
+        else { throw PRDError.designSummaryMissing }
         return URL(fileURLWithPath: path)
     }
 
@@ -181,11 +174,6 @@ struct CompletedPRDPhaseRequest: FetchKeyRequest {
     var workflowID: UUID = UUID()
 
     func fetch(_ db: Database) throws -> PhaseRow? {
-        try PhaseRow
-            .where { $0.workflowID.eq(workflowID) }
-            .where { $0.kind.eq("prd") }
-            .where { $0.status.eq("complete") }
-            .where { !$0.isDeleted }
-            .fetchOne(db)
+        try completedPhaseRow(db, workflowID: workflowID, kind: "prd")
     }
 }

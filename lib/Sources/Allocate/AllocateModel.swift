@@ -125,7 +125,10 @@ public final class AllocateModel {
                     Self.proposePrompt(prdPath: prd.path, designPath: design.path),
                     inputs: InputBundle(
                         root: workflowDirectory,
-                        relativePaths: [relativePath(of: prd), relativePath(of: design)]
+                        relativePaths: [
+                            workflowRelativePath(of: prd.path, under: workflowDirectory),
+                            workflowRelativePath(of: design.path, under: workflowDirectory),
+                        ]
                     )
                 )
             } catch {
@@ -199,15 +202,9 @@ public final class AllocateModel {
 
     /// A completed Phase's file Artifact, read from its `phase` row.
     private func artifactURL(kind: String) throws -> URL {
-        let row = try database.read { db in
-            try PhaseRow
-                .where { $0.workflowID.eq(workflowID) }
-                .where { $0.kind.eq(kind) }
-                .where { $0.status.eq("complete") }
-                .where { !$0.isDeleted }
-                .fetchOne(db)
+        guard let path = try database.completedArtifactPath(workflowID: workflowID, kind: kind) else {
+            throw AllocateError.artifactMissing(kind)
         }
-        guard let path = row?.artifactPath else { throw AllocateError.artifactMissing(kind) }
         return URL(fileURLWithPath: path)
     }
 
@@ -217,13 +214,6 @@ public final class AllocateModel {
         try database.read { db in
             try WorkflowIssuesRequest(workflowID: workflowID).fetch(db)
         }
-    }
-
-    private func relativePath(of absolute: URL) -> String {
-        let root = workflowDirectory.standardizedFileURL.path
-        let path = absolute.standardizedFileURL.path
-        let prefix = root.hasSuffix("/") ? root : root + "/"
-        return path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : path
     }
 }
 

@@ -387,30 +387,14 @@ public final class ExecuteModel {
     /// missing one (e.g. Small Job mode produces no design summary) never fails, blocks, or warns. Returns
     /// `nil` when none exist, leaving the run identical to before any bundle was attached.
     private func inputArtifacts() -> InputBundle? {
-        let paths = ["prd", "design"].compactMap(artifactPath(kind:))
-        guard !paths.isEmpty else { return nil }
-        return InputBundle(root: workflowDirectory, relativePaths: paths.map(relativePath(of:)))
-    }
-
-    /// The Artifact path recorded on a completed Phase's row, or `nil` when that Phase didn't complete or
-    /// wrote no Artifact — read the same way Allocate reads it, but never raised on absence.
-    private func artifactPath(kind: String) -> String? {
-        let row = try? database.read { db in
-            try PhaseRow
-                .where { $0.workflowID.eq(workflowID) }
-                .where { $0.kind.eq(kind) }
-                .where { $0.status.eq("complete") }
-                .where { !$0.isDeleted }
-                .fetchOne(db)
+        let paths = ["prd", "design"].compactMap { kind in
+            try? database.completedArtifactPath(workflowID: workflowID, kind: kind)
         }
-        return row?.artifactPath
-    }
-
-    private func relativePath(of absolutePath: String) -> String {
-        let root = workflowDirectory.standardizedFileURL.path
-        let path = URL(fileURLWithPath: absolutePath).standardizedFileURL.path
-        let prefix = root.hasSuffix("/") ? root : root + "/"
-        return path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : path
+        guard !paths.isEmpty else { return nil }
+        return InputBundle(
+            root: workflowDirectory,
+            relativePaths: paths.map { workflowRelativePath(of: $0, under: workflowDirectory) }
+        )
     }
 
     /// Read straight from the database, not the lazily-updated `issues` projection, so the loop sees each
