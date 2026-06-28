@@ -9,9 +9,8 @@ public struct TestChatScene: Scene {
 
     public var body: some Scene {
         WindowGroup(for: TestChatWindowData.self) { $data in
-            if let model = data?.toModel() {
-                TestChatView(model: model)
-                    .navigationTitle(model.windowTitle)
+            if let data {
+                TestChatHost(data: data)
             }
         }
         .commands {
@@ -21,6 +20,21 @@ public struct TestChatScene: Scene {
                 EmptyCommands()
             }
         }
+    }
+}
+
+/// Owns the per-window ``TestChatModel`` in `@State` so it survives view-graph updates. The model is
+/// constructed once, when SwiftUI first builds this host for a given window's ``TestChatWindowData``.
+private struct TestChatHost: View {
+    @State private var model: TestChatModel
+
+    init(data: TestChatWindowData) {
+        _model = State(initialValue: data.toModel())
+    }
+
+    var body: some View {
+        TestChatView(model: model)
+            .navigationTitle(model.windowTitle)
     }
 }
 
