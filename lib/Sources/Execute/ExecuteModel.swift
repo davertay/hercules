@@ -3,7 +3,7 @@ import DAGGraphUI
 import Dependencies
 import Foundation
 import IssueGraph
-import Material
+import Skills
 import Observation
 import SQLiteData
 import Store

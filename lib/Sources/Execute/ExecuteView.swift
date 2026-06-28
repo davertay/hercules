@@ -2,6 +2,7 @@ import DAGGraphUI
 import IssueGraph
 import Store
 import SwiftUI
+import UISupport
 
 /// The Execute Phase surface: the committed Issues as a live-coloured dependency DAG plus a per-Issue
 /// inspector. An invalid graph (cycle/unknown dependency) degrades to a plain Issue list with a banner.
@@ -9,6 +10,8 @@ public struct ExecuteView: View {
     let model: ExecuteModel
 
     static let metrics = DAGGraphMetrics(nodeWidth: 220)
+
+    @State private var graphContentHeight: CGFloat = 0
 
     public init(model: ExecuteModel) {
         self.model = model
@@ -39,14 +42,18 @@ public struct ExecuteView: View {
                             model.retry(failure.number)
                         }
                     }
-                    HSplitView {
+                    MasterDetailSplit(
+                        masterIdealWidth: Self.metrics.idealContentWidth(for: model.layoutNodes),
+                        masterContentHeight: graphContentHeight
+                    ) {
                         DAGGraphView(
                             layoutNodes: model.layoutNodes,
                             nodesByNumber: model.nodesByNumber,
                             metrics: Self.metrics,
                             palette: .default,
                             selectedID: model.selectedID,
-                            onSelectNode: { model.selectNode($0) }
+                            onSelectNode: { model.selectNode($0) },
+                            onContentSizeChange: { graphContentHeight = $0.height }
                         ) { node, isSelected in
                             IssueNodeCard(
                                 node: node,
@@ -56,8 +63,7 @@ public struct ExecuteView: View {
                                 activity: model.activity(for: node)
                             )
                         }
-                        .frame(maxHeight: .infinity)
-                        .layoutPriority(1)
+                    } detail: {
                         InspectorPane(
                             issue: model.selectedIssue,
                             failureReason: model.selectedIssue.flatMap { model.failureReason(for: $0) },
@@ -65,11 +71,7 @@ public struct ExecuteView: View {
                             onApprove: { model.approve($0) },
                             onDeny: { model.deny($0) }
                         )
-                        .frame(minWidth: 260, idealWidth: 320, maxWidth: 480, maxHeight: .infinity)
                     }
-                    // `HSplitView` proposes only its panes' ideal height; without this the row collapses to
-                    // content height and the parent centres it (the inspector's detail ScrollView is the
-                    // only thing that stretched it before, so the graph jumped around on selection). Fill.
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }

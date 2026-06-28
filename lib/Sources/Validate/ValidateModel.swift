@@ -2,7 +2,6 @@ import Agent
 import DAGGraphUI
 import Dependencies
 import Foundation
-import Material
 import Observation
 import SQLiteData
 import Store

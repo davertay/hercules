@@ -5,11 +5,24 @@ import SwiftUI
 struct PersonaBoard: View {
     let model: ValidateModel
 
-    private let columns = [GridItem(.adaptive(minimum: 200), spacing: 16, alignment: .top)]
+    static let cardMinWidth: CGFloat = 200
+    static let gridSpacing: CGFloat = 16
+    static let boardPadding: CGFloat = 24
+
+    private let columns = [
+        GridItem(.adaptive(minimum: PersonaBoard.cardMinWidth), spacing: PersonaBoard.gridSpacing, alignment: .top)
+    ]
+
+    static func idealContentWidth(personaCount: Int) -> CGFloat {
+        guard personaCount > 0 else { return 2 * boardPadding }
+        return CGFloat(personaCount) * cardMinWidth
+            + CGFloat(personaCount - 1) * gridSpacing
+            + 2 * boardPadding
+    }
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: PersonaBoard.gridSpacing) {
                 ForEach(ReviewPersona.allCases, id: \.self) { persona in
                     PersonaCard(
                         persona: persona,
@@ -22,7 +35,7 @@ struct PersonaBoard: View {
                     )
                 }
             }
-            .padding(24)
+            .padding(PersonaBoard.boardPadding)
         }
     }
 }

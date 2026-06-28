@@ -1,4 +1,4 @@
-import Material
+import Skills
 
 /// The compile-time catalog of Validate review Personas — the analogue of `Phase`/`Skill`. Each case is
 /// one reviewer the Validate Phase renders as a node; its `rawValue` is the stable `kind` string stored

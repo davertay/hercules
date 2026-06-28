@@ -1,7 +1,7 @@
 import Agent
 import Dependencies
 import Foundation
-import Material
+import Skills
 import SQLiteData
 import Store
 import Testing
@@ -19,7 +19,7 @@ struct DesignModelTests {
     @Test
     func firstSubmitStartsReadOnlySessionUnderSkill() async throws {
         let database = try Self.makeDatabase()
-        // The Skill is loaded from the Material bundle at init, not injected.
+        // The Skill is loaded from the Skills bundle at init, not injected.
         let skill = loadSkill(.grillMe)
         let captured = LockIsolated<StartRequest?>(nil)
 

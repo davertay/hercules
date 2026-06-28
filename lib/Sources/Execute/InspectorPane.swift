@@ -1,3 +1,4 @@
+import UISupport
 import Store
 import SwiftUI
 
@@ -43,9 +44,8 @@ struct InspectorPane: View {
                     }
                     if !issue.body.isEmpty {
                         Divider()
-                        renderedMarkdown(issue.body)
+                        MarkdownText(issue.body)
                             .font(.callout)
-                            .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -59,17 +59,5 @@ struct InspectorPane: View {
                 Text("Select a node in the graph to see its details.")
             }
         }
-    }
-
-    private func renderedMarkdown(_ text: String) -> Text {
-        if let attributed = try? AttributedString(
-            markdown: text,
-            options: AttributedString.MarkdownParsingOptions(
-                interpretedSyntax: .inlineOnlyPreservingWhitespace
-            )
-        ) {
-            return Text(attributed)
-        }
-        return Text(text)
     }
 }

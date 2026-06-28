@@ -1,5 +1,5 @@
 import Foundation
-import Material
+import Skills
 import Testing
 
 @testable import Validate

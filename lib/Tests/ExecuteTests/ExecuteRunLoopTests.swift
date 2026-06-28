@@ -2,7 +2,7 @@ import Agent
 import Dependencies
 import Foundation
 import IssueGraph
-import Material
+import Skills
 import SQLiteData
 import Store
 import Testing

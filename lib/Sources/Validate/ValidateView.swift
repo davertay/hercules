@@ -1,5 +1,5 @@
 import DAGGraphUI
-import Material
+import UISupport
 import Store
 import SwiftUI
 
@@ -23,15 +23,15 @@ public struct ValidateView: View {
                     Text(message)
                 }
             } else {
-                HSplitView {
+                MasterDetailSplit(
+                    masterIdealWidth: PersonaBoard.idealContentWidth(personaCount: ReviewPersona.allCases.count)
+                ) {
                     PersonaBoard(model: model)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .layoutPriority(1)
+                } detail: {
                     ReviewInspector(
                         persona: model.selectedPersona,
                         review: model.selectedReview
                     )
-                    .frame(minWidth: 260, idealWidth: 320, maxWidth: 480, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

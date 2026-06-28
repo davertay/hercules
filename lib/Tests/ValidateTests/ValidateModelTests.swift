@@ -1,7 +1,7 @@
 import Agent
 import Dependencies
 import Foundation
-import Material
+import Skills
 import SQLiteData
 import Store
 import Testing
