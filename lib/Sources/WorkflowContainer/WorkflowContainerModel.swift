@@ -71,7 +71,7 @@ public final class WorkflowContainerModel {
         directory = data.directory
         repoPath = data.repoPath
         self.registry = registry
-        registry?.register(data.id)
+        registry?.registerOnOpen(data.id)
 
         // The worktree path is a pure convention derived from the directory, so a state-restored reopen
         // recomputes it and reads the already-existing on-disk worktree without re-creating it.

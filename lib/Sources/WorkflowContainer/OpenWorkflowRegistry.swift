@@ -16,6 +16,15 @@ public final class OpenWorkflowRegistry {
         openIDs.insert(id)
     }
 
+    /// Schedules a ``register(_:)`` off the current run-loop turn. A Workflow window's model constructs
+    /// during SwiftUI's view-graph update (inside `State`'s initial value), so mutating this observed state
+    /// synchronously there re-enters the launcher's display cycle and AppKit throws an "Update Constraints"
+    /// exception. Deferring the mutation past the active update — mirroring ``unregisterOnTeardown(_:)`` —
+    /// keeps the write out of that cycle.
+    public func registerOnOpen(_ id: UUID) {
+        Task { @MainActor in self.register(id) }
+    }
+
     /// Records that the window for `id` has closed. Idempotent.
     public func unregister(_ id: UUID) {
         openIDs.remove(id)
