@@ -13,8 +13,6 @@ struct PersonaBoard: View {
         GridItem(.adaptive(minimum: PersonaBoard.cardMinWidth), spacing: PersonaBoard.gridSpacing, alignment: .top)
     ]
 
-    /// The width at which every Persona card sits in a single row (mirrors the grid + padding below), so
-    /// `MasterDetailSplit` knows when the board no longer needs to reflow/scroll.
     static func idealContentWidth(personaCount: Int) -> CGFloat {
         guard personaCount > 0 else { return 2 * boardPadding }
         return CGFloat(personaCount) * cardMinWidth

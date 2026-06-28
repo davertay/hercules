@@ -11,8 +11,6 @@ public struct ExecuteView: View {
 
     static let metrics = DAGGraphMetrics(nodeWidth: 220)
 
-    /// The DAG's rendered content height, reported by `DAGGraphView`, so the split can tell when the
-    /// graph overflows vertically and must reserve room for its vertical scroller.
     @State private var graphContentHeight: CGFloat = 0
 
     public init(model: ExecuteModel) {

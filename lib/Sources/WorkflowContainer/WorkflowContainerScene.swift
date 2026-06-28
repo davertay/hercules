@@ -13,7 +13,7 @@ public struct WorkflowContainerScene: Scene {
                 WorkflowContainerHost(data: data, registry: registry)
             }
         }
-        .defaultSize(width: 1280, height: 820)
+        .defaultSize(width: 860, height: 540)
         .commands {
             WorkflowCommands()
         }

@@ -5,18 +5,6 @@ import AppKit
 #endif
 
 /// A master/detail split whose divider position is *derived from window width* rather than dragged.
-///
-/// While the window is too narrow to show the master at its ideal width, the two panes share the space
-/// by a fixed tension ratio (60/40 by default) and the master scrolls. Once the window is wide enough to
-/// show the master without scrolling, the master pins to its ideal width and every extra point flows to
-/// the detail pane — up to its maximum, after which the surplus becomes master canvas. The effect: drag
-/// the window edge out and the graph snaps fully into view while the inspector grows to your liking. The
-/// detail width is always clamped to `[detailMinWidth, detailMaxWidth]`.
-///
-/// An "auto-fit" toolbar button resizes the host window so the master is fully visible — its ideal width
-/// with the detail at its ideal width, and (when `masterContentHeight` is known) tall enough to show the
-/// whole master without vertical scrolling. The target is clamped to the usable screen, so an oversized
-/// master leaves the window scrolling rather than spilling off the desktop.
 public struct MasterDetailSplit<Master: View, Detail: View>: View {
     let masterIdealWidth: CGFloat
     let masterContentHeight: CGFloat?
@@ -31,35 +19,10 @@ public struct MasterDetailSplit<Master: View, Detail: View>: View {
 
     #if canImport(AppKit)
     @State private var hostWindow: NSWindow?
-    /// The split's own rendered width. The split is usually *not* the whole window — a sidebar (and other
-    /// chrome) sits outside it — so auto-fit measures `windowContentWidth − splitWidth` to learn how much
-    /// to add on top of the split's target, otherwise the sidebar eats into the budget and the master
-    /// comes up short.
     @State private var splitWidth: CGFloat = 0
-    /// The split's rendered height ≈ the master pane's viewport height, used to decide whether the master
-    /// overflows vertically (and so needs room reserved for a vertical scroller).
     @State private var splitHeight: CGFloat = 0
     #endif
 
-    /// Whether the master content is taller than its viewport, so a vertical scroller is showing. Only
-    /// then does the scroller's gutter need reserving — otherwise reserving it would leave a dead strip.
-    /// A `nil` `masterContentHeight` (caller doesn't report it) is treated as non-overflowing.
-    private var masterScrollsVertically: Bool {
-        #if canImport(AppKit)
-        guard let contentHeight = masterContentHeight, splitHeight > 0 else { return false }
-        return contentHeight > splitHeight
-        #else
-        return false
-        #endif
-    }
-
-    /// Width reserved beside the master so its vertical scroller never forces a *horizontal* scroller.
-    ///
-    /// It's two scroller-widths, not one. A `ScrollView([.horizontal, .vertical])` whose content is near
-    /// the width boundary settles into a "both bars showing" state: the vertical scroller eats width
-    /// (→ horizontal bar appears), the horizontal bar eats height (→ vertical bar stays). Escaping that
-    /// needs roughly two scroller-widths of horizontal slack. Deriving it from `scrollerWidth` keeps it
-    /// tracking the platform (e.g. Accessibility's larger scrollers) instead of a hard-coded constant.
     private var scrollerGutterWidth: CGFloat {
         #if canImport(AppKit)
         2 * NSScroller.scrollerWidth(for: .regular, scrollerStyle: NSScroller.preferredScrollerStyle)
@@ -68,13 +31,10 @@ public struct MasterDetailSplit<Master: View, Detail: View>: View {
         #endif
     }
 
-    /// Always reserve space for the scroll gutter
     private var masterScrollbarInset: CGFloat {
         scrollerGutterWidth
     }
 
-    /// `masterIdealWidth` plus room for the master's vertical scroller — the width at which the master
-    /// renders without a *horizontal* scroller. The layout pins the master here and auto-fit targets it.
     private var effectiveMasterIdeal: CGFloat { masterIdealWidth + masterScrollbarInset }
 
     /// - Parameters:
@@ -145,6 +105,7 @@ public struct MasterDetailSplit<Master: View, Detail: View>: View {
 
         let frame = window.frame
         let content = window.contentRect(forFrameRect: frame)
+
         // The split rarely fills the window: a sidebar sits beside it (horizontal chrome) and a banner can
         // sit above it (vertical chrome). Window borders/titlebar are the frame-vs-content insets. Carry
         // all of these over so the *split* lands at its target rather than the window.
@@ -178,7 +139,7 @@ public struct MasterDetailSplit<Master: View, Detail: View>: View {
         var target = frame
         target.size = CGSize(width: newContentWidth + frameInsetWidth, height: newContentHeight + frameInsetHeight)
         target.origin.y = frame.maxY - target.height
-        window.setFrame(window.constrainFrameRect(target, to: window.screen), display: true, animate: true)
+        window.setFrame(window.constrainFrameRect(target, to: window.screen), display: true)
     }
     #endif
 }

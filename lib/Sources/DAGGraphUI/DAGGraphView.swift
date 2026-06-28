@@ -86,7 +86,7 @@ public struct DAGGraphView<NodeContent: View>: View {
         ScrollView([.horizontal, .vertical]) {
             graphContent
         }
-        .defaultScrollAnchor(.top)
+        .defaultScrollAnchor(.topLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
