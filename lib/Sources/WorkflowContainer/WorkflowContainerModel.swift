@@ -128,7 +128,12 @@ public final class WorkflowContainerModel {
                         database: database
                     )
                 }
-                let execute = ExecuteModel(workflowID: data.id, database: database, worktree: worktree)
+                let execute = ExecuteModel(
+                    workflowID: data.id,
+                    database: database,
+                    worktree: worktree,
+                    workflowDirectory: data.directory
+                )
                 let validate = ValidateModel(
                     workflowID: data.id,
                     database: database,
@@ -220,8 +225,6 @@ public final class WorkflowContainerModel {
         return true
     }
 
-    /// The first Phase is always unlocked; every other unlocks once the Phase it consumes (within this
-    /// Workflow's mode topology) has completed. In Small Job, Execute unlocks on Design completing.
     public func isUnlocked(_ phase: Phase) -> Bool {
         guard let predecessor = phase.predecessor(in: mode) else { return true }
         return completedPhases.contains { $0.kind == predecessor.rawValue }

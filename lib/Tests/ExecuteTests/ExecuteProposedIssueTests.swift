@@ -69,7 +69,8 @@ struct ExecuteProposedIssueTests {
         } operation: {
             ExecuteModel(
                 workflowID: workflowID, database: database,
-                worktree: FileManager.default.temporaryDirectory
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory
             )
         }
     }

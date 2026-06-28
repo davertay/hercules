@@ -175,7 +175,7 @@ struct ExecuteRunLoopTests {
             }
             $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory)
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
         }
     }
 

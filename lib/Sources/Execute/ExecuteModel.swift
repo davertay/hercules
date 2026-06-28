@@ -65,14 +65,20 @@ public final class ExecuteModel {
     @ObservationIgnored
     private let worktree: URL
 
+    /// Root for the input bundle attached to each write agent — the completed Phases' Artifacts are
+    /// recorded as paths under here (ADR: artifacts live in the Workflow directory, not the worktree).
+    @ObservationIgnored
+    private let workflowDirectory: URL
+
     /// Evaluated once when the window opens; `true` means the worktree was pruned or deleted outside
     /// Hercules, which blocks the Phase rather than falling back to the user's raw checkout.
     public let worktreeMissing: Bool
 
-    public init(workflowID: UUID, database: any DatabaseWriter, worktree: URL) {
+    public init(workflowID: UUID, database: any DatabaseWriter, worktree: URL, workflowDirectory: URL) {
         self.workflowID = workflowID
         self.database = database
         self.worktree = worktree
+        self.workflowDirectory = workflowDirectory
         self.skill = loadSkill(.implementIssue)
         worktreeMissing = !FileManager.default.fileExists(atPath: worktree.path)
         _issues = Fetch(
@@ -267,6 +273,7 @@ public final class ExecuteModel {
                     prompt: issue.body,
                     worktree: worktree,
                     mode: .write,
+                    inputs: inputArtifacts(),
                     database: database,
                     workflowID: workflowID,
                     kind: .execute,
@@ -372,6 +379,22 @@ public final class ExecuteModel {
             .filter { $0.status == "new" }
             .filter { $0.dependencies.allSatisfy(done.contains) }
             .min { $0.number < $1.number }
+    }
+
+    /// The completed PRD and Design summary Artifacts as one input bundle — PRD first, then summary — so
+    /// the `implement-issue` Skill's "read the design and PRD" step is satisfiable. Best-effort and
+    /// mode-independent (ADR): attaches whichever Artifacts exist and skips any that are absent, so a
+    /// missing one (e.g. Small Job mode produces no design summary) never fails, blocks, or warns. Returns
+    /// `nil` when none exist, leaving the run identical to before any bundle was attached.
+    private func inputArtifacts() -> InputBundle? {
+        let paths = ["prd", "design"].compactMap { kind in
+            try? database.completedArtifactPath(workflowID: workflowID, kind: kind)
+        }
+        guard !paths.isEmpty else { return nil }
+        return InputBundle(
+            root: workflowDirectory,
+            relativePaths: paths.map { workflowRelativePath(of: $0, under: workflowDirectory) }
+        )
     }
 
     /// Read straight from the database, not the lazily-updated `issues` projection, so the loop sees each
