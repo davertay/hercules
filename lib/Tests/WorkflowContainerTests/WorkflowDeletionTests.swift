@@ -148,11 +148,11 @@ struct WorkflowDeletionTests {
 
     @Test
     @MainActor
-    func modelRegistersOpenWorkflowOnConstruction() throws {
+    func modelRegistersOpenWorkflowOnConstruction() async throws {
         let root = Self.makeTempDir()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        try withDependencies {
+        try await withDependencies {
             $0.context = .live
             $0.uuid = .incrementing
             $0.date.now = Self.fixedDate
@@ -163,6 +163,7 @@ struct WorkflowDeletionTests {
             #expect(registry.isOpen(data.id) == false)
 
             let model = WorkflowContainerModel(data: data, registry: registry)
+            await Task.megaYield()
             #expect(registry.isOpen(data.id))
             // Hold the model past the assertion so its registration isn't torn down early.
             withExtendedLifetime(model) {}
