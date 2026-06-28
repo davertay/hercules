@@ -1,3 +1,4 @@
+import Material
 import Store
 import SwiftUI
 
@@ -26,9 +27,8 @@ struct ReviewInspector: View {
                         Divider()
                         Text("Summary")
                             .font(.callout.weight(.semibold))
-                        renderedMarkdown(summary)
+                        MarkdownText(summary)
                             .font(.callout)
-                            .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -42,18 +42,6 @@ struct ReviewInspector: View {
                 Text("Select a Persona to see its review Summary.")
             }
         }
-    }
-
-    private func renderedMarkdown(_ text: String) -> Text {
-        if let attributed = try? AttributedString(
-            markdown: text,
-            options: AttributedString.MarkdownParsingOptions(
-                interpretedSyntax: .inlineOnlyPreservingWhitespace
-            )
-        ) {
-            return Text(attributed)
-        }
-        return Text(text)
     }
 }
 

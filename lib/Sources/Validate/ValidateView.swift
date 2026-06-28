@@ -31,7 +31,7 @@ public struct ValidateView: View {
                         persona: model.selectedPersona,
                         review: model.selectedReview
                     )
-                    .frame(minWidth: 260, idealWidth: 320, maxWidth: 480, maxHeight: .infinity)
+                    .frame(minWidth: 300, idealWidth: 420, maxWidth: 720, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

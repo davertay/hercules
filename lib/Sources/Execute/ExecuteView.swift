@@ -65,7 +65,7 @@ public struct ExecuteView: View {
                             onApprove: { model.approve($0) },
                             onDeny: { model.deny($0) }
                         )
-                        .frame(minWidth: 260, idealWidth: 320, maxWidth: 480, maxHeight: .infinity)
+                        .frame(minWidth: 300, idealWidth: 420, maxWidth: 720, maxHeight: .infinity)
                     }
                     // `HSplitView` proposes only its panes' ideal height; without this the row collapses to
                     // content height and the parent centres it (the inspector's detail ScrollView is the

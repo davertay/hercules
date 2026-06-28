@@ -17,6 +17,7 @@ let package = Package(
         .package(url: "https://github.com/pointfreeco/swift-structured-queries", exact: "0.31.1"),
         .package(url: "https://github.com/swiftlang/swift-subprocess", exact: "0.5.0"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk", from: "0.11.0"),
+        .package(url: "https://github.com/gonzalezreal/textual", exact: "0.5.0"),
     ],
     targets: [
         .target(
@@ -229,6 +230,9 @@ let package = Package(
         ),
         .target(
             name: "Material",
+            dependencies: [
+                .product(name: "Textual", package: "textual"),
+            ],
             resources: [
                 .copy("Resources"),
             ]
