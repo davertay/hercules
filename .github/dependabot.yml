@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: "swift"
+    directory: "/lib"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      point-free:
+        patterns:
+          - "sqlite-data"
+          - "swift-clocks"
+          - "swift-custom-dump"
+          - "swift-dependencies"
+          - "swift-snapshot-testing"
+          - "swift-structured-queries"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns:
+          - "*"
