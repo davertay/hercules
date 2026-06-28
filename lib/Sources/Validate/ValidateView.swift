@@ -23,15 +23,15 @@ public struct ValidateView: View {
                     Text(message)
                 }
             } else {
-                HSplitView {
+                MasterDetailSplit(
+                    masterIdealWidth: PersonaBoard.idealContentWidth(personaCount: ReviewPersona.allCases.count)
+                ) {
                     PersonaBoard(model: model)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .layoutPriority(1)
+                } detail: {
                     ReviewInspector(
                         persona: model.selectedPersona,
                         review: model.selectedReview
                     )
-                    .frame(minWidth: 300, idealWidth: 520, maxWidth: 740, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

@@ -12,6 +12,7 @@ public struct DAGGraphView<NodeContent: View>: View {
     let palette: StatusPalette
     let selectedID: Int?
     let onSelectNode: ((Int) -> Void)?
+    let onContentSizeChange: ((CGSize) -> Void)?
     let nodeContent: (DAGNode, _ isSelected: Bool) -> NodeContent
 
     public init(
@@ -21,6 +22,7 @@ public struct DAGGraphView<NodeContent: View>: View {
         palette: StatusPalette,
         selectedID: Int? = nil,
         onSelectNode: ((Int) -> Void)? = nil,
+        onContentSizeChange: ((CGSize) -> Void)? = nil,
         @ViewBuilder nodeContent: @escaping (DAGNode, _ isSelected: Bool) -> NodeContent
     ) {
         self.layoutNodes = layoutNodes
@@ -29,6 +31,7 @@ public struct DAGGraphView<NodeContent: View>: View {
         self.palette = palette
         self.selectedID = selectedID
         self.onSelectNode = onSelectNode
+        self.onContentSizeChange = onContentSizeChange
         self.nodeContent = nodeContent
     }
 
@@ -117,6 +120,13 @@ public struct DAGGraphView<NodeContent: View>: View {
                 metrics: metrics,
                 palette: palette
             )
+        }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.onChange(of: proxy.size, initial: true) { _, size in
+                    onContentSizeChange?(size)
+                }
+            }
         }
     }
 }

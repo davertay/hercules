@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import IssueGraph
 
 /// Layout vocabulary for `DAGGraphView`, centralised so a re-skin is one edit.
 public struct DAGGraphMetrics: Sendable {
@@ -48,4 +49,18 @@ public struct DAGGraphMetrics: Sendable {
     }
 
     public static let `default` = DAGGraphMetrics()
+
+    /// The width at which `DAGGraphView` renders without horizontal scrolling: the widest row (its nodes
+    /// laid out edge-to-edge with `columnGap` between them) plus `outerPadding` on both sides. Mirrors
+    /// the row construction in `DAGGraphView` — uniform `nodeWidth` cards grouped by layout level (`y`).
+    public func idealContentWidth(for layoutNodes: [IssueGraph.LayoutNode]) -> CGFloat {
+        let widestRowCount = Dictionary(grouping: layoutNodes, by: \.y)
+            .values
+            .map(\.count)
+            .max() ?? 0
+        guard widestRowCount > 0 else { return 2 * outerPadding }
+        let nodes = CGFloat(widestRowCount) * nodeWidth
+        let gaps = CGFloat(widestRowCount - 1) * columnGap
+        return nodes + gaps + 2 * outerPadding
+    }
 }
