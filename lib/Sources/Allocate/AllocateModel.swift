@@ -2,7 +2,7 @@ import Agent
 import Chat
 import Dependencies
 import Foundation
-import Material
+import Skills
 import Observation
 import SQLiteData
 import Store

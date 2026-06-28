@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import Material
+@testable import UISupport
 
 @Suite("MarkdownText")
 struct MarkdownTextTests {

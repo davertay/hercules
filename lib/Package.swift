@@ -9,14 +9,14 @@ let package = Package(
         .library(name: "HerculesApp", targets: ["HerculesApp"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/pointfreeco/sqlite-data", from: "1.0.0"),
-        .package(url: "https://github.com/pointfreeco/swift-clocks", exact: "1.0.6"),
-        .package(url: "https://github.com/pointfreeco/swift-custom-dump", exact: "1.5.0"),
-        .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.12.0"),
+        .package(url: "https://github.com/pointfreeco/sqlite-data", exact: "1.6.6"),
+        .package(url: "https://github.com/pointfreeco/swift-clocks", exact: "1.1.0"),
+        .package(url: "https://github.com/pointfreeco/swift-custom-dump", exact: "1.6.1"),
+        .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.14.1"),
         .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.2"),
-        .package(url: "https://github.com/pointfreeco/swift-structured-queries", exact: "0.31.1"),
+        .package(url: "https://github.com/pointfreeco/swift-structured-queries", exact: "0.32.0"),
         .package(url: "https://github.com/swiftlang/swift-subprocess", exact: "0.5.0"),
-        .package(url: "https://github.com/modelcontextprotocol/swift-sdk", from: "0.11.0"),
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk", exact: "0.12.1"),
         .package(url: "https://github.com/gonzalezreal/textual", exact: "0.5.0"),
     ],
     targets: [
@@ -52,7 +52,7 @@ let package = Package(
             dependencies: [
                 "Agent",
                 "Chat",
-                "Material",
+                "Skills",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
@@ -63,7 +63,7 @@ let package = Package(
             dependencies: [
                 "Allocate",
                 "Agent",
-                "Material",
+                "Skills",
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
@@ -75,7 +75,7 @@ let package = Package(
             dependencies: [
                 "Agent",
                 "Chat",
-                "Material",
+                "Skills",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
@@ -86,7 +86,7 @@ let package = Package(
             dependencies: [
                 "SmallJob",
                 "Agent",
-                "Material",
+                "Skills",
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
@@ -118,7 +118,7 @@ let package = Package(
             dependencies: [
                 "Agent",
                 "Chat",
-                "Material",
+                "Skills",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
@@ -128,7 +128,7 @@ let package = Package(
             name: "DesignTests",
             dependencies: [
                 "Design",
-                "Material",
+                "Skills",
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
@@ -198,8 +198,9 @@ let package = Package(
                 "Agent",
                 "DAGGraphUI",
                 "IssueGraph",
-                "Material",
+                "Skills",
                 "Store",
+                "UISupport",
                 "Worktree",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
@@ -211,7 +212,7 @@ let package = Package(
                 "Execute",
                 "Agent",
                 "IssueGraph",
-                "Material",
+                "Skills",
                 "Store",
                 "Worktree",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
@@ -229,18 +230,27 @@ let package = Package(
             ]
         ),
         .target(
-            name: "Material",
-            dependencies: [
-                .product(name: "Textual", package: "textual"),
-            ],
+            name: "Skills",
             resources: [
                 .copy("Resources"),
             ]
         ),
         .testTarget(
-            name: "MaterialTests",
+            name: "SkillsTests",
             dependencies: [
-                "Material",
+                "Skills",
+            ]
+        ),
+        .target(
+            name: "UISupport",
+            dependencies: [
+                .product(name: "Textual", package: "textual"),
+            ]
+        ),
+        .testTarget(
+            name: "UISupportTests",
+            dependencies: [
+                "UISupport",
             ]
         ),
         .target(
@@ -248,7 +258,7 @@ let package = Package(
             dependencies: [
                 "Agent",
                 "Chat",
-                "Material",
+                "Skills",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
@@ -259,7 +269,7 @@ let package = Package(
             dependencies: [
                 "PRD",
                 "Agent",
-                "Material",
+                "Skills",
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
@@ -306,8 +316,9 @@ let package = Package(
             dependencies: [
                 "Agent",
                 "DAGGraphUI",
-                "Material",
+                "Skills",
                 "Store",
+                "UISupport",
                 "Worktree",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
@@ -318,7 +329,7 @@ let package = Package(
             dependencies: [
                 "Validate",
                 "Agent",
-                "Material",
+                "Skills",
                 "Store",
                 "Worktree",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
@@ -345,10 +356,10 @@ let package = Package(
                 "Allocate",
                 "Design",
                 "Execute",
-                "Material",
                 "PRD",
                 "SmallJob",
                 "Store",
+                "UISupport",
                 "Validate",
                 "Worktree",
                 .product(name: "Dependencies", package: "swift-dependencies"),

@@ -1,5 +1,5 @@
 import DAGGraphUI
-import Material
+import UISupport
 import Store
 import SwiftUI
 
@@ -31,7 +31,7 @@ public struct ValidateView: View {
                         persona: model.selectedPersona,
                         review: model.selectedReview
                     )
-                    .frame(minWidth: 300, idealWidth: 420, maxWidth: 720, maxHeight: .infinity)
+                    .frame(minWidth: 300, idealWidth: 520, maxWidth: 740, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
