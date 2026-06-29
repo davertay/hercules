@@ -45,7 +45,9 @@ jobs:
       - name: Post PR comment
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.WORKFLOW_PAT }}
+          # WORKFLOW_PAT is unset in Dependabot-triggered runs (separate secret
+          # store), so fall back to the default token there.
+          github-token: ${{ secrets.WORKFLOW_PAT || github.token }}
           script: |
             const jobs = [
               { name: 'test-lib',  result: '${{ needs.test-lib.result  }}' },
