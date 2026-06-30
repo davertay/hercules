@@ -1,3 +1,5 @@
+import Chat
+import SQLiteData
 import UISupport
 import Store
 import SwiftUI
@@ -5,6 +7,11 @@ import SwiftUI
 struct InspectorPane: View {
     let issue: IssueRow?
     let failureReason: String?
+    /// The latest `execute` Session for the selected Issue, or `nil` if it has never run. Handed to the
+    /// shared `TranscriptViewerButton`, which gates on it.
+    let transcriptSession: SessionRow?
+    /// The per-Workflow Store the run was projected into, read by the diagnostic `TranscriptView`.
+    let transcriptDatabase: any DatabaseReader
     let onRetry: (Int) -> Void
     let onApprove: (Int) -> Void
     let onDeny: (Int) -> Void
@@ -31,6 +38,13 @@ struct InspectorPane: View {
                         }
                         .font(.callout)
                     }
+                    TranscriptViewerButton(
+                        title: "Issue #\(issue.number) — \(issue.title)",
+                        sessionID: transcriptSession?.id,
+                        database: transcriptDatabase,
+                        unavailableHelp: "No transcript yet — run this Issue",
+                        availableHelp: "Open the latest executor run's transcript"
+                    )
                     if isProposed {
                         ProposalCallout(
                             onApprove: { onApprove(issue.number) },

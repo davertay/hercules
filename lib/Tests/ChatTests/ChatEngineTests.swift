@@ -13,94 +13,107 @@ private let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 @Suite("ChatEngine")
 struct ChatEngineTests {
 
-    // MARK: - Conversation rendering from the database
+    // MARK: - Conversation rendering (shared message-building logic)
+
+    // These exercise `transcriptMessages` directly — the single source of truth both the live chat and
+    // the read-only transcript view build their message list from. They operate on in-memory rows, no
+    // database, since the assembly is a pure function.
 
     @Test
-    func messagesAreBuiltFromObservedTurnsAndBlocks() async throws {
-        let database = try Self.makeDatabase()
-        let sessionID = UUID(-2)
-        try Self.seedSession(database, sessionID: sessionID)
-        try await database.write { db in
-            try TurnRow.insert {
-                TurnRow(
-                    id: UUID(-10), sessionID: sessionID, userPrompt: "hello",
-                    createdAt: fixedDate, updatedAt: fixedDate
-                )
-            }
-            .execute(db)
-            try ContentBlockRow.insert {
-                ContentBlockRow(
-                    id: UUID(-11), turnID: UUID(-10), position: 0, role: "assistant", kind: "text",
-                    text: "Hi there", createdAt: fixedDate, updatedAt: fixedDate
-                )
-            }
-            .execute(db)
-            try TurnRow.insert {
-                TurnRow(
-                    id: UUID(-20), sessionID: sessionID, userPrompt: "more", isError: true,
-                    createdAt: fixedDate.addingTimeInterval(1), updatedAt: fixedDate
-                )
-            }
-            .execute(db)
-        }
-
-        let engine = Self.makeEngine(database: database)
-        try await engine.$conversation.load()
+    func messagesAreBuiltFromObservedTurnsAndBlocks() {
+        let turns = [
+            TurnRow(
+                id: UUID(-10), sessionID: UUID(-2), userPrompt: "hello",
+                createdAt: fixedDate, updatedAt: fixedDate
+            ),
+            TurnRow(
+                id: UUID(-20), sessionID: UUID(-2), userPrompt: "more", isError: true,
+                createdAt: fixedDate.addingTimeInterval(1), updatedAt: fixedDate
+            ),
+        ]
+        let blocks = [
+            ContentBlockRow(
+                id: UUID(-11), turnID: UUID(-10), position: 0, role: "assistant", kind: "text",
+                text: "Hi there", createdAt: fixedDate, updatedAt: fixedDate
+            )
+        ]
 
         #expect(
-            engine.messages == [
-                ChatEngine.Message(id: "\(UUID(-10).uuidString)/user", kind: .user, text: "hello"),
-                ChatEngine.Message(id: "\(UUID(-10).uuidString)/0", kind: .assistant, text: "Hi there"),
-                ChatEngine.Message(id: "\(UUID(-20).uuidString)/user", kind: .user, text: "more"),
-                ChatEngine.Message(id: "\(UUID(-20).uuidString)/assistant", kind: .assistant, text: "Turn failed.", isError: true),
+            transcriptMessages(turns: turns, blocks: blocks) == [
+                Message(id: "\(UUID(-10).uuidString)/user", kind: .user, text: "hello"),
+                Message(id: "\(UUID(-10).uuidString)/0", kind: .assistant, text: "Hi there"),
+                Message(id: "\(UUID(-20).uuidString)/user", kind: .user, text: "more"),
+                Message(id: "\(UUID(-20).uuidString)/assistant", kind: .assistant, text: "Turn failed.", isError: true),
             ]
         )
     }
 
     @Test
-    func toolCallTimelineRendersThinkingToolUseAndToolResultDistinctly() async throws {
-        let database = try Self.makeDatabase()
-        let sessionID = UUID(-2)
-        try Self.seedSession(database, sessionID: sessionID)
-        try await database.write { db in
-            try TurnRow.insert {
-                TurnRow(
-                    id: UUID(-10), sessionID: sessionID, userPrompt: "find it",
-                    createdAt: fixedDate, updatedAt: fixedDate
-                )
-            }
-            .execute(db)
-            try ContentBlockRow.insert {
-                ContentBlockRow(
-                    id: UUID(-11), turnID: UUID(-10), position: 0, role: "assistant", kind: "thinking",
-                    text: "Let me look.", createdAt: fixedDate, updatedAt: fixedDate
-                )
-                ContentBlockRow(
-                    id: UUID(-12), turnID: UUID(-10), position: 1, role: "assistant", kind: "tool_use",
-                    text: #"{"path":"README.md"}"#, toolName: "Read", createdAt: fixedDate, updatedAt: fixedDate
-                )
-                ContentBlockRow(
-                    id: UUID(-13), turnID: UUID(-10), position: 2, role: "user", kind: "tool_result",
-                    text: "file contents", createdAt: fixedDate, updatedAt: fixedDate
-                )
-                ContentBlockRow(
-                    id: UUID(-14), turnID: UUID(-10), position: 3, role: "assistant", kind: "text",
-                    text: "Found it.", createdAt: fixedDate, updatedAt: fixedDate
-                )
-            }
-            .execute(db)
-        }
-
-        let engine = Self.makeEngine(database: database)
-        try await engine.$conversation.load()
+    func toolCallTimelineRendersThinkingToolUseAndToolResultDistinctly() {
+        let turns = [
+            TurnRow(
+                id: UUID(-10), sessionID: UUID(-2), userPrompt: "find it",
+                createdAt: fixedDate, updatedAt: fixedDate
+            )
+        ]
+        let blocks = [
+            ContentBlockRow(
+                id: UUID(-11), turnID: UUID(-10), position: 0, role: "assistant", kind: "thinking",
+                text: "Let me look.", createdAt: fixedDate, updatedAt: fixedDate
+            ),
+            ContentBlockRow(
+                id: UUID(-12), turnID: UUID(-10), position: 1, role: "assistant", kind: "tool_use",
+                text: #"{"path":"README.md"}"#, toolName: "Read", createdAt: fixedDate, updatedAt: fixedDate
+            ),
+            ContentBlockRow(
+                id: UUID(-13), turnID: UUID(-10), position: 2, role: "user", kind: "tool_result",
+                text: "file contents", createdAt: fixedDate, updatedAt: fixedDate
+            ),
+            ContentBlockRow(
+                id: UUID(-14), turnID: UUID(-10), position: 3, role: "assistant", kind: "text",
+                text: "Found it.", createdAt: fixedDate, updatedAt: fixedDate
+            ),
+        ]
 
         #expect(
-            engine.messages == [
-                ChatEngine.Message(id: "\(UUID(-10).uuidString)/user", kind: .user, text: "find it"),
-                ChatEngine.Message(id: "\(UUID(-10).uuidString)/0", kind: .thinking, text: "Let me look."),
-                ChatEngine.Message(id: "\(UUID(-10).uuidString)/1", kind: .toolUse, text: #"{"path":"README.md"}"#, toolName: "Read"),
-                ChatEngine.Message(id: "\(UUID(-10).uuidString)/2", kind: .toolResult, text: "file contents"),
-                ChatEngine.Message(id: "\(UUID(-10).uuidString)/3", kind: .assistant, text: "Found it."),
+            transcriptMessages(turns: turns, blocks: blocks) == [
+                Message(id: "\(UUID(-10).uuidString)/user", kind: .user, text: "find it"),
+                Message(id: "\(UUID(-10).uuidString)/0", kind: .thinking, text: "Let me look."),
+                Message(id: "\(UUID(-10).uuidString)/1", kind: .toolUse, text: #"{"path":"README.md"}"#, toolName: "Read"),
+                Message(id: "\(UUID(-10).uuidString)/2", kind: .toolResult, text: "file contents"),
+                Message(id: "\(UUID(-10).uuidString)/3", kind: .assistant, text: "Found it."),
+            ]
+        )
+    }
+
+    @Test
+    func emptyTextAndThinkingBlocksAreSkipped() {
+        let turns = [
+            TurnRow(
+                id: UUID(-10), sessionID: UUID(-2), userPrompt: "hello",
+                createdAt: fixedDate, updatedAt: fixedDate
+            )
+        ]
+        let blocks = [
+            ContentBlockRow(
+                id: UUID(-11), turnID: UUID(-10), position: 0, role: "assistant", kind: "text",
+                text: "", createdAt: fixedDate, updatedAt: fixedDate
+            ),
+            ContentBlockRow(
+                id: UUID(-12), turnID: UUID(-10), position: 1, role: "assistant", kind: "thinking",
+                text: "", createdAt: fixedDate, updatedAt: fixedDate
+            ),
+            ContentBlockRow(
+                id: UUID(-13), turnID: UUID(-10), position: 2, role: "assistant", kind: "text",
+                text: "Done.", createdAt: fixedDate, updatedAt: fixedDate
+            ),
+        ]
+
+        // The empty text/thinking blocks drop out, leaving only the user bubble and the real reply.
+        #expect(
+            transcriptMessages(turns: turns, blocks: blocks) == [
+                Message(id: "\(UUID(-10).uuidString)/user", kind: .user, text: "hello"),
+                Message(id: "\(UUID(-10).uuidString)/2", kind: .assistant, text: "Done."),
             ]
         )
     }
@@ -439,6 +452,59 @@ struct ChatEngineTests {
         // Each surface sees only its own Session's Turns — no cross-Session bleed.
         #expect(designEngine.messages.map(\.text) == ["design prompt"])
         #expect(prdEngine.messages.map(\.text) == ["prd prompt"])
+    }
+
+    @Test
+    func sessionScopedFetchReturnsOnlyThatSessionsTurnsAndBlocksNotASiblingOfTheSameKind() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(-1)
+        // Two `execute` Sessions of the *same kind* for different Issues — the case the session scope
+        // exists to keep apart, where the kind scope would interleave both.
+        let issueOneSession = UUID(-2)
+        let issueTwoSession = UUID(-3)
+        try Self.seedSession(database, sessionID: issueOneSession, workflowID: workflowID, kind: .execute)
+        try Self.seedSession(
+            database, sessionID: issueTwoSession, workflowID: workflowID, kind: .execute, seedWorkflow: false
+        )
+        try await database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-10), sessionID: issueOneSession, userPrompt: "issue one",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try ContentBlockRow.insert {
+                ContentBlockRow(
+                    id: UUID(-11), turnID: UUID(-10), position: 0, role: "assistant", kind: "text",
+                    text: "issue one reply", createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-20), sessionID: issueTwoSession, userPrompt: "issue two",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try ContentBlockRow.insert {
+                ContentBlockRow(
+                    id: UUID(-21), turnID: UUID(-20), position: 0, role: "assistant", kind: "text",
+                    text: "issue two reply", createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let value = try await database.read { db in
+            try ConversationRequest(sessionID: issueOneSession).fetch(db)
+        }
+
+        // Only Issue one's Turn and block come back — the sibling `execute` Session does not bleed in.
+        #expect(value.turns.map(\.id) == [UUID(-10)])
+        #expect(value.blocks.map(\.text) == ["issue one reply"])
+        #expect(transcriptMessages(turns: value.turns, blocks: value.blocks).map(\.text) == ["issue one", "issue one reply"])
     }
 
     @Test

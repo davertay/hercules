@@ -1,3 +1,5 @@
+import Chat
+import SQLiteData
 import UISupport
 import Store
 import SwiftUI
@@ -5,6 +7,12 @@ import SwiftUI
 struct ReviewInspector: View {
     let persona: ReviewPersona?
     let review: ReviewRow?
+    /// The per-Workflow Store the reviewer run was projected into, read by the diagnostic `TranscriptView`.
+    let transcriptDatabase: any DatabaseReader
+
+    /// The selected Persona's reviewer Session, or `nil` until it has run. Handed to the shared
+    /// `TranscriptViewerButton`, which gates on it.
+    private var transcriptSession: UUID? { review?.sessionID }
 
     var body: some View {
         if let persona {
@@ -15,6 +23,13 @@ struct ReviewInspector: View {
                     let status = review.flatMap { ReviewStatus(rawValue: $0.status) }
                     LabeledContent("Status") { Text(label(for: status)) }
                         .font(.callout)
+                    TranscriptViewerButton(
+                        title: "\(persona.title) review",
+                        sessionID: transcriptSession,
+                        database: transcriptDatabase,
+                        unavailableHelp: "No transcript yet — run this review",
+                        availableHelp: "Open this Persona's review transcript"
+                    )
                     Divider()
                     Text(persona.description)
                         .font(.callout)

@@ -12,24 +12,6 @@ import Store
 @MainActor
 @Observable
 public final class ChatEngine {
-    public struct Message: Identifiable, Equatable, Sendable {
-        public enum Kind: Equatable, Sendable { case user, assistant, thinking, toolUse, toolResult }
-        public let id: String
-        public let kind: Kind
-        public let text: String
-        /// Set only on `.toolUse` rows.
-        public let toolName: String?
-        public let isError: Bool
-
-        public init(id: String, kind: Kind, text: String, toolName: String? = nil, isError: Bool = false) {
-            self.id = id
-            self.kind = kind
-            self.text = text
-            self.toolName = toolName
-            self.isError = isError
-        }
-    }
-
     @ObservationIgnored
     @Dependency(\.agentClient) private var agentClient
 
@@ -121,50 +103,10 @@ public final class ChatEngine {
         }
     }
 
-    /// One user bubble per Turn's prompt, then that Turn's content blocks in order.
+    /// One user bubble per Turn's prompt, then that Turn's content blocks in order. Built from the
+    /// shared `transcriptMessages` so the live chat and the read-only transcript view stay in sync.
     public var messages: [Message] {
-        let turns = conversation.turns.sorted { $0.createdAt < $1.createdAt }
-        let blocksByTurn = Dictionary(grouping: conversation.blocks) { $0.turnID }
-
-        var result: [Message] = []
-        for turn in turns {
-            result.append(
-                Message(id: "\(turn.id.uuidString)/user", kind: .user, text: turn.userPrompt)
-            )
-            let blocks = (blocksByTurn[turn.id] ?? []).sorted { $0.position < $1.position }
-            var hasAssistantText = false
-            for block in blocks {
-                guard let message = Self.message(for: block, isError: turn.isError) else { continue }
-                if message.kind == .assistant { hasAssistantText = true }
-                result.append(message)
-            }
-            // Surface a bare failure only when the errored Turn produced no assistant text to carry it.
-            if !hasAssistantText, turn.isError {
-                result.append(
-                    Message(id: "\(turn.id.uuidString)/assistant", kind: .assistant, text: "Turn failed.", isError: true)
-                )
-            }
-        }
-        return result
-    }
-
-    /// `nil` to skip the block (empty text/thinking).
-    private static func message(for block: ContentBlockRow, isError: Bool) -> Message? {
-        let id = "\(block.turnID.uuidString)/\(block.position)"
-        switch block.kind {
-        case "text":
-            guard !block.text.isEmpty else { return nil }
-            return Message(id: id, kind: .assistant, text: block.text, isError: isError)
-        case "thinking":
-            guard !block.text.isEmpty else { return nil }
-            return Message(id: id, kind: .thinking, text: block.text)
-        case "tool_use":
-            return Message(id: id, kind: .toolUse, text: block.text, toolName: block.toolName)
-        case "tool_result":
-            return Message(id: id, kind: .toolResult, text: block.text)
-        default:
-            return nil
-        }
+        transcriptMessages(turns: conversation.turns, blocks: conversation.blocks)
     }
 
     /// Empty-state condition: a host shows an intake prompt instead of an empty transcript.
@@ -239,10 +181,25 @@ public final class ChatEngine {
 }
 
 /// Reads one surface's Turns and content blocks in one transaction so they stay consistent mid-Turn.
-/// Scoped to Sessions of `kind` in `workflowID` so different-kind Sessions don't bleed transcripts.
+/// The scope resolves to a set of Session IDs first, then reads those Sessions' Turns and blocks:
+/// - `.kind` — every Session of `kind` in `workflowID`, driving the live chat (ADR 0005).
+/// - `.session` — a single Session, driving the read-only transcript view so a sibling Session of the
+///   same kind (e.g. another Issue's `execute` run) can't bleed its conversation in.
 struct ConversationRequest: FetchKeyRequest {
-    var workflowID: UUID = UUID()
-    var kind: SessionKind = .design
+    enum Scope: Hashable, Sendable {
+        case kind(workflowID: UUID, kind: SessionKind)
+        case session(UUID)
+    }
+
+    var scope: Scope
+
+    init(workflowID: UUID, kind: SessionKind) {
+        scope = .kind(workflowID: workflowID, kind: kind)
+    }
+
+    init(sessionID: UUID) {
+        scope = .session(sessionID)
+    }
 
     struct Value: Equatable, Sendable {
         var turns: [TurnRow] = []
@@ -250,13 +207,19 @@ struct ConversationRequest: FetchKeyRequest {
     }
 
     func fetch(_ db: Database) throws -> Value {
-        let sessionIDs = Set(
-            try SessionRow
-                .where { $0.workflowID.eq(workflowID) }
-                .where { $0.kind.eq(kind.rawValue) }
-                .fetchAll(db)
-                .map(\.id)
-        )
+        let sessionIDs: Set<UUID>
+        switch scope {
+        case let .kind(workflowID, kind):
+            sessionIDs = Set(
+                try SessionRow
+                    .where { $0.workflowID.eq(workflowID) }
+                    .where { $0.kind.eq(kind.rawValue) }
+                    .fetchAll(db)
+                    .map(\.id)
+            )
+        case let .session(sessionID):
+            sessionIDs = [sessionID]
+        }
         let turns = try TurnRow.fetchAll(db).filter { sessionIDs.contains($0.sessionID) }
         let turnIDs = Set(turns.map(\.id))
         let blocks = try ContentBlockRow.fetchAll(db).filter { turnIDs.contains($0.turnID) }
