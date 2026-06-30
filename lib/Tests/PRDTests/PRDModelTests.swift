@@ -228,6 +228,124 @@ struct PRDModelTests {
         #expect(!model.engine.isRunning)
     }
 
+    // MARK: - Skip
+
+    @Test
+    func skipCompletesThePhaseWithNoArtifactAndStartsNoSession() async throws {
+        let database = try Self.makeDatabase()
+        try Self.seedCompletedDesignPhase(database, summaryPath: "/wf/phases/design/summary.md")
+        let started = LockIsolated(false)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                started.setValue(true)
+                return try await Self.startSession(for: request, id: UUID(100), finalAnswer: "")
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: Self.makeWorkflowDirectory(), database: database)
+        }
+
+        model.skip()
+        await model.runTask?.value
+
+        // No agent ran and no PRD was written.
+        #expect(!started.value)
+        #expect(model.engine.errorText == nil)
+
+        // The Phase is recorded complete with a null Artifact path — which still unlocks the next Phase.
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("prd") }.fetchOne(db)
+        }
+        #expect(phase?.status == "complete")
+        #expect(phase?.artifactPath == nil)
+
+        // The model reflects the terminal skipped state: complete, no Artifact, no further actions.
+        try await model.$prdPhase.load()
+        #expect(model.isComplete)
+        #expect(model.isSkipped)
+        #expect(model.prdSavedURL == nil)
+        #expect(!model.isGenerateAvailable)
+        #expect(!model.isRegenerateAvailable)
+    }
+
+    @Test
+    func unskipReversesASkipBackToTheIdleGenerateState() async throws {
+        let database = try Self.makeDatabase()
+        try Self.seedCompletedDesignPhase(database, summaryPath: "/wf/phases/design/summary.md")
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+        } operation: {
+            Self.makeModel(workflowDirectory: Self.makeWorkflowDirectory(), database: database)
+        }
+
+        model.skip()
+        try await model.$prdPhase.load()
+        #expect(model.isSkipped)
+
+        model.unskip()
+        try await model.$prdPhase.load()
+
+        // The Phase reads as idle again, with the generate action restored.
+        #expect(!model.isComplete)
+        #expect(!model.isSkipped)
+        #expect(model.isGenerateAvailable)
+        #expect(model.engine.errorText == nil)
+
+        // The row is soft-deleted, not hard-deleted, so it no longer counts as a completed Phase.
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("prd") }.fetchOne(db)
+        }
+        #expect(phase?.isDeleted == true)
+    }
+
+    @Test
+    func generateAfterUnskipResurrectsTheRowAndCompletesNormally() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedCompletedDesignPhase(database, summaryPath: "/wf/phases/design/summary.md")
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                try await Self.startSession(for: request, id: UUID(100), finalAnswer: "# PRD")
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.skip()
+        try await model.$prdPhase.load()
+        model.unskip()
+        try await model.$prdPhase.load()
+
+        model.generate()
+        await model.runTask?.value
+        try await model.$prdPhase.load()
+
+        let prdURL = workflowDirectory
+            .appending(path: "phases/prd", directoryHint: .isDirectory)
+            .appending(path: "prd.md")
+        #expect(model.prdSavedURL == prdURL)
+        #expect(model.isComplete)
+        #expect(!model.isSkipped)
+
+        // The same row is reused and resurrected — one PRD Phase row, no longer soft-deleted.
+        let phases = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("prd") }.fetchAll(db)
+        }
+        #expect(phases.count == 1)
+        #expect(phases.first?.isDeleted == false)
+        #expect(phases.first?.artifactPath == prdURL.path)
+    }
+
     @Test
     func isIdleWithGenerateAvailableBeforeAnyGeneration() async throws {
         let database = try Self.makeDatabase()
