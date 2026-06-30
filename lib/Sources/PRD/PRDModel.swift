@@ -26,7 +26,6 @@ public final class PRDModel {
     @ObservationIgnored
     private let workflowID: UUID
 
-    /// The PRD Artifact is written beneath this at `phases/prd/prd.md`.
     @ObservationIgnored
     private let workflowDirectory: URL
 
@@ -64,28 +63,26 @@ public final class PRDModel {
         prdPhase?.artifactPath.map { URL(fileURLWithPath: $0) }
     }
 
+    public var isComplete: Bool { prdPhase != nil }
+
+    public var isSkipped: Bool { isComplete && prdSavedURL == nil }
+
     public var isIdle: Bool { engine.isIntake }
 
-    /// Whether this Phase's chat agent is mid-Turn — the PRD contribution to the Workflow's aggregate
-    /// running state. A thin reflection of the engine's run flag.
     public var isBusy: Bool { engine.isRunning }
 
-    /// Cancels an in-flight chat Turn — the PRD contribution to the Workflow-level stop-all. No-op when
-    /// idle.
     public func cancel() {
         engine.cancel()
     }
 
-    /// Unavailable once the Phase is complete — re-running is the separate Regenerate action.
     public var isGenerateAvailable: Bool {
-        !engine.isRunning && prdSavedURL == nil
+        !engine.isRunning && !isComplete
     }
 
     public var isRegenerateAvailable: Bool {
         !engine.isRunning && prdSavedURL != nil
     }
 
-    /// The heavy behavioral instructions live in the to-prd Skill.
     static func directedPrompt(summaryPath: String) -> String {
         "Read the Design summary at \(summaryPath) and produce the complete PRD now as a markdown document."
     }
@@ -97,13 +94,29 @@ public final class PRDModel {
         """
     }
 
+    public func skip() {
+        guard isGenerateAvailable else { return }
+        do {
+            try database.completePhase(workflowID: workflowID, kind: "prd", id: uuid(), now: now)
+        } catch {
+            engine.errorText = error.localizedDescription
+        }
+    }
+
+    public func unskip() {
+        guard isSkipped else { return }
+        do {
+            try database.reopenPhase(workflowID: workflowID, kind: "prd", now: now)
+        } catch {
+            engine.errorText = error.localizedDescription
+        }
+    }
+
     public func generate() {
         guard isGenerateAvailable else { return }
         runDirectedTurn(prompt: Self.directedPrompt(summaryPath:))
     }
 
-    /// Resumes the existing PRD Session rather than starting a fresh one, which would break the
-    /// one-Session-per-(Workflow, kind) invariant (ADR 0005), and overwrites the same Artifact.
     public func regenerate() {
         guard isRegenerateAvailable else { return }
         runDirectedTurn(prompt: Self.regeneratePrompt(summaryPath:))

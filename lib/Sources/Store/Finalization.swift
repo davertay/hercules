@@ -47,6 +47,9 @@ extension DatabaseWriter {
                     .update {
                         $0.status = "complete"
                         $0.artifactPath = #bind(artifactPath)
+                        // Resurrect a row a prior `reopenPhase` soft-deleted (e.g. an un-skipped PRD
+                        // being generated): re-completing a Phase means it exists again.
+                        $0.isDeleted = false
                         $0.updatedAt = now
                     }
                     .execute(db)
@@ -83,6 +86,25 @@ extension DatabaseReader {
     /// reader; callers decide whether absence is an error (Allocate/PRD) or merely best-effort (Execute).
     public func completedArtifactPath(workflowID: UUID, kind: String) throws -> String? {
         try read { db in try completedPhaseRow(db, workflowID: workflowID, kind: kind) }?.artifactPath
+    }
+}
+
+extension DatabaseWriter {
+    /// Reverses a Phase completion by soft-deleting its row, returning the Phase to its pre-completion
+    /// (idle, and downstream re-locked) state — the un-skip path. A later `completePhase` resurrects the
+    /// same row, so re-completing the Phase clears the soft-delete. A no-op when no live row exists.
+    public func reopenPhase(workflowID: UUID, kind: String, now: Date) throws {
+        try write { db in
+            try PhaseRow
+                .where { $0.workflowID.eq(workflowID) }
+                .where { $0.kind.eq(kind) }
+                .where { !$0.isDeleted }
+                .update {
+                    $0.isDeleted = true
+                    $0.updatedAt = now
+                }
+                .execute(db)
+        }
     }
 }
 

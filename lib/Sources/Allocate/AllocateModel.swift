@@ -45,8 +45,6 @@ public final class AllocateModel {
     @ObservationIgnored
     var runTask: Task<Void, Never>?
 
-    /// - Parameter mcpServerCommand: the Hercules app binary, re-executed as the stdio create-issue MCP
-    ///   server. The DB path and workflow id are fixed as launch args, so it can't target another Workflow's database.
     public init(
         worktree: URL,
         workflowID: UUID,
@@ -77,41 +75,36 @@ public final class AllocateModel {
 
     public var isIntake: Bool { engine.isIntake }
 
-    /// Whether this Phase's chat agent is mid-Turn — the Allocate contribution to the Workflow's aggregate
-    /// running state. A thin reflection of the engine's run flag.
     public var isBusy: Bool { engine.isRunning }
 
-    /// Cancels an in-flight chat Turn — the Allocate contribution to the Workflow-level stop-all. No-op
-    /// when idle.
     public func cancel() {
         engine.cancel()
     }
 
     public var isProposeAvailable: Bool { !engine.isRunning }
 
-    /// Available only once a proposal conversation exists.
     public var isAcceptAvailable: Bool { engine.session != nil && !engine.isRunning }
 
-    /// The heavy behavioural instructions — propose as text only, write nothing yet — live in the
-    /// to-issues Skill.
-    static func proposePrompt(prdPath: String, designPath: String) -> String {
-        """
-        Read the PRD at \(prdPath) and the Design summary at \(designPath), then propose the \
-        breakdown into Issues as plain text. Do not write any Issues yet.
-        """
+    static func proposePrompt(prdPath: String?, designPath: String) -> String {
+        if let prdPath {
+            """
+            Read the PRD at \(prdPath) and the Design summary at \(designPath), then propose the \
+            breakdown into Issues as plain text. Do not write any Issues yet.
+            """
+        } else {
+            """
+            Read the Design summary at \(designPath) — no PRD was produced for this Workflow — then \
+            propose the breakdown into Issues as plain text. Do not write any Issues yet.
+            """
+        }
     }
 
-    /// Idempotent by construction: a full rewrite of the agreed set from scratch, one `create_issue` per
-    /// Issue, even if Issues were created in an earlier Turn — so a re-commit doesn't no-op with "already
-    /// created". The prior set is soft-deleted out-of-band once this write succeeds (see `acceptAndWrite`).
     static let commitPrompt = """
         Write the agreed set of Issues now from scratch: make exactly one create_issue call per Issue in \
         the set, even if you already created Issues in an earlier Turn. Recreate every Issue in the agreed \
         set — do not skip any as "already created".
         """
 
-    /// Reads the PRD and Design summary locations from their completed Phase rows, attaches both, and
-    /// sends the proposal prompt. Starts the Session the first time, resumes it on a re-propose.
     public func propose() {
         guard isProposeAvailable else { return }
         engine.errorText = nil
@@ -119,17 +112,14 @@ public final class AllocateModel {
 
         runTask = Task { [self] in
             do {
-                let prd = try artifactURL(kind: "prd")
                 let design = try artifactURL(kind: "design")
+                let prd = optionalArtifactURL(kind: "prd")
+                let relativePaths = [prd, design]
+                    .compactMap { $0 }
+                    .map { workflowRelativePath(of: $0.path, under: workflowDirectory) }
                 try await engine.send(
-                    Self.proposePrompt(prdPath: prd.path, designPath: design.path),
-                    inputs: InputBundle(
-                        root: workflowDirectory,
-                        relativePaths: [
-                            workflowRelativePath(of: prd.path, under: workflowDirectory),
-                            workflowRelativePath(of: design.path, under: workflowDirectory),
-                        ]
-                    )
+                    Self.proposePrompt(prdPath: prd?.path, designPath: design.path),
+                    inputs: InputBundle(root: workflowDirectory, relativePaths: relativePaths)
                 )
             } catch {
                 engine.errorText = error.localizedDescription
@@ -200,7 +190,6 @@ public final class AllocateModel {
         )
     }
 
-    /// A completed Phase's file Artifact, read from its `phase` row.
     private func artifactURL(kind: String) throws -> URL {
         guard let path = try database.completedArtifactPath(workflowID: workflowID, kind: kind) else {
             throw AllocateError.artifactMissing(kind)
@@ -208,8 +197,12 @@ public final class AllocateModel {
         return URL(fileURLWithPath: path)
     }
 
-    /// Read directly so the completion gate keys on the rows the commit Turn just wrote rather than
-    /// waiting for the `@Fetch` to refire.
+    private func optionalArtifactURL(kind: String) -> URL? {
+        (try? database.completedArtifactPath(workflowID: workflowID, kind: kind))
+            .flatMap { $0 }
+            .map { URL(fileURLWithPath: $0) }
+    }
+
     private func currentIssues() throws -> [IssueRow] {
         try database.read { db in
             try WorkflowIssuesRequest(workflowID: workflowID).fetch(db)

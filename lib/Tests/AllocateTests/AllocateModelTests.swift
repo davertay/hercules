@@ -75,6 +75,42 @@ struct AllocateModelTests {
     }
 
     @Test
+    func proposeToleratesASkippedPRDAndAttachesTheDesignSummaryAlone() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        let designPath = Self.artifactPath(workflowDirectory, "phases/design/summary.md")
+        try Self.seedWorkflow(database)
+        // A skipped PRD Phase: completed, but with no Artifact path.
+        try Self.seedCompletedPhaseWithoutArtifact(database, kind: "prd", id: UUID(-2))
+        try Self.seedCompletedPhase(database, kind: "design", artifactPath: designPath, id: UUID(-3))
+        let captured = LockIsolated<StartRequest?>(nil)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                captured.setValue(request)
+                return try await Self.startSession(for: request, id: UUID(100))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.propose()
+        await model.runTask?.value
+
+        let request = try #require(captured.value)
+        // The PRD-less prompt is used, and only the Design summary is attached.
+        #expect(request.prompt == AllocateModel.proposePrompt(prdPath: nil, designPath: designPath))
+        let inputs = try #require(request.inputs)
+        #expect(inputs.root == workflowDirectory)
+        #expect(inputs.relativePaths == ["phases/design/summary.md"])
+        #expect(model.engine.errorText == nil)
+        #expect(!model.engine.isRunning)
+    }
+
+    @Test
     func proposeWritesNoIssues() async throws {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
@@ -337,6 +373,21 @@ struct AllocateModelTests {
                 PhaseRow(
                     id: id, workflowID: UUID(-1), kind: kind, status: "complete",
                     artifactPath: artifactPath, createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+    }
+
+    /// A Phase completed with no file Artifact — the shape a skipped PRD leaves behind.
+    private static func seedCompletedPhaseWithoutArtifact(
+        _ database: any DatabaseWriter, kind: String, id: UUID
+    ) throws {
+        try database.write { db in
+            try PhaseRow.insert {
+                PhaseRow(
+                    id: id, workflowID: UUID(-1), kind: kind, status: "complete",
+                    artifactPath: nil, createdAt: fixedDate, updatedAt: fixedDate
                 )
             }
             .execute(db)
