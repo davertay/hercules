@@ -18,7 +18,7 @@ public struct ChatTranscript: View {
                     }
                     if let errorText = engine.errorText {
                         ChatMessageBubble(
-                            message: ChatEngine.Message(
+                            message: Message(
                                 id: "error",
                                 kind: .assistant,
                                 text: errorText,
@@ -49,8 +49,8 @@ public struct ChatTranscript: View {
     }
 }
 
-private struct ChatMessageBubble: View {
-    let message: ChatEngine.Message
+struct ChatMessageBubble: View {
+    let message: Message
 
     var body: some View {
         switch message.kind {
@@ -118,7 +118,7 @@ private struct ChatMessageBubble: View {
     }
 }
 
-private struct ThinkingRow: View {
+struct ThinkingRow: View {
     let text: String
 
     var body: some View {
@@ -136,7 +136,7 @@ private struct ThinkingRow: View {
     }
 }
 
-private struct ToolCallRow: View {
+struct ToolCallRow: View {
     let name: String
     let input: String
 
@@ -164,9 +164,11 @@ private struct ToolCallRow: View {
     }
 }
 
-/// Truncated so a long read/search doesn't flood the chat.
-private struct ToolResultRow: View {
+/// Truncated so a long read/search doesn't flood the chat. `lineLimit` defaults to 8 for the live
+/// chat; the read-only transcript view passes `nil` to show tool results in full.
+struct ToolResultRow: View {
     let text: String
+    var lineLimit: Int? = 8
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -176,7 +178,7 @@ private struct ToolResultRow: View {
             Text(text)
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
-                .lineLimit(8)
+                .lineLimit(lineLimit)
                 .textSelection(.enabled)
             Spacer(minLength: 0)
         }
