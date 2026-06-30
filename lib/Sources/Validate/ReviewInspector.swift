@@ -10,10 +10,8 @@ struct ReviewInspector: View {
     /// The per-Workflow Store the reviewer run was projected into, read by the diagnostic `TranscriptView`.
     let transcriptDatabase: any DatabaseReader
 
-    @State private var showingTranscript = false
-
-    /// The selected Persona's reviewer Session, or `nil` until it has run. The same value gates the "View
-    /// transcript" button and supplies the sheet's subject, so the two can't disagree.
+    /// The selected Persona's reviewer Session, or `nil` until it has run. Handed to the shared
+    /// `TranscriptViewerButton`, which gates on it.
     private var transcriptSession: UUID? { review?.sessionID }
 
     var body: some View {
@@ -25,15 +23,13 @@ struct ReviewInspector: View {
                     let status = review.flatMap { ReviewStatus(rawValue: $0.status) }
                     LabeledContent("Status") { Text(label(for: status)) }
                         .font(.callout)
-                    Button {
-                        showingTranscript = true
-                    } label: {
-                        Label("View transcript", systemImage: "text.bubble")
-                    }
-                    .disabled(transcriptSession == nil)
-                    .help(transcriptSession == nil
-                        ? "No transcript yet — run this review"
-                        : "Open this Persona's review transcript")
+                    TranscriptViewerButton(
+                        title: "\(persona.title) review",
+                        sessionID: transcriptSession,
+                        database: transcriptDatabase,
+                        unavailableHelp: "No transcript yet — run this review",
+                        availableHelp: "Open this Persona's review transcript"
+                    )
                     Divider()
                     Text(persona.description)
                         .font(.callout)
@@ -54,15 +50,6 @@ struct ReviewInspector: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .sheet(isPresented: $showingTranscript) {
-                if let transcriptSession {
-                    TranscriptSheet(
-                        persona: persona,
-                        sessionID: transcriptSession,
-                        database: transcriptDatabase
-                    )
-                }
-            }
         } else {
             ContentUnavailableView {
                 Label("No Persona selected", systemImage: "sidebar.right")
@@ -70,31 +57,6 @@ struct ReviewInspector: View {
                 Text("Select a Persona to see its review Summary.")
             }
         }
-    }
-}
-
-/// One Persona's reviewer-run transcript, presented as a sheet. Read-only chrome: a Done button
-/// top-trailing — also bound to Escape — over a resizable frame with sensible minimums. It holds no state
-/// of its own, so size and scroll start fresh on each open.
-private struct TranscriptSheet: View {
-    let persona: ReviewPersona
-    let sessionID: UUID
-    let database: any DatabaseReader
-
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            TranscriptView(sessionID: sessionID, database: database)
-                .navigationTitle("\(persona.title) review")
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }
-                            .keyboardShortcut(.cancelAction)
-                    }
-                }
-        }
-        .frame(minWidth: 560, minHeight: 420)
     }
 }
 
