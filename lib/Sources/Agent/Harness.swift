@@ -112,7 +112,12 @@ public enum Harness {
         guard let inputs, !inputs.relativePaths.isEmpty else {
             return prompt
         }
-        let footer = inputs.relativePaths.map { "- \($0)" }.joined(separator: "\n")
+        // List absolute paths: the agent's working directory is the worktree, but these Artifacts live
+        // under the bundle root (the Workflow directory, granted via --add-dir), so a bare relative path
+        // would be resolved against the wrong directory and miss. Absolute is unambiguous regardless of cwd.
+        let footer = inputs.relativePaths
+            .map { "- \(inputs.root.appending(path: $0).path)" }
+            .joined(separator: "\n")
         return "\(prompt)\n\nFiles available (read with your file-read tool):\n\(footer)"
     }
 }
