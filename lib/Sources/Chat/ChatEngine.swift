@@ -181,10 +181,25 @@ public final class ChatEngine {
 }
 
 /// Reads one surface's Turns and content blocks in one transaction so they stay consistent mid-Turn.
-/// Scoped to Sessions of `kind` in `workflowID` so different-kind Sessions don't bleed transcripts.
+/// The scope resolves to a set of Session IDs first, then reads those Sessions' Turns and blocks:
+/// - `.kind` — every Session of `kind` in `workflowID`, driving the live chat (ADR 0005).
+/// - `.session` — a single Session, driving the read-only transcript view so a sibling Session of the
+///   same kind (e.g. another Issue's `execute` run) can't bleed its conversation in.
 struct ConversationRequest: FetchKeyRequest {
-    var workflowID: UUID = UUID()
-    var kind: SessionKind = .design
+    enum Scope: Hashable, Sendable {
+        case kind(workflowID: UUID, kind: SessionKind)
+        case session(UUID)
+    }
+
+    var scope: Scope
+
+    init(workflowID: UUID, kind: SessionKind) {
+        scope = .kind(workflowID: workflowID, kind: kind)
+    }
+
+    init(sessionID: UUID) {
+        scope = .session(sessionID)
+    }
 
     struct Value: Equatable, Sendable {
         var turns: [TurnRow] = []
@@ -192,13 +207,19 @@ struct ConversationRequest: FetchKeyRequest {
     }
 
     func fetch(_ db: Database) throws -> Value {
-        let sessionIDs = Set(
-            try SessionRow
-                .where { $0.workflowID.eq(workflowID) }
-                .where { $0.kind.eq(kind.rawValue) }
-                .fetchAll(db)
-                .map(\.id)
-        )
+        let sessionIDs: Set<UUID>
+        switch scope {
+        case let .kind(workflowID, kind):
+            sessionIDs = Set(
+                try SessionRow
+                    .where { $0.workflowID.eq(workflowID) }
+                    .where { $0.kind.eq(kind.rawValue) }
+                    .fetchAll(db)
+                    .map(\.id)
+            )
+        case let .session(sessionID):
+            sessionIDs = [sessionID]
+        }
         let turns = try TurnRow.fetchAll(db).filter { sessionIDs.contains($0.sessionID) }
         let turnIDs = Set(turns.map(\.id))
         let blocks = try ContentBlockRow.fetchAll(db).filter { turnIDs.contains($0.turnID) }

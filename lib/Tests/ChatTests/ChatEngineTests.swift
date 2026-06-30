@@ -455,6 +455,59 @@ struct ChatEngineTests {
     }
 
     @Test
+    func sessionScopedFetchReturnsOnlyThatSessionsTurnsAndBlocksNotASiblingOfTheSameKind() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(-1)
+        // Two `execute` Sessions of the *same kind* for different Issues — the case the session scope
+        // exists to keep apart, where the kind scope would interleave both.
+        let issueOneSession = UUID(-2)
+        let issueTwoSession = UUID(-3)
+        try Self.seedSession(database, sessionID: issueOneSession, workflowID: workflowID, kind: .execute)
+        try Self.seedSession(
+            database, sessionID: issueTwoSession, workflowID: workflowID, kind: .execute, seedWorkflow: false
+        )
+        try await database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-10), sessionID: issueOneSession, userPrompt: "issue one",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try ContentBlockRow.insert {
+                ContentBlockRow(
+                    id: UUID(-11), turnID: UUID(-10), position: 0, role: "assistant", kind: "text",
+                    text: "issue one reply", createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-20), sessionID: issueTwoSession, userPrompt: "issue two",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try ContentBlockRow.insert {
+                ContentBlockRow(
+                    id: UUID(-21), turnID: UUID(-20), position: 0, role: "assistant", kind: "text",
+                    text: "issue two reply", createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let value = try await database.read { db in
+            try ConversationRequest(sessionID: issueOneSession).fetch(db)
+        }
+
+        // Only Issue one's Turn and block come back — the sibling `execute` Session does not bleed in.
+        #expect(value.turns.map(\.id) == [UUID(-10)])
+        #expect(value.blocks.map(\.text) == ["issue one reply"])
+        #expect(transcriptMessages(turns: value.turns, blocks: value.blocks).map(\.text) == ["issue one", "issue one reply"])
+    }
+
+    @Test
     func rediscoversExistingSessionOnConstructionAndShowsHistory() async throws {
         let database = try Self.makeDatabase()
         let sessionID = UUID(-2)

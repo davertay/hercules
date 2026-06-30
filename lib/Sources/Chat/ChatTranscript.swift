@@ -51,6 +51,9 @@ public struct ChatTranscript: View {
 
 struct ChatMessageBubble: View {
     let message: Message
+    /// Forwarded to `ToolResultRow`. Defaults to the live chat's 8-line cap; the read-only transcript
+    /// view passes `nil` to show tool results in full.
+    var toolResultLineLimit: Int? = 8
 
     var body: some View {
         switch message.kind {
@@ -61,7 +64,7 @@ struct ChatMessageBubble: View {
         case .toolUse:
             ToolCallRow(name: message.toolName ?? "tool", input: message.text)
         case .toolResult:
-            ToolResultRow(text: message.text)
+            ToolResultRow(text: message.text, lineLimit: toolResultLineLimit)
         }
     }
 
