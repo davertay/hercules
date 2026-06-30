@@ -188,6 +188,17 @@ public final class ExecuteModel {
         return issues.first { $0.number == selectedID }
     }
 
+    /// The per-Workflow Store the runs are projected into, exposed read-only so the inspector can drive a
+    /// diagnostic `TranscriptView` off it.
+    public var transcriptDatabase: any DatabaseReader { database }
+
+    /// The latest `execute` Session that worked `issue`, or `nil` if it has never run — resolved via the
+    /// latest-wins `session(forIssue:)`. Drives both the "View transcript" button's enabled-ness and the
+    /// sheet's subject Session, so the affordance and the content it opens can't disagree.
+    public func transcriptSession(for issue: IssueRow) -> SessionRow? {
+        try? database.session(forIssue: issue.number, workflowID: workflowID)
+    }
+
     /// The lowest-numbered `failed` Issue — the one that halted the last run. Drives the halt banner.
     public var haltingFailure: IssueRow? {
         issues

@@ -196,6 +196,7 @@ let package = Package(
             name: "Execute",
             dependencies: [
                 "Agent",
+                "Chat",
                 "DAGGraphUI",
                 "IssueGraph",
                 "Skills",

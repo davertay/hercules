@@ -16,14 +16,16 @@ extension DatabaseReader {
     }
 
     /// The Execute-run Session that worked Issue `number`, or `nil` — the reverse lookup of the
-    /// `issueNumber` tag that makes a worked Issue's transcript recoverable. Earliest wins on a re-run.
+    /// `issueNumber` tag that makes a worked Issue's transcript recoverable. Latest wins on a re-run, so
+    /// the transcript shown is the run that produced the Issue's current state, not a stale earlier
+    /// attempt. This mirrors Validate, whose `review.sessionID` already points at the latest run.
     public func session(forIssue number: Int, workflowID: UUID) throws -> SessionRow? {
         try read { db in
             try SessionRow
                 .where { $0.workflowID.eq(workflowID) }
                 .where { $0.issueNumber.eq(number) }
                 .where { !$0.isDeleted }
-                .order { $0.createdAt.asc() }
+                .order { $0.createdAt.desc() }
                 .fetchOne(db)
         }
     }
