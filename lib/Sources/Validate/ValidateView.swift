@@ -30,7 +30,8 @@ public struct ValidateView: View {
                 } detail: {
                     ReviewInspector(
                         persona: model.selectedPersona,
-                        review: model.selectedReview
+                        review: model.selectedReview,
+                        transcriptDatabase: model.transcriptDatabase
                     )
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

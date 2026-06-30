@@ -165,6 +165,10 @@ public final class ValidateModel {
         return reviewRow(for: selectedPersona)
     }
 
+    /// The per-Workflow Store the reviewer runs are projected into, exposed read-only so the inspector can
+    /// drive a diagnostic `TranscriptView` off it.
+    public var transcriptDatabase: any DatabaseReader { database }
+
     public func selectNode(_ persona: ReviewPersona) {
         selectedPersona = selectedPersona == persona ? nil : persona
     }
