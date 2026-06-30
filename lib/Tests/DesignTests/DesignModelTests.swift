@@ -202,6 +202,32 @@ struct DesignModelTests {
         #expect(designPhases.first?.artifactPath == summaryURL.path)
     }
 
+    @Test
+    func savedSummaryBannerSurvivesRelaunch() async throws {
+        // Simulates reopening the app: the model is constructed fresh against a database that already
+        // holds a completed design Phase. The saved-summary confirmation must come back from the row,
+        // not depend on an in-memory flag set during this session.
+        let database = try Self.makeDatabase()
+        let summaryPath = "/wf/phases/design/summary.md"
+        try Self.seedCompletedDesignPhase(database, summaryPath: summaryPath)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: Self.makeWorkflowDirectory(), database: database
+            )
+        }
+        try await model.$designPhase.load()
+
+        #expect(model.summarySavedURL == URL(fileURLWithPath: summaryPath))
+
+        // Sending a new message dismisses the banner without forgetting the persisted summary.
+        model.engine.onSend?()
+        #expect(model.summarySavedURL == nil)
+    }
+
     // MARK: - Helpers
 
     private static func makeDatabase() throws -> any DatabaseWriter {
@@ -213,6 +239,25 @@ struct DesignModelTests {
     private static func makeWorkflowDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("DesignTests-WF-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    private static func seedCompletedDesignPhase(
+        _ database: any DatabaseWriter, summaryPath: String
+    ) throws {
+        let workflowID = UUID(-1)
+        try database.write { db in
+            try WorkflowRow.insert {
+                WorkflowRow(id: workflowID, repoPath: "/repo", createdAt: fixedDate, updatedAt: fixedDate)
+            }
+            .execute(db)
+            try PhaseRow.insert {
+                PhaseRow(
+                    id: UUID(-2), workflowID: workflowID, kind: "design", status: "complete",
+                    artifactPath: summaryPath, createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
     }
 
     private static func seedSession(_ database: any DatabaseWriter, sessionID: UUID) throws {

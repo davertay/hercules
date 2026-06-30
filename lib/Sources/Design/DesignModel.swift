@@ -36,8 +36,15 @@ public final class DesignModel {
     @ObservationIgnored
     var runTask: Task<Void, Never>?
 
-    /// Set once a finalization Turn writes the summary; cleared when new chat activity starts.
-    public var summarySavedURL: URL?
+    @ObservationIgnored
+    @Fetch var designPhase: PhaseRow?
+
+    private var summaryDismissed = false
+
+    public var summarySavedURL: URL? {
+        guard !summaryDismissed else { return nil }
+        return designPhase?.artifactPath.map { URL(fileURLWithPath: $0) }
+    }
 
     public init(worktree: URL, workflowID: UUID, workflowDirectory: URL, database: any DatabaseWriter) {
         self.workflowID = workflowID
@@ -53,8 +60,13 @@ public final class DesignModel {
             addDirs: [skill.folderUrl],
             database: database
         )
+        _designPhase = Fetch(
+            wrappedValue: nil,
+            CompletedDesignPhaseRequest(workflowID: workflowID),
+            animation: .default
+        )
         // Dismiss the saved-summary confirmation the moment the user sends a new message.
-        engine.onSend = { [weak self] in self?.summarySavedURL = nil }
+        engine.onSend = { [weak self] in self?.summaryDismissed = true }
     }
 
     public var isIntake: Bool { engine.isIntake }
@@ -80,7 +92,6 @@ public final class DesignModel {
     public func generateSummary() {
         guard let session = engine.session, !engine.isRunning else { return }
         engine.errorText = nil
-        summarySavedURL = nil
         engine.isRunning = true
 
         runTask = Task { [self] in
@@ -92,7 +103,8 @@ public final class DesignModel {
                     workflowID: workflowID, kind: "design", artifactPath: url.path,
                     id: uuid(), now: now
                 )
-                summarySavedURL = url
+                // Reveal the banner again; `summarySavedURL` now reads the freshly persisted row.
+                summaryDismissed = false
             } catch {
                 engine.errorText = error.localizedDescription
             }
@@ -110,5 +122,13 @@ public final class DesignModel {
         )
         try markdown.write(to: url, atomically: true, encoding: .utf8)
         return url
+    }
+}
+
+struct CompletedDesignPhaseRequest: FetchKeyRequest {
+    var workflowID: UUID = UUID()
+
+    func fetch(_ db: Database) throws -> PhaseRow? {
+        try completedPhaseRow(db, workflowID: workflowID, kind: "design")
     }
 }
