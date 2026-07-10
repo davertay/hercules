@@ -195,30 +195,6 @@ public final class PRDModel {
     }
 }
 
-/// A verifiable footprint of the Artifact file captured before the writer Turn: `nil` when it is absent.
-private struct ArtifactSnapshot {
-    var modified: Date
-    var size: Int
-}
-
-private func artifactSnapshot(at url: URL) -> ArtifactSnapshot? {
-    guard
-        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-        let modified = attributes[.modificationDate] as? Date,
-        let size = attributes[.size] as? Int
-    else { return nil }
-    return ArtifactSnapshot(modified: modified, size: size)
-}
-
-/// The completion gate: the writer Turn counts only if it produced a non-empty file and — when a file was
-/// already there — advanced its modification time. A Turn that never called `write_artifact` leaves the
-/// file untouched (or absent), so this returns `false` and the Phase stays incomplete.
-private func artifactWasWritten(at url: URL, since before: ArtifactSnapshot?) -> Bool {
-    guard let after = artifactSnapshot(at: url), after.size > 0 else { return false }
-    if let before, after.modified <= before.modified { return false }
-    return true
-}
-
 enum PRDError: LocalizedError {
     case designSummaryMissing
     case prdNotWritten
