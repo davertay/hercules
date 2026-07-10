@@ -38,11 +38,21 @@ public final class PRDModel {
     @ObservationIgnored
     var runTask: Task<Void, Never>?
 
-    public init(worktree: URL, workflowID: UUID, workflowDirectory: URL, database: any DatabaseWriter) {
+    public init(
+        worktree: URL,
+        workflowID: UUID,
+        workflowDirectory: URL,
+        mcpServerCommand: String,
+        database: any DatabaseWriter
+    ) {
         self.workflowID = workflowID
         self.workflowDirectory = workflowDirectory
         self.database = database
         self.skill = loadSkill(.toPrd)
+        // The `write_artifact` writer is pinned on the Session, not attached per-Turn: the Generate Turn
+        // is the Session's *first* Turn, and the per-Turn MCP override is ignored on the first call. PRD
+        // is a no-composer directed one-shot — Generate and Regenerate are the only Turns and both are
+        // meant to write — so there is no free-form user Turn to protect (unlike Design).
         self.engine = ChatEngine(
             worktree: worktree,
             mode: .readOnly,
@@ -50,6 +60,7 @@ public final class PRDModel {
             kind: .prd,
             skillFiles: [skill.fileUrl],
             addDirs: [skill.folderUrl],
+            mcpServers: [Self.artifactServer(command: mcpServerCommand, artifactURL: Self.prdURL(in: workflowDirectory))],
             database: database
         )
         _prdPhase = Fetch(
@@ -84,13 +95,17 @@ public final class PRDModel {
     }
 
     static func directedPrompt(summaryPath: String) -> String {
-        "Read the Design summary at \(summaryPath) and produce the complete PRD now as a markdown document."
+        """
+        Read the Design summary at \(summaryPath) and produce the complete PRD now, saving it by calling \
+        the write_artifact tool with the full markdown document.
+        """
     }
 
     static func regeneratePrompt(summaryPath: String) -> String {
         """
-        Re-read the Design summary at \(summaryPath) — it may have been revised since the last \
-        run — and produce the complete PRD again as a markdown document.
+        Re-read the Design summary at \(summaryPath) — it may have been revised since the last run — and \
+        produce the complete PRD again, saving it by calling the write_artifact tool with the full \
+        markdown document.
         """
     }
 
@@ -122,6 +137,11 @@ public final class PRDModel {
         runDirectedTurn(prompt: Self.regeneratePrompt(summaryPath:))
     }
 
+    /// Runs the directed Turn and completes the Phase only on a verified `write_artifact` write. The
+    /// completion gate is transactional like Allocate's: snapshot the destination file first, run the
+    /// Turn, and complete only if it now exists, is non-empty, and (on a Regenerate over the existing
+    /// file) its modification time advanced. A Turn that never called the tool surfaces an error and
+    /// leaves the Phase incomplete.
     private func runDirectedTurn(prompt: @escaping (String) -> String) {
         engine.errorText = nil
         engine.isRunning = true
@@ -129,6 +149,8 @@ public final class PRDModel {
         runTask = Task { [self] in
             do {
                 let summaryURL = try designSummaryURL()
+                let url = Self.prdURL(in: workflowDirectory)
+                let before = artifactSnapshot(at: url)
                 try await engine.send(
                     prompt(summaryURL.path),
                     inputs: InputBundle(
@@ -136,9 +158,9 @@ public final class PRDModel {
                         relativePaths: [summaryURL.lastPathComponent]
                     )
                 )
-                guard let session = engine.session else { throw PRDError.sessionUnavailable }
-                let finalAnswer = try database.latestFinalAnswer(forSession: session.id.rawValue) ?? ""
-                let url = try writePRD(finalAnswer)
+                guard artifactWasWritten(at: url, since: before) else {
+                    throw PRDError.prdNotWritten
+                }
                 try database.completePhase(
                     workflowID: workflowID, kind: "prd", artifactPath: url.path,
                     id: uuid(), now: now
@@ -156,29 +178,57 @@ public final class PRDModel {
         return URL(fileURLWithPath: path)
     }
 
-    private func writePRD(_ markdown: String) throws -> URL {
-        let url = workflowDirectory
+    /// The PRD Artifact's fixed destination — also the `write_artifact` server's `--artifact-path`.
+    static func prdURL(in workflowDirectory: URL) -> URL {
+        workflowDirectory
             .appending(path: "phases/prd", directoryHint: .isDirectory)
             .appending(path: "prd.md")
-        try FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try markdown.write(to: url, atomically: true, encoding: .utf8)
-        return url
     }
+
+    private static func artifactServer(command: String, artifactURL: URL) -> MCPServer {
+        MCPServer(
+            name: "hercules",
+            command: command,
+            args: ["--mcp-artifact-server", "--artifact-path", artifactURL.path],
+            tools: ["write_artifact"]
+        )
+    }
+}
+
+/// A verifiable footprint of the Artifact file captured before the writer Turn: `nil` when it is absent.
+private struct ArtifactSnapshot {
+    var modified: Date
+    var size: Int
+}
+
+private func artifactSnapshot(at url: URL) -> ArtifactSnapshot? {
+    guard
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+        let modified = attributes[.modificationDate] as? Date,
+        let size = attributes[.size] as? Int
+    else { return nil }
+    return ArtifactSnapshot(modified: modified, size: size)
+}
+
+/// The completion gate: the writer Turn counts only if it produced a non-empty file and — when a file was
+/// already there — advanced its modification time. A Turn that never called `write_artifact` leaves the
+/// file untouched (or absent), so this returns `false` and the Phase stays incomplete.
+private func artifactWasWritten(at url: URL, since before: ArtifactSnapshot?) -> Bool {
+    guard let after = artifactSnapshot(at: url), after.size > 0 else { return false }
+    if let before, after.modified <= before.modified { return false }
+    return true
 }
 
 enum PRDError: LocalizedError {
     case designSummaryMissing
-    case sessionUnavailable
+    case prdNotWritten
 
     var errorDescription: String? {
         switch self {
         case .designSummaryMissing:
             "The completed Design Phase's summary could not be found."
-        case .sessionUnavailable:
-            "The PRD Session could not be started."
+        case .prdNotWritten:
+            "The PRD was not saved — the agent must call write_artifact to write it."
         }
     }
 }
