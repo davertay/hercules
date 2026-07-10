@@ -30,6 +30,10 @@ public final class DesignModel {
     @ObservationIgnored
     private let workflowDirectory: URL
 
+    /// The Hercules app binary, re-executed as the stdio `write_artifact` MCP server (ADR 0006).
+    @ObservationIgnored
+    private let mcpServerCommand: String
+
     @ObservationIgnored
     private let skill: SkillResource
 
@@ -46,9 +50,16 @@ public final class DesignModel {
         return designPhase?.artifactPath.map { URL(fileURLWithPath: $0) }
     }
 
-    public init(worktree: URL, workflowID: UUID, workflowDirectory: URL, database: any DatabaseWriter) {
+    public init(
+        worktree: URL,
+        workflowID: UUID,
+        workflowDirectory: URL,
+        mcpServerCommand: String,
+        database: any DatabaseWriter
+    ) {
         self.workflowID = workflowID
         self.workflowDirectory = workflowDirectory
+        self.mcpServerCommand = mcpServerCommand
         self.database = database
         self.skill = loadSkill(.grillMe)
         self.engine = ChatEngine(
@@ -85,20 +96,36 @@ public final class DesignModel {
         engine.session != nil
     }
 
-    static let finalizationPrompt = "Produce the complete design summary now as a markdown document."
+    static let finalizationPrompt = """
+        Produce the complete design summary now and save it by calling the write_artifact tool with the \
+        full markdown document.
+        """
 
-    /// Writes the finalization Turn's answer to `phases/design/summary.md` and completes the Phase.
-    /// Re-running overwrites the file and updates the same row.
+    /// Runs the finalization Turn and completes the Phase only on a verified `write_artifact` write.
+    ///
+    /// The writer is attached as a per-Turn `mcpServers` override, not pinned on the Session: this Turn is
+    /// always a resume (a Design Session already exists from grilling), so the override applies, and
+    /// pinning it would instead arm every grill Turn — violating the "only the commit Turn can write"
+    /// guarantee. The completion gate is transactional like Allocate's: snapshot the destination file
+    /// first, run the Turn, and complete only if it now exists, is non-empty, and (re-running over an
+    /// existing file) its modification time advanced. A Turn that never called the tool leaves the file
+    /// untouched and surfaces an error instead of falsely completing.
     public func generateSummary() {
-        guard let session = engine.session, !engine.isRunning else { return }
+        guard engine.session != nil, !engine.isRunning else { return }
         engine.errorText = nil
         engine.isRunning = true
 
         runTask = Task { [self] in
             do {
-                try await engine.send(Self.finalizationPrompt)
-                let finalAnswer = try database.latestFinalAnswer(forSession: session.id.rawValue) ?? ""
-                let url = try writeSummary(finalAnswer)
+                let url = summaryURL()
+                let before = artifactSnapshot(at: url)
+                try await engine.send(
+                    Self.finalizationPrompt,
+                    overrideMCPServers: [Self.artifactServer(command: mcpServerCommand, artifactURL: url)]
+                )
+                guard artifactWasWritten(at: url, since: before) else {
+                    throw DesignError.summaryNotWritten
+                }
                 try database.completePhase(
                     workflowID: workflowID, kind: "design", artifactPath: url.path,
                     id: uuid(), now: now
@@ -112,16 +139,30 @@ public final class DesignModel {
         }
     }
 
-    private func writeSummary(_ markdown: String) throws -> URL {
-        let url = workflowDirectory
+    private func summaryURL() -> URL {
+        workflowDirectory
             .appending(path: "phases/design", directoryHint: .isDirectory)
             .appending(path: "summary.md")
-        try FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+    }
+
+    private static func artifactServer(command: String, artifactURL: URL) -> MCPServer {
+        MCPServer(
+            name: "hercules",
+            command: command,
+            args: ["--mcp-artifact-server", "--artifact-path", artifactURL.path],
+            tools: ["write_artifact"]
         )
-        try markdown.write(to: url, atomically: true, encoding: .utf8)
-        return url
+    }
+}
+
+enum DesignError: LocalizedError {
+    case summaryNotWritten
+
+    var errorDescription: String? {
+        switch self {
+        case .summaryNotWritten:
+            "The design summary was not saved — the agent must call write_artifact to write it."
+        }
     }
 }
 

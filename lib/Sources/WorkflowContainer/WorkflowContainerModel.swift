@@ -100,12 +100,14 @@ public final class WorkflowContainerModel {
                         worktree: worktree,
                         workflowID: data.id,
                         workflowDirectory: data.directory,
+                        mcpServerCommand: Self.mcpServerCommand,
                         database: database
                     )
                     prd = PRDModel(
                         worktree: worktree,
                         workflowID: data.id,
                         workflowDirectory: data.directory,
+                        mcpServerCommand: Self.mcpServerCommand,
                         database: database
                     )
                     allocate = AllocateModel(
