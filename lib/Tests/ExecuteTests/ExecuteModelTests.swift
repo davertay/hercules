@@ -110,6 +110,68 @@ struct ExecuteModelTests {
         #expect(model.worktreeMessage?.contains(worktree.path) == true)
     }
 
+    @Test("Resolves the last-turn answer for a done Issue, and nil for not-done or answerless Issues")
+    func lastTurnAnswerResolvesForDoneIssuesOnly() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try database.write { db in
+            try WorkflowRow.insert {
+                WorkflowRow(id: workflowID, repoPath: "/repo", createdAt: fixedDate, updatedAt: fixedDate)
+            }
+            .execute(db)
+            // Every case gets a real execute run seeded, so the resolver's verdict turns on status and
+            // the answer alone — not on missing data.
+            try Self.seedRun(db, workflowID: workflowID, issueNumber: 1, finalAnswer: "All wired up.")
+            try Self.seedRun(db, workflowID: workflowID, issueNumber: 2, finalAnswer: "Still going.")
+            try Self.seedRun(db, workflowID: workflowID, issueNumber: 3, finalAnswer: nil)
+            try Self.seedRun(db, workflowID: workflowID, issueNumber: 4, finalAnswer: "")
+        }
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+        }
+
+        func issue(_ number: Int, _ status: IssueRunStatus) -> IssueRow {
+            IssueRow(id: UUID(), workflowID: workflowID, number: number, status: status.rawValue,
+                     createdAt: fixedDate, updatedAt: fixedDate)
+        }
+
+        // Done with a non-empty answer → the answer surfaces.
+        #expect(model.lastTurnAnswer(for: issue(1, .done)) == "All wired up.")
+        // Not done (even with an answer) → nil; the failure/in-progress inspector is untouched.
+        #expect(model.lastTurnAnswer(for: issue(2, .inProgress)) == nil)
+        // Done but the run left no answer (nil, then empty) → nil, so the body-only inspector stands.
+        #expect(model.lastTurnAnswer(for: issue(3, .done)) == nil)
+        #expect(model.lastTurnAnswer(for: issue(4, .done)) == nil)
+        // Done but never ran (no Session) → nil.
+        #expect(model.lastTurnAnswer(for: issue(5, .done)) == nil)
+    }
+
+    /// Seeds an `execute` Session for `issueNumber` and one Turn carrying `finalAnswer`, the shape
+    /// `lastTurnAnswer(for:)` reads back through `session(forIssue:)` + `latestTurnFinalAnswer`.
+    private static func seedRun(
+        _ db: Database, workflowID: UUID, issueNumber: Int, finalAnswer: String?
+    ) throws {
+        let sessionID = UUID()
+        try SessionRow.insert {
+            SessionRow(
+                id: sessionID, workflowID: workflowID, worktreePath: "/worktree",
+                mode: "write", kind: SessionKind.execute.rawValue, issueNumber: issueNumber,
+                createdAt: fixedDate, updatedAt: fixedDate
+            )
+        }
+        .execute(db)
+        try TurnRow.insert {
+            TurnRow(
+                id: UUID(), sessionID: sessionID, finalAnswer: finalAnswer,
+                createdAt: fixedDate, updatedAt: fixedDate
+            )
+        }
+        .execute(db)
+    }
+
     private static func seed(_ database: any DatabaseWriter, workflowID: UUID) throws {
         try database.write { db in
             try WorkflowRow.insert {

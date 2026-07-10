@@ -199,6 +199,21 @@ public final class ExecuteModel {
         try? database.session(forIssue: issue.number, workflowID: workflowID)
     }
 
+    /// The agent's parting words for a `done` `issue` — its latest execute Turn's `finalAnswer` — shown
+    /// above the Issue body in the inspector, or `nil` when there's nothing to show. Gated on `done` so a
+    /// `failed`/`in_progress` Issue (whose failure path already has `FailureCallout`) is untouched, and on
+    /// a non-empty answer so a no-op run leaves the body-only inspector as before. Resolved here (reusing
+    /// `latestTurnFinalAnswer`) so the view does no DB reads, mirroring `transcriptSession`.
+    public func lastTurnAnswer(for issue: IssueRow) -> String? {
+        guard
+            issue.status == IssueRunStatus.done.rawValue,
+            let session = transcriptSession(for: issue),
+            let answer = try? database.latestTurnFinalAnswer(sessionID: session.id),
+            !answer.isEmpty
+        else { return nil }
+        return answer
+    }
+
     /// The lowest-numbered `failed` Issue — the one that halted the last run. Drives the halt banner.
     public var haltingFailure: IssueRow? {
         issues

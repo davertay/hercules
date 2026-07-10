@@ -26,6 +26,17 @@ extension ExecuteModel {
 
             let issues: [IssueRow] = [
                 IssueRow(id: UUID(), workflowID: workflowID, number: 1, title: "Foundations",
+                         body: """
+                         ## Goal
+
+                         Lay the module's foundations: the empty `Store` target, its \
+                         `Package.swift` entry, and a smoke test that imports it.
+
+                         ## Acceptance criteria
+
+                         - [ ] `Store` target exists and builds.
+                         - [ ] A trivial test imports it and passes.
+                         """,
                          dependencies: [], status: "done", createdAt: now, updatedAt: now),
                 IssueRow(id: UUID(), workflowID: workflowID, number: 2, title: "Public types",
                          dependencies: [], status: "done", createdAt: now, updatedAt: now),
@@ -52,7 +63,17 @@ extension ExecuteModel {
 
             try seedActivityPreview(
                 db, workflowID: workflowID, issueNumber: 1,
-                tools: 21, steps: 9, durationMs: 83_000, costUSD: 0.04, now: now
+                tools: 21, steps: 9, durationMs: 83_000, costUSD: 0.04, now: now,
+                finalAnswer: """
+                Added the `Store` target and wired it into `Package.swift`, then landed a smoke test \
+                that imports it and asserts a trivial round-trip.
+
+                - Created `Sources/Store` with an empty `Store.swift`.
+                - Registered the target and its test target in `Package.swift`.
+                - Added `StoreSmokeTests` — imports `Store` and passes.
+
+                Everything builds and the new test is green.
+                """
             )
             try seedActivityPreview(
                 db, workflowID: workflowID, issueNumber: 3,
@@ -67,7 +88,7 @@ extension ExecuteModel {
 
     private static func seedActivityPreview(
         _ db: Database, workflowID: UUID, issueNumber: Int, tools: Int, steps: Int,
-        durationMs: Int?, costUSD: Double?, now: Date
+        durationMs: Int?, costUSD: Double?, now: Date, finalAnswer: String? = nil
     ) throws {
         let sessionID = UUID()
         let turnID = UUID()
@@ -81,8 +102,8 @@ extension ExecuteModel {
         .execute(db)
         try TurnRow.insert {
             TurnRow(
-                id: turnID, sessionID: sessionID, durationMs: durationMs, costUSD: costUSD,
-                createdAt: now, updatedAt: now
+                id: turnID, sessionID: sessionID, finalAnswer: finalAnswer,
+                durationMs: durationMs, costUSD: costUSD, createdAt: now, updatedAt: now
             )
         }
         .execute(db)
