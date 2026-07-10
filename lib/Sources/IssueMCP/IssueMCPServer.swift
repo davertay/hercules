@@ -149,8 +149,8 @@ public enum IssueMCPLaunch {
     public static func parse(_ arguments: [String]) -> Configuration? {
         guard arguments.contains(subcommand) else { return nil }
         guard
-            let databasePath = value(of: "--db", in: arguments),
-            let workflowIDString = value(of: "--workflow-id", in: arguments),
+            let databasePath = mcpLaunchValue(of: "--db", in: arguments),
+            let workflowIDString = mcpLaunchValue(of: "--workflow-id", in: arguments),
             let workflowID = UUID(uuidString: workflowIDString)
         else { return nil }
         return Configuration(
@@ -169,12 +169,5 @@ public enum IssueMCPLaunch {
         )
         try await server.start(transport: StdioTransport())
         await server.waitUntilCompleted()
-    }
-
-    private static func value(of flag: String, in arguments: [String]) -> String? {
-        guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else {
-            return nil
-        }
-        return arguments[index + 1]
     }
 }

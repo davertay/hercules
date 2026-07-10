@@ -78,7 +78,7 @@ public enum ArtifactMCPLaunch {
     /// Returns `nil` when the subcommand is absent (the GUI path) or its operand is missing.
     public static func parse(_ arguments: [String]) -> Configuration? {
         guard arguments.contains(subcommand) else { return nil }
-        guard let artifactPath = value(of: "--artifact-path", in: arguments) else { return nil }
+        guard let artifactPath = mcpLaunchValue(of: "--artifact-path", in: arguments) else { return nil }
         return Configuration(artifactPath: artifactPath)
     }
 
@@ -87,12 +87,5 @@ public enum ArtifactMCPLaunch {
         let server = await makeArtifactMCPServer(artifactPath: configuration.artifactPath)
         try await server.start(transport: StdioTransport())
         await server.waitUntilCompleted()
-    }
-
-    private static func value(of flag: String, in arguments: [String]) -> String? {
-        guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else {
-            return nil
-        }
-        return arguments[index + 1]
     }
 }
