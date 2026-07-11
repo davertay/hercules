@@ -88,7 +88,6 @@ public struct PreviewHarnessView: View {
         case .flowExecute:
             FlowExecutePreviewHost()
         case .flowExecuteDone:
-            // Selects the `done` Issue #1, whose seeded last-turn answer renders above its (dimmed) body.
             FlowExecutePreviewHost(selectedNode: 1)
         case .settings:
             SettingsPreviewHost()

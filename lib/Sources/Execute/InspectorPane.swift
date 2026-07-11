@@ -7,14 +7,8 @@ import SwiftUI
 struct InspectorPane: View {
     let issue: IssueRow?
     let failureReason: String?
-    /// The agent's last-turn final answer for a `done` Issue, or `nil` — resolved on `ExecuteModel` so the
-    /// view does no DB reads. Non-`nil` only when the Issue is `done` and left a non-empty answer; when set
-    /// it renders above the (then dimmed) Issue body.
     let lastTurnAnswer: String?
-    /// The latest `execute` Session for the selected Issue, or `nil` if it has never run. Handed to the
-    /// shared `TranscriptViewerButton`, which gates on it.
     let transcriptSession: SessionRow?
-    /// The per-Workflow Store the run was projected into, read by the diagnostic `TranscriptView`.
     let transcriptDatabase: any DatabaseReader
     let onRetry: (Int) -> Void
     let onApprove: (Int) -> Void
@@ -61,8 +55,6 @@ struct InspectorPane: View {
                         }
                     }
                     if let lastTurnAnswer {
-                        // The done-run's parting words above the (now dimmed) Issue body, each block
-                        // fenced by a divider. No headings — the markdown inside each block carries them.
                         Divider()
                         MarkdownText(lastTurnAnswer)
                             .font(.callout)

@@ -17,9 +17,6 @@ public final class ExecuteModel {
     @ObservationIgnored
     @Fetch var issues: [IssueRow] = []
 
-    /// Per-Issue failure reasons recovered from the transcript (the latest errored `turn.finalAnswer`),
-    /// observed so a relaunched window shows a failed Issue's reason even though the live in-process
-    /// `failureReason` write didn't outlast the previous process.
     @ObservationIgnored
     @Fetch var transcriptFailureReasons: [Int: String] = [:]
 
@@ -33,7 +30,6 @@ public final class ExecuteModel {
 
     public var selectedID: Int?
 
-    /// The DAG recolors off the observed Issue rows, not this flag.
     public private(set) var isRunning = false
 
     /// Boxed so the run can be cancelled off the MainActor — both Stop and the window's teardown
@@ -140,9 +136,6 @@ public final class ExecuteModel {
         )
     }
 
-    /// The reason to show for a `failed` Issue: the Harness's own words from the transcript when present,
-    /// else the reason stored on the Issue row (which covers failures thrown before any Turn existed,
-    /// e.g. a missing harness binary).
     public func failureReason(for issue: IssueRow) -> String? {
         transcriptFailureReasons[issue.number] ?? issue.failureReason
     }
@@ -192,18 +185,10 @@ public final class ExecuteModel {
     /// diagnostic `TranscriptView` off it.
     public var transcriptDatabase: any DatabaseReader { database }
 
-    /// The latest `execute` Session that worked `issue`, or `nil` if it has never run — resolved via the
-    /// latest-wins `session(forIssue:)`. Drives both the "View transcript" button's enabled-ness and the
-    /// sheet's subject Session, so the affordance and the content it opens can't disagree.
     public func transcriptSession(for issue: IssueRow) -> SessionRow? {
         try? database.session(forIssue: issue.number, workflowID: workflowID)
     }
 
-    /// The agent's parting words for a `done` `issue` — its latest execute Turn's `finalAnswer` — shown
-    /// above the Issue body in the inspector, or `nil` when there's nothing to show. Gated on `done` so a
-    /// `failed`/`in_progress` Issue (whose failure path already has `FailureCallout`) is untouched, and on
-    /// a non-empty answer so a no-op run leaves the body-only inspector as before. Resolved here (reusing
-    /// `latestTurnFinalAnswer`) so the view does no DB reads, mirroring `transcriptSession`.
     public func lastTurnAnswer(for issue: IssueRow) -> String? {
         guard
             issue.status == IssueRunStatus.done.rawValue,
@@ -214,14 +199,12 @@ public final class ExecuteModel {
         return answer
     }
 
-    /// The lowest-numbered `failed` Issue — the one that halted the last run. Drives the halt banner.
     public var haltingFailure: IssueRow? {
         issues
             .filter { $0.status == IssueRunStatus.failed.rawValue }
             .min { $0.number < $1.number }
     }
 
-    /// Tapping a node's own card again clears the selection.
     public func selectNode(_ number: Int) {
         selectedID = selectedID == number ? nil : number
     }
