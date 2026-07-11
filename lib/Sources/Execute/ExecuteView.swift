@@ -67,6 +67,7 @@ public struct ExecuteView: View {
                         InspectorPane(
                             issue: model.selectedIssue,
                             failureReason: model.selectedIssue.flatMap { model.failureReason(for: $0) },
+                            lastTurnAnswer: model.selectedIssue.flatMap { model.lastTurnAnswer(for: $0) },
                             transcriptSession: model.selectedIssue.flatMap { model.transcriptSession(for: $0) },
                             transcriptDatabase: model.transcriptDatabase,
                             onRetry: { model.retry($0) },

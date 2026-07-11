@@ -7,10 +7,8 @@ import SwiftUI
 struct InspectorPane: View {
     let issue: IssueRow?
     let failureReason: String?
-    /// The latest `execute` Session for the selected Issue, or `nil` if it has never run. Handed to the
-    /// shared `TranscriptViewerButton`, which gates on it.
+    let lastTurnAnswer: String?
     let transcriptSession: SessionRow?
-    /// The per-Workflow Store the run was projected into, read by the diagnostic `TranscriptView`.
     let transcriptDatabase: any DatabaseReader
     let onRetry: (Int) -> Void
     let onApprove: (Int) -> Void
@@ -56,7 +54,17 @@ struct InspectorPane: View {
                             onRetry(issue.number)
                         }
                     }
-                    if !issue.body.isEmpty {
+                    if let lastTurnAnswer {
+                        Divider()
+                        MarkdownText(lastTurnAnswer)
+                            .font(.callout)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider()
+                        MarkdownText(issue.body)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if !issue.body.isEmpty {
                         Divider()
                         MarkdownText(issue.body)
                             .font(.callout)

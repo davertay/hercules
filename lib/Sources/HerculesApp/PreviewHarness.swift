@@ -18,6 +18,7 @@ public enum PreviewTarget: String, CaseIterable, Sendable {
     case dagGraph
     case designIntake
     case flowExecute
+    case flowExecuteDone
     case flowValidate
     case settings
     case workflowEmpty
@@ -86,6 +87,8 @@ public struct PreviewHarnessView: View {
             DAGGraphPreviewHost()
         case .flowExecute:
             FlowExecutePreviewHost()
+        case .flowExecuteDone:
+            FlowExecutePreviewHost(selectedNode: 1)
         case .settings:
             SettingsPreviewHost()
         case .flowValidate:
@@ -163,8 +166,10 @@ private struct FlowValidatePreviewHost: View {
 /// Renders the Execute Phase end-to-end over fixture Issues seeded into a fresh Workflow database.
 private struct FlowExecutePreviewHost: View {
     @State private var container: WorkflowContainerModel
+    private let selectedNode: Int
 
-    init() {
+    init(selectedNode: Int = 4) {
+        self.selectedNode = selectedNode
         let id = UUID()
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("workflow-flow-execute-\(id.uuidString)", isDirectory: true)
@@ -187,7 +192,7 @@ private struct FlowExecutePreviewHost: View {
                     .task {
                         await executeModel.loadIssuesForPreview()
                         // Pre-select a node so the inspector renders with content.
-                        executeModel.selectNode(4)
+                        executeModel.selectNode(selectedNode)
                     }
             } else {
                 ContentUnavailableView(

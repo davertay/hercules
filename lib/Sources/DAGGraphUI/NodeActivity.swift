@@ -30,7 +30,7 @@ public struct NodeActivityFooter: View {
     }
 
     public var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             if let elapsed = activity.elapsed {
                 chip("clock", Self.formatElapsed(elapsed), help: "Elapsed time")
             }
@@ -42,6 +42,7 @@ public struct NodeActivityFooter: View {
                     .controlSize(.mini)
             } else if let cost = activity.cost {
                 Text(Self.formatCost(cost))
+                    .fixedSize(horizontal: true, vertical: false)
                     .help("Run cost")
             }
         }
@@ -52,10 +53,11 @@ public struct NodeActivityFooter: View {
     }
 
     private func chip(_ symbol: String, _ value: String, help: String) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             Image(systemName: symbol)
                 .imageScale(.small)
             Text(value)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .help(help)
     }
@@ -85,7 +87,7 @@ public struct NodeActivityFooter: View {
             activity: NodeActivity(steps: 5, tools: 12, elapsed: .seconds(83), isRunning: true)
         )
         NodeActivityFooter(
-            activity: NodeActivity(steps: 9, tools: 21, elapsed: .seconds(3723), cost: 0.04)
+            activity: NodeActivity(steps: 190, tools: 221, elapsed: .seconds(3723), cost: 50.04)
         )
         NodeActivityFooter(
             activity: NodeActivity(steps: 1, tools: 0, elapsed: .seconds(4), cost: 0.002)
