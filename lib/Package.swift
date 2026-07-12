@@ -13,7 +13,7 @@ let package = Package(
         .package(url: "https://github.com/pointfreeco/swift-clocks", exact: "1.1.0"),
         .package(url: "https://github.com/pointfreeco/swift-custom-dump", exact: "1.6.1"),
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.14.1"),
-        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.2"),
+        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.3"),
         .package(url: "https://github.com/pointfreeco/swift-structured-queries", exact: "0.33.1"),
         .package(url: "https://github.com/swiftlang/swift-subprocess", exact: "0.5.0"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk", exact: "0.12.1"),
