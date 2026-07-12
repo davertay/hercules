@@ -422,10 +422,10 @@ struct ChatEngineTests {
         let database = try Self.makeDatabase()
         let workflowID = UUID(-1)
         let designSession = UUID(-2)
-        let prdSession = UUID(-3)
+        let allocateSession = UUID(-3)
         try Self.seedSession(database, sessionID: designSession, workflowID: workflowID, kind: .design)
         try Self.seedSession(
-            database, sessionID: prdSession, workflowID: workflowID, kind: .prd, seedWorkflow: false
+            database, sessionID: allocateSession, workflowID: workflowID, kind: .allocate, seedWorkflow: false
         )
         try await database.write { db in
             try TurnRow.insert {
@@ -437,7 +437,7 @@ struct ChatEngineTests {
             .execute(db)
             try TurnRow.insert {
                 TurnRow(
-                    id: UUID(-20), sessionID: prdSession, userPrompt: "prd prompt",
+                    id: UUID(-20), sessionID: allocateSession, userPrompt: "allocate prompt",
                     createdAt: fixedDate, updatedAt: fixedDate
                 )
             }
@@ -446,12 +446,12 @@ struct ChatEngineTests {
 
         let designEngine = Self.makeEngine(database: database, kind: .design)
         try await designEngine.$conversation.load()
-        let prdEngine = Self.makeEngine(database: database, kind: .prd)
-        try await prdEngine.$conversation.load()
+        let allocateEngine = Self.makeEngine(database: database, kind: .allocate)
+        try await allocateEngine.$conversation.load()
 
         // Each surface sees only its own Session's Turns — no cross-Session bleed.
         #expect(designEngine.messages.map(\.text) == ["design prompt"])
-        #expect(prdEngine.messages.map(\.text) == ["prd prompt"])
+        #expect(allocateEngine.messages.map(\.text) == ["allocate prompt"])
     }
 
     @Test
@@ -569,7 +569,7 @@ struct ChatEngineTests {
     func noRediscoveryWhenNoSessionOfThatKindExists() async throws {
         let database = try Self.makeDatabase()
         // A Session of a *different* kind exists in the same Workflow; it must not be rediscovered.
-        try Self.seedSession(database, sessionID: UUID(-2), kind: .prd)
+        try Self.seedSession(database, sessionID: UUID(-2), kind: .allocate)
 
         let engine = Self.makeEngine(database: database, kind: .design)
         try await engine.$conversation.load()

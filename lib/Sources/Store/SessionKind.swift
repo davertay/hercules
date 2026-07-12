@@ -2,7 +2,6 @@
 /// without their conversations bleeding into one another (ADR 0005). One Session per (Workflow, kind).
 public enum SessionKind: String, Codable, Sendable, CaseIterable {
     case design
-    case prd
     case allocate
     case testChat
     /// A behind-the-scenes Execute write run for one Issue — no Chat; recorded only so the Issue's

@@ -49,8 +49,7 @@ public func listWorkflows(root: URL = defaultWorkflowsRoot()) -> [WorkflowSummar
                 data: WorkflowWindowData(
                     id: row.id,
                     directory: directory,
-                    repoPath: row.repoPath,
-                    mode: WorkflowMode(rawValue: row.mode) ?? .standard
+                    repoPath: row.repoPath
                 ),
                 workflowTitle: row.title,
                 createdAt: row.createdAt

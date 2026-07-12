@@ -217,7 +217,10 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         .execute(db)
     }
 
-    // The Workflow mode (`WorkflowMode`). Pre-existing rows predate Small Job and are all `standard`.
+    // Historical: a per-Workflow `mode` column from the two-topology era (standard/small). The topology
+    // is now a single linear stream, so nothing reads this column; the migration stays to keep the
+    // on-disk schema of already-migrated Workflows valid, and new rows fall back to its `'standard'`
+    // default.
     migrator.registerMigration("Add mode to workflow") { db in
         try #sql(
             """

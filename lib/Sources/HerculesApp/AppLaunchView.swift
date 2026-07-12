@@ -17,15 +17,10 @@ public struct AppLaunchView: View {
         VStack(spacing: 16) {
             Text("Hercules")
                 .font(.largeTitle)
-            HStack(spacing: 12) {
-                Button("New Workflow") {
-                    newWorkflow(openWindow: openWindow, mode: .standard)
-                }
-                .buttonStyle(.borderedProminent)
-                Button("New Small Job") {
-                    newWorkflow(openWindow: openWindow, mode: .small)
-                }
+            Button("New Workflow") {
+                newWorkflow(openWindow: openWindow)
             }
+            .buttonStyle(.borderedProminent)
 
             if !workflows.isEmpty {
                 Divider()

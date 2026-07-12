@@ -20,7 +20,6 @@ struct PhaseGatingTests {
         try await model.$completedPhases.load()
 
         #expect(model.isUnlocked(.design))
-        #expect(!model.isUnlocked(.prd))
         #expect(!model.isUnlocked(.allocate))
         #expect(!model.isUnlocked(.execute))
         #expect(!model.isUnlocked(.validate))
@@ -28,7 +27,7 @@ struct PhaseGatingTests {
 
     @Test
     @MainActor
-    func completingDesignUnlocksPRDReactively() async throws {
+    func completingDesignUnlocksAllocateReactively() async throws {
         let root = Self.makeTempDir()
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -37,7 +36,7 @@ struct PhaseGatingTests {
         let database = try #require(model.database)
 
         try await model.$completedPhases.load()
-        #expect(!model.isUnlocked(.prd))
+        #expect(!model.isUnlocked(.allocate))
 
         // Design finishes: its `phase` row flips to complete with the summary Artifact.
         try await database.write { db in
@@ -52,45 +51,6 @@ struct PhaseGatingTests {
                     kind: "design",
                     status: "complete",
                     artifactPath: "/wf/phases/design/summary.md",
-                    createdAt: fixedDate,
-                    updatedAt: fixedDate
-                )
-            }
-            .execute(db)
-        }
-        try await model.$completedPhases.load()
-
-        #expect(model.isUnlocked(.prd))
-        // Allocate stays locked until PRD itself completes.
-        #expect(!model.isUnlocked(.allocate))
-    }
-
-    @Test
-    @MainActor
-    func completingPRDUnlocksAllocateReactively() async throws {
-        let root = Self.makeTempDir()
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let id = UUID(0)
-        let model = Self.makeModel(id: id, root: root)
-        let database = try #require(model.database)
-
-        try await model.$completedPhases.load()
-        #expect(!model.isUnlocked(.allocate))
-
-        // PRD finishes: its `phase` row flips to complete with the PRD Artifact.
-        try await database.write { db in
-            try WorkflowRow.insert {
-                WorkflowRow(id: id, repoPath: "/repo", createdAt: fixedDate, updatedAt: fixedDate)
-            }
-            .execute(db)
-            try PhaseRow.insert {
-                PhaseRow(
-                    id: UUID(-1),
-                    workflowID: id,
-                    kind: "prd",
-                    status: "complete",
-                    artifactPath: "/wf/phases/prd/prd.md",
                     createdAt: fixedDate,
                     updatedAt: fixedDate
                 )
@@ -145,35 +105,16 @@ struct PhaseGatingTests {
 
     @Test
     @MainActor
-    func prdSurfaceIsConstructedEagerly() async throws {
+    func allFourPhaseSurfacesAreConstructedEagerly() async throws {
         let root = Self.makeTempDir()
         defer { try? FileManager.default.removeItem(at: root) }
 
         let model = Self.makeModel(id: UUID(0), root: root)
 
-        #expect(model.prdModel != nil)
-    }
-
-    @Test
-    @MainActor
-    func allocateSurfaceIsConstructedEagerly() async throws {
-        let root = Self.makeTempDir()
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let model = Self.makeModel(id: UUID(0), root: root)
-
+        #expect(model.designModel != nil)
         #expect(model.allocateModel != nil)
-    }
-
-    @Test
-    @MainActor
-    func executeSurfaceIsConstructedEagerly() async throws {
-        let root = Self.makeTempDir()
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let model = Self.makeModel(id: UUID(0), root: root)
-
         #expect(model.executeModel != nil)
+        #expect(model.validateModel != nil)
     }
 
     /// A soft-deleted complete `phase` row must not unlock the next Phase.
@@ -207,82 +148,87 @@ struct PhaseGatingTests {
         }
         try await model.$completedPhases.load()
 
-        #expect(!model.isUnlocked(.prd))
+        #expect(!model.isUnlocked(.allocate))
     }
 
-    // MARK: - Small Job mode
+    // MARK: - Migration (clean break)
 
+    /// A pre-existing Workflow from the two-topology era carries rows the collapsed enums no longer
+    /// model — a `small`-mode `workflow` row, a completed `prd` Phase, and a `prd`-kind Session. Opening
+    /// it must fail safe (no decode crash) and present the single four-Phase topology, ignoring the
+    /// orphaned `prd` rows rather than taking the app down.
     @Test
     @MainActor
-    func smallModeBuildsSmallJobSlotAndSkipsPRDAndAllocate() async throws {
-        let root = Self.makeTempDir()
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let model = Self.makeModel(id: UUID(0), root: root, mode: .small)
-
-        // The Design slot is driven by the Small Job model; the standard chat Phases are absent.
-        #expect(model.mode == .small)
-        #expect(model.smallJobModel != nil)
-        #expect(model.designModel == nil)
-        #expect(model.prdModel == nil)
-        #expect(model.allocateModel == nil)
-        // Execute and Validate still exist in Small Job.
-        #expect(model.executeModel != nil)
-        #expect(model.validateModel != nil)
-    }
-
-    @Test
-    @MainActor
-    func completingDesignUnlocksExecuteDirectlyInSmallMode() async throws {
+    func opensPreExistingOldTopologyWorkflowWithoutCrashing() async throws {
         let root = Self.makeTempDir()
         defer { try? FileManager.default.removeItem(at: root) }
 
         let id = UUID(0)
-        let model = Self.makeModel(id: id, root: root, mode: .small)
-        let database = try #require(model.database)
+        let directory = root.appending(component: id.uuidString)
 
-        try await model.$completedPhases.load()
-        // Before any Issues are committed, only Design is open; Execute and Validate are locked.
-        #expect(model.isUnlocked(.design))
-        #expect(!model.isUnlocked(.execute))
-        #expect(!model.isUnlocked(.validate))
+        try withDependencies { $0.context = .live } operation: {
+            let database = try openWorkflowDatabase(at: directory)
+            defer { try? database.close() }
+            try database.write { db in
+                try WorkflowRow.insert {
+                    WorkflowRow(id: id, repoPath: "/repo", createdAt: fixedDate, updatedAt: fixedDate)
+                }
+                .execute(db)
+                // Stamp the vestigial `mode` column back to its old `small` value.
+                try #sql(#"UPDATE "workflow" SET "mode" = 'small'"#).execute(db)
+                try PhaseRow.insert {
+                    PhaseRow(
+                        id: UUID(-1), workflowID: id, kind: "design", status: "complete",
+                        artifactPath: "/wf/phases/design/summary.md",
+                        createdAt: fixedDate, updatedAt: fixedDate
+                    )
+                }
+                .execute(db)
+                try PhaseRow.insert {
+                    PhaseRow(
+                        id: UUID(-2), workflowID: id, kind: "prd", status: "complete",
+                        artifactPath: "/wf/phases/prd/prd.md",
+                        createdAt: fixedDate, updatedAt: fixedDate
+                    )
+                }
+                .execute(db)
+                try SessionRow.insert {
+                    SessionRow(
+                        id: UUID(-3), workflowID: id, worktreePath: "/repo", mode: "readOnly",
+                        kind: "prd", createdAt: fixedDate, updatedAt: fixedDate
+                    )
+                }
+                .execute(db)
+            }
+        }
 
-        // The Small Job grill commits Issues and completes the Design Phase with a null (rows) Artifact.
-        try await database.write { db in
-            try WorkflowRow.insert {
-                WorkflowRow(
-                    id: id, repoPath: "/repo", mode: WorkflowMode.small.rawValue,
-                    createdAt: fixedDate, updatedAt: fixedDate
-                )
-            }
-            .execute(db)
-            try PhaseRow.insert {
-                PhaseRow(
-                    id: UUID(-1),
-                    workflowID: id,
-                    kind: "design",
-                    status: "complete",
-                    createdAt: fixedDate,
-                    updatedAt: fixedDate
-                )
-            }
-            .execute(db)
+        // Reopen the very same on-disk Workflow through the model.
+        let model = withDependencies { $0.context = .live } operation: {
+            WorkflowContainerModel(
+                data: WorkflowWindowData(id: id, directory: directory, repoPath: "/repo")
+            )
         }
         try await model.$completedPhases.load()
 
-        // Execute unlocks directly off Design — PRD and Allocate are skipped entirely.
-        #expect(model.isUnlocked(.execute))
-        #expect(!model.isUnlocked(.validate))
+        // The four Phase surfaces are all present; nothing crashed on the stale rows.
+        #expect(model.designModel != nil)
+        #expect(model.allocateModel != nil)
+        #expect(model.executeModel != nil)
+        #expect(model.validateModel != nil)
+        // Design is complete, so Allocate unlocks; the orphaned `prd` completion is simply ignored and
+        // never unlocks anything of its own.
+        #expect(model.isUnlocked(.design))
+        #expect(model.isUnlocked(.allocate))
+        #expect(!model.isUnlocked(.execute))
     }
 
     @MainActor
-    private static func makeModel(id: UUID, root: URL, mode: WorkflowMode = .standard) -> WorkflowContainerModel {
+    private static func makeModel(id: UUID, root: URL) -> WorkflowContainerModel {
         WorkflowContainerModel(
             data: WorkflowWindowData(
                 id: id,
                 directory: root.appending(component: id.uuidString),
-                repoPath: "/repo",
-                mode: mode
+                repoPath: "/repo"
             )
         )
     }

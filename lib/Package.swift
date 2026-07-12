@@ -71,29 +71,6 @@ let package = Package(
             ]
         ),
         .target(
-            name: "SmallJob",
-            dependencies: [
-                "Agent",
-                "Chat",
-                "Skills",
-                "Store",
-                .product(name: "Dependencies", package: "swift-dependencies"),
-                .product(name: "SQLiteData", package: "sqlite-data"),
-            ]
-        ),
-        .testTarget(
-            name: "SmallJobTests",
-            dependencies: [
-                "SmallJob",
-                "Agent",
-                "Skills",
-                "Store",
-                .product(name: "CustomDump", package: "swift-custom-dump"),
-                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
-                .product(name: "SQLiteData", package: "sqlite-data"),
-            ]
-        ),
-        .target(
             name: "Chat",
             dependencies: [
                 "Agent",
@@ -255,29 +232,6 @@ let package = Package(
             ]
         ),
         .target(
-            name: "PRD",
-            dependencies: [
-                "Agent",
-                "Chat",
-                "Skills",
-                "Store",
-                .product(name: "Dependencies", package: "swift-dependencies"),
-                .product(name: "SQLiteData", package: "sqlite-data"),
-            ]
-        ),
-        .testTarget(
-            name: "PRDTests",
-            dependencies: [
-                "PRD",
-                "Agent",
-                "Skills",
-                "Store",
-                .product(name: "CustomDump", package: "swift-custom-dump"),
-                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
-                .product(name: "SQLiteData", package: "sqlite-data"),
-            ]
-        ),
-        .target(
             name: "Store",
             dependencies: [
                 .product(name: "Dependencies", package: "swift-dependencies"),
@@ -358,8 +312,6 @@ let package = Package(
                 "Allocate",
                 "Design",
                 "Execute",
-                "PRD",
-                "SmallJob",
                 "Store",
                 "UISupport",
                 "Validate",
@@ -378,8 +330,6 @@ let package = Package(
                 "Chat",
                 "Design",
                 "Execute",
-                "PRD",
-                "SmallJob",
                 "Store",
                 "Validate",
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),

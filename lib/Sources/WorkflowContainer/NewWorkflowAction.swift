@@ -1,15 +1,14 @@
 import AppKit
 import IssueReporting
-import Store
 import SwiftUI
 
-/// Folder-picks a repo, creates the Workflow in `mode`, and opens its window. Shared by the File ▸ New
-/// commands and the launch-view buttons — Standard and Small Job each call this with their mode.
+/// Folder-picks a repo, creates the Workflow, and opens its window. Shared by the File ▸ New Workflow
+/// command and the launch-view button.
 @MainActor
-public func newWorkflow(openWindow: OpenWindowAction, mode: WorkflowMode = .standard) {
+public func newWorkflow(openWindow: OpenWindowAction) {
     guard let repo = chooseRepoFolder() else { return }
     withErrorReporting {
-        let data = try createWorkflow(repo: repo, mode: mode)
+        let data = try createWorkflow(repo: repo)
         openWindow(value: data)
     }
 }

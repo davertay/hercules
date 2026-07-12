@@ -2,8 +2,6 @@ import Allocate
 import Design
 import Execute
 import UISupport
-import PRD
-import SmallJob
 import SwiftUI
 import Validate
 
@@ -20,7 +18,7 @@ public struct WorkflowContainerView: View {
 
     public var body: some View {
         NavigationSplitView {
-            List(model.mode.phases, selection: $selectedPhase) { phase in
+            List(Phase.allCases, selection: $selectedPhase) { phase in
                 PhaseSidebarRow(phase: phase, isUnlocked: model.isUnlocked(phase))
             }
         } detail: {
@@ -74,21 +72,10 @@ public struct WorkflowContainerView: View {
     private var phaseDetail: some View {
         switch selectedPhase {
         case .some(let phase) where !model.isUnlocked(phase):
-            PhasePlaceholderView(phase: phase, isUnlocked: false, predecessor: phase.predecessor(in: model.mode))
+            PhasePlaceholderView(phase: phase, isUnlocked: false, predecessor: phase.predecessor)
         case .design:
-            if let smallJobModel = model.smallJobModel {
-                SmallJobView(model: smallJobModel)
-            } else if let designModel = model.designModel {
+            if let designModel = model.designModel {
                 DesignView(model: designModel)
-            } else {
-                ContentUnavailableView(
-                    "Workflow store unavailable",
-                    systemImage: "exclamationmark.triangle"
-                )
-            }
-        case .prd:
-            if let prdModel = model.prdModel {
-                PRDView(model: prdModel)
             } else {
                 ContentUnavailableView(
                     "Workflow store unavailable",
@@ -123,7 +110,7 @@ public struct WorkflowContainerView: View {
                 )
             }
         case .some(let phase):
-            PhasePlaceholderView(phase: phase, isUnlocked: true, predecessor: phase.predecessor(in: model.mode))
+            PhasePlaceholderView(phase: phase, isUnlocked: true, predecessor: phase.predecessor)
         case .none:
             ContentUnavailableView("Select a Phase", systemImage: "sidebar.left")
         }
@@ -165,7 +152,7 @@ struct PhaseSidebarRow: View {
 struct PhasePlaceholderView: View {
     let phase: Phase
     let isUnlocked: Bool
-    /// The Phase that gates this one within the Workflow's mode topology, used for the locked-state copy.
+    /// The Phase that gates this one, used for the locked-state copy.
     var predecessor: Phase?
 
     var body: some View {
