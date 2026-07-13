@@ -50,6 +50,16 @@ public final class DesignModel {
         return designPhase?.artifactPath.map { URL(fileURLWithPath: $0) }
     }
 
+    /// The Design→Allocate cutover boundary: the moment the finalization Turn completed the `design`
+    /// Phase. The small-path carve happens later in this same physical `.design` Session, so Allocate
+    /// filters the shared conversation to Turns created after this instant to hide the grill turns. It is
+    /// the completed Phase row's `updatedAt`, so it is recorded at finalization and comes straight back
+    /// from the Store on reconstruction — no separate capture infra, no in-memory state to lose. `nil`
+    /// until the Phase completes.
+    public var cutoverBoundary: Date? {
+        designPhase?.updatedAt
+    }
+
     public init(
         worktree: URL,
         workflowID: UUID,

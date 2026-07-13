@@ -2,8 +2,10 @@ import Chat
 import Store
 import SwiftUI
 
-/// The Allocate Phase surface: intake shows the Propose action; once a proposal exists the Transcript,
-/// composer, and committed-Issue list take over, with Propose and Accept & Write in the toolbar.
+/// The Allocate Phase surface. A fork picker chooses how Issues are carved, and the body branches on it:
+/// the **big** path proposes from the PRD & Design summary in a fresh Session, the **small** path carves
+/// straight from the live grill (its grill turns filtered out). Committed Issues and the composer sit
+/// below, and the primary action plus Accept & Write live in the toolbar.
 public struct AllocateView: View {
     @Bindable var model: AllocateModel
 
@@ -13,39 +15,80 @@ public struct AllocateView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            if model.isIntake {
-                IntakeActionView(isProposeAvailable: model.isProposeAvailable) {
-                    model.propose()
-                }
-            } else {
-                ChatTranscript(engine: model.engine)
-            }
+            ForkPicker(fork: $model.fork)
+            Divider()
+            content
             if !model.issues.isEmpty {
                 Divider()
                 CommittedIssuesView(issues: model.issues)
             }
             Divider()
-            ChatComposer(engine: model.engine)
+            ChatComposer(engine: model.activeEngine)
         }
         .frame(minWidth: 500, minHeight: 400)
         .toolbar {
-            if !model.isIntake {
-                ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                if model.fork == .big {
                     Button("Propose Issues from PRD & Design", systemImage: "list.bullet.rectangle") {
                         model.propose()
                     }
                     .disabled(!model.isProposeAvailable)
-                    Button("Accept & Write Issues", systemImage: "checkmark.circle") {
-                        model.acceptAndWrite()
+                } else {
+                    Button("Carve Issues from the grill", systemImage: "scissors") {
+                        model.carve()
                     }
-                    .disabled(!model.isAcceptAvailable)
+                    .disabled(!model.isCarveAvailable)
                 }
+                Button("Accept & Write Issues", systemImage: "checkmark.circle") {
+                    model.acceptAndWrite()
+                }
+                .disabled(!model.isAcceptAvailable)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.fork {
+        case .big:
+            if model.isIntake {
+                BigIntakeActionView(isProposeAvailable: model.isProposeAvailable) {
+                    model.propose()
+                }
+            } else {
+                ChatTranscript(engine: model.engine)
+            }
+        case .small:
+            if model.isSmallIntake {
+                SmallIntakeActionView(isCarveAvailable: model.isCarveAvailable) {
+                    model.carve()
+                }
+            } else {
+                // The shared `.design` conversation filtered to the carve turns, so the grill is hidden.
+                ChatTranscript(engine: model.smallEngine, messages: model.carveMessages)
             }
         }
     }
 }
 
-private struct IntakeActionView: View {
+/// Chooses how Allocate carves Issues. A static default for now; a later slice pre-selects it from the
+/// grill's recommendation.
+private struct ForkPicker: View {
+    @Binding var fork: AllocateFork
+
+    var body: some View {
+        Picker("How to carve Issues", selection: $fork) {
+            Text("Small — carve from the grill").tag(AllocateFork.small)
+            Text("Big — from PRD & Design").tag(AllocateFork.big)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+}
+
+private struct BigIntakeActionView: View {
     let isProposeAvailable: Bool
     let propose: () -> Void
 
@@ -61,6 +104,28 @@ private struct IntakeActionView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .disabled(!isProposeAvailable)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct SmallIntakeActionView: View {
+    let isCarveAvailable: Bool
+    let carve: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Text("Carve Issues straight from the grill you just had — no PRD needed.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Button("Carve Issues from the grill", systemImage: "scissors") {
+                carve()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!isCarveAvailable)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

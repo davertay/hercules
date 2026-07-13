@@ -141,6 +141,8 @@ struct DesignModelTests {
         #expect(try String(contentsOf: summaryURL, encoding: .utf8) == "# Design\n\nThe plan.")
         #expect(model.engine.errorText == nil)
         #expect(!model.engine.isRunning)
+        // The finalization records the Design→Allocate cutover boundary — the Phase completion instant.
+        #expect(model.cutoverBoundary == fixedDate)
 
         let phase = try await database.read { db in
             try PhaseRow.where { $0.kind.eq("design") }.fetchOne(db)
@@ -148,6 +150,30 @@ struct DesignModelTests {
         #expect(phase?.workflowID == UUID(-1))
         #expect(phase?.status == "complete")
         #expect(phase?.artifactPath == summaryURL.path)
+    }
+
+    @Test
+    func cutoverBoundarySurvivesReconstruction() async throws {
+        // Reopening the app: the model is rebuilt against a database that already holds a completed
+        // design Phase. The small-path carve happens later in the same physical `.design` Session, so the
+        // boundary must come back from the row rather than depend on in-memory finalization state.
+        let database = try Self.makeDatabase()
+        try Self.seedCompletedDesignPhase(database, summaryPath: "/wf/phases/design/summary.md")
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            DesignModel(
+                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
+                workflowDirectory: Self.makeWorkflowDirectory(),
+                mcpServerCommand: mcpServerCommand, database: database
+            )
+        }
+
+        // The boundary comes back from the persisted Phase row, not from in-memory finalization state.
+        try await model.$designPhase.load()
+
+        #expect(model.cutoverBoundary == fixedDate)
     }
 
     @Test

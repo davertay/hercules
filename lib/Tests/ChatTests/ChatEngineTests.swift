@@ -536,6 +536,42 @@ struct ChatEngineTests {
     }
 
     @Test
+    func messagesAfterBoundaryHidesTurnsAtOrBeforeIt() async throws {
+        let database = try Self.makeDatabase()
+        let sessionID = UUID(-2)
+        try Self.seedSession(database, sessionID: sessionID, kind: .design)
+        let boundary = fixedDate.addingTimeInterval(10)
+        try await database.write { db in
+            // A grill Turn before the boundary and a carve Turn after it, sharing one `.design` Session
+            // — the exact shape the Allocate small path filters.
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-10), sessionID: sessionID, userPrompt: "grill turn",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-20), sessionID: sessionID, userPrompt: "carve turn",
+                    createdAt: boundary.addingTimeInterval(1), updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let engine = Self.makeEngine(database: database, kind: .design)
+        try await engine.$conversation.load()
+
+        // The full transcript carries both Turns…
+        #expect(engine.messages.map(\.text) == ["grill turn", "carve turn"])
+        // …but filtering to after the boundary keeps only the carve Turn, hiding the grill.
+        #expect(engine.messages(after: boundary).map(\.text) == ["carve turn"])
+        // A nil boundary applies no filter.
+        #expect(engine.messages(after: nil).map(\.text) == ["grill turn", "carve turn"])
+    }
+
+    @Test
     func followUpAfterRediscoveryResumesRatherThanStarts() async throws {
         let database = try Self.makeDatabase()
         let sessionID = UUID(-2)

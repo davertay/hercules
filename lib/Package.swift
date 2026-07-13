@@ -63,6 +63,7 @@ let package = Package(
             dependencies: [
                 "Allocate",
                 "Agent",
+                "Chat",
                 "Skills",
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),

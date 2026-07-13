@@ -7,6 +7,7 @@ import Store
 import Testing
 
 @testable import Allocate
+@testable import Chat
 
 private let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 private let mcpServerCommand = "/repo/.build/hercules"
@@ -288,6 +289,215 @@ struct AllocateModelTests {
         #expect(!model.engine.isRunning)
     }
 
+    // MARK: - The small/big fork
+
+    @Test
+    func forkDefaultsToBigAndCanBeReChosen() throws {
+        let database = try Self.makeDatabase()
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: Self.makeWorkflowDirectory(), database: database)
+        }
+
+        // A plain static default for now; the recommendation that pre-selects it lands in a later slice.
+        #expect(model.fork == .big)
+        #expect(model.activeEngine === model.engine)
+
+        // Re-opening Allocate lets the user re-choose the fork (small ↔ big).
+        model.fork = .small
+        #expect(model.activeEngine === model.smallEngine)
+        model.fork = .big
+        #expect(model.activeEngine === model.engine)
+    }
+
+    // MARK: - Small path (live carve)
+
+    @Test
+    func carveResumesTheDesignSessionWithToIssuesSkillAndNoInputDocuments() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        // A live grill Session sits in the `.design` slot for the small path to resume.
+        try Self.seedDesignSession(database, id: UUID(100))
+        let skill = loadSkill(.toIssues)
+        let captured = LockIsolated<SendRequest?>(nil)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                captured.setValue(request)
+                return try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.fork = .small
+        #expect(model.isCarveAvailable)
+        model.carve()
+        await model.runTask?.value
+
+        let request = try #require(captured.value)
+        // A resume (send, not start) of the existing `.design` Session under the to-issues Skill…
+        #expect(request.session.id.rawValue == UUID(100))
+        #expect(request.session.kind == .design)
+        #expect(request.session.skillFiles == [skill.fileUrl])
+        // …with no PRD/Design documents attached — the live grill *is* the context…
+        #expect(request.inputs == nil)
+        // …and writer-free: only acceptAndWrite() carries the create-issue server.
+        #expect(request.mcpServers == nil)
+        #expect(request.prompt == AllocateModel.carvePrompt)
+        #expect(model.smallEngine.errorText == nil)
+        #expect(!model.smallEngine.isRunning)
+    }
+
+    @Test
+    func carveMessagesHideTheGrillTurnsBeforeTheCutoverBoundary() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        let boundary = fixedDate.addingTimeInterval(10)
+        try await database.write { db in
+            // A grill Turn before the boundary; the finalization completed `design` at `boundary`; then a
+            // carve Turn after it — all in the shared `.design` Session.
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-30), sessionID: UUID(100), userPrompt: "grill turn",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try PhaseRow.insert {
+                PhaseRow(
+                    id: UUID(-2), workflowID: UUID(-1), kind: "design", status: "complete",
+                    artifactPath: "/wf/phases/design/summary.md", createdAt: fixedDate, updatedAt: boundary
+                )
+            }
+            .execute(db)
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-40), sessionID: UUID(100), userPrompt: "carve turn",
+                    createdAt: boundary.addingTimeInterval(1), updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.$designPhase.load()
+        try await model.smallEngine.$conversation.load()
+
+        // The boundary is the completed `design` Phase's completion instant.
+        #expect(model.cutoverBoundary == boundary)
+        // The grill Turn is hidden; only the carve Turn shows, so Allocate reads as a clean new Phase.
+        #expect(model.carveMessages.map(\.text) == ["carve turn"])
+    }
+
+    @Test
+    func acceptAndWriteOnSmallPathCommitsOnTheDesignSessionAndCompletesAllocate() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        // A prior committed Issue plus the live grill `.design` Session the small path resumes.
+        try Self.seedIssue(database, id: UUID(-10), number: 1, title: "Stale issue")
+        try Self.seedDesignSession(database, id: UUID(100))
+        let committedKind = LockIsolated<SessionKind?>(nil)
+        let committedServers = LockIsolated<[MCPServer]?>(nil)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                committedKind.setValue(request.session.kind)
+                committedServers.setValue(request.mcpServers)
+                try await Self.seedIssues(request.database, count: 2)
+                return try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.fork = .small
+        #expect(model.isAcceptAvailable)
+        model.acceptAndWrite()
+        await model.runTask?.value
+
+        // The commit resumed the `.design` Session yet completes the `allocate` Phase — SessionKind and
+        // Phase are independent.
+        #expect(committedKind.value == .design)
+        let databasePath = workflowDirectory.appendingPathComponent("workflow.sqlite").path
+        #expect(committedServers.value == [
+            MCPServer(
+                name: "hercules",
+                command: mcpServerCommand,
+                args: [
+                    "--mcp-issue-server",
+                    "--db", databasePath,
+                    "--workflow-id", UUID(-1).uuidString,
+                ],
+                tools: ["create_issue"]
+            )
+        ])
+        // Transactional: the prior Issue is soft-deleted only after the write succeeded.
+        let prior = try await database.read { db in try IssueRow.find(UUID(-10)).fetchOne(db) }
+        #expect(prior?.isDeleted == true)
+        let current = try await database.read { db in
+            try WorkflowIssuesRequest(workflowID: UUID(-1)).fetch(db)
+        }
+        #expect(current.map(\.number) == [1, 2])
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
+        }
+        #expect(phase?.status == "complete")
+        #expect(model.smallEngine.errorText == nil)
+        #expect(!model.smallEngine.isRunning)
+    }
+
+    @Test
+    func acceptAndWriteOnSmallPathLeavesPriorIssuesIntactWhenCommitWroteNoIssues() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedIssue(database, id: UUID(-10), number: 1, title: "Good issue")
+        try Self.seedDesignSession(database, id: UUID(100))
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                // The carve commit Turn returns without writing any Issue.
+                try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.fork = .small
+        model.acceptAndWrite()
+        await model.runTask?.value
+
+        // An empty write leaves the prior set intact and does not complete the Phase.
+        let current = try await database.read { db in
+            try WorkflowIssuesRequest(workflowID: UUID(-1)).fetch(db)
+        }
+        #expect(current.map(\.title) == ["Good issue"])
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
+        }
+        #expect(phase == nil)
+        #expect(!model.smallEngine.isRunning)
+    }
+
     // MARK: - Helpers
 
     @MainActor
@@ -400,6 +610,19 @@ struct AllocateModelTests {
                 SessionRow(
                     id: id, workflowID: UUID(-1), worktreePath: "/repo", mode: "readOnly",
                     kind: "allocate", createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+    }
+
+    /// The live grill `.design` Session the small path rediscovers and resumes.
+    private static func seedDesignSession(_ database: any DatabaseWriter, id: UUID) throws {
+        try database.write { db in
+            try SessionRow.insert {
+                SessionRow(
+                    id: id, workflowID: UUID(-1), worktreePath: "/repo", mode: "readOnly",
+                    kind: "design", createdAt: fixedDate, updatedAt: fixedDate
                 )
             }
             .execute(db)
