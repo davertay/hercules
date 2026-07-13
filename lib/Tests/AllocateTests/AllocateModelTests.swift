@@ -1,4 +1,5 @@
 import Agent
+import DAGGraphUI
 import Dependencies
 import Foundation
 import Skills
@@ -7,6 +8,7 @@ import Store
 import Testing
 
 @testable import Allocate
+@testable import Chat
 
 private let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 private let mcpServerCommand = "/repo/.build/hercules"
@@ -26,16 +28,26 @@ struct AllocateModelTests {
         #expect(FileManager.default.fileExists(atPath: skill.fileUrl.path))
     }
 
+    @Test
+    func toPrdSkillResolvesFromBundle() {
+        let skill = loadSkill(.toPrd)
+        #expect(skill.name == "to-prd")
+        #expect(skill.fileUrl.path.hasSuffix("skills/to-prd/SKILL.md"))
+        #expect(skill.folderUrl == skill.fileUrl.deletingLastPathComponent())
+        #expect(FileManager.default.fileExists(atPath: skill.fileUrl.path))
+    }
+
     // MARK: - propose
 
     @Test
     func proposeRunsOneReadOnlyAllocateTurnWithBothArtifactsAndSkillButNoWriter() async throws {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
-        let prdPath = Self.artifactPath(workflowDirectory, "phases/prd/prd.md")
+        let prdPath = AllocateModel.prdURL(in: workflowDirectory).path
         let designPath = Self.artifactPath(workflowDirectory, "phases/design/summary.md")
         try Self.seedWorkflow(database)
-        try Self.seedCompletedPhase(database, kind: "prd", artifactPath: prdPath, id: UUID(-2))
+        // The PRD is a hidden file the PRD Turn writes, not a Phase — present it at its fixed path.
+        try Self.writePRDFile(workflowDirectory)
         try Self.seedCompletedPhase(database, kind: "design", artifactPath: designPath, id: UUID(-3))
         let skill = loadSkill(.toIssues)
         let captured = LockIsolated<StartRequest?>(nil)
@@ -75,13 +87,12 @@ struct AllocateModelTests {
     }
 
     @Test
-    func proposeToleratesASkippedPRDAndAttachesTheDesignSummaryAlone() async throws {
+    func proposeAttachesTheDesignSummaryAloneWhenNoPRDWasWritten() async throws {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
         let designPath = Self.artifactPath(workflowDirectory, "phases/design/summary.md")
         try Self.seedWorkflow(database)
-        // A skipped PRD Phase: completed, but with no Artifact path.
-        try Self.seedCompletedPhaseWithoutArtifact(database, kind: "prd", id: UUID(-2))
+        // No PRD file was written (e.g. propose called before any PRD Turn) — only the summary is fed.
         try Self.seedCompletedPhase(database, kind: "design", artifactPath: designPath, id: UUID(-3))
         let captured = LockIsolated<StartRequest?>(nil)
 
@@ -115,9 +126,7 @@ struct AllocateModelTests {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
         try Self.seedWorkflow(database)
-        try Self.seedCompletedPhase(
-            database, kind: "prd", artifactPath: Self.artifactPath(workflowDirectory, "phases/prd/prd.md"), id: UUID(-2)
-        )
+        try Self.writePRDFile(workflowDirectory)
         try Self.seedCompletedPhase(
             database, kind: "design",
             artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
@@ -143,6 +152,300 @@ struct AllocateModelTests {
             try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
         }
         #expect(phase == nil)
+    }
+
+    // MARK: - Big path (PRD checkpoint → fresh carve)
+
+    @Test
+    func bridgeAndProposeRunsPRDTurnThenAutoProposesWithoutCommitting() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        let designPath = Self.artifactPath(workflowDirectory, "phases/design/summary.md")
+        let prdURL = AllocateModel.prdURL(in: workflowDirectory)
+        try Self.seedWorkflow(database)
+        // The live grill sits in the `.design` slot for the PRD Turn to resume; the completed Design Phase
+        // supplies the summary the auto-propose reads.
+        try Self.seedDesignSession(database, id: UUID(100))
+        try Self.seedCompletedPhase(database, kind: "design", artifactPath: designPath, id: UUID(-3))
+        let toIssues = loadSkill(.toIssues)
+        let toPrd = loadSkill(.toPrd)
+        let prdTurn = LockIsolated<SendRequest?>(nil)
+        let proposeTurn = LockIsolated<StartRequest?>(nil)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                // The PRD Turn resumes the `.design` grill; stub the write_artifact child by leaving a
+                // non-empty prd.md so the completion gate passes and the auto-propose finds the bridge.
+                prdTurn.setValue(request)
+                try Self.writePRDFile(workflowDirectory)
+                return try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+            $0.agentClient.start = { @Sendable request in
+                proposeTurn.setValue(request)
+                return try await Self.startSession(for: request, id: UUID(101))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        #expect(model.isBridgeAvailable)
+        model.bridgeAndPropose()
+        await model.runTask?.value
+
+        // Step 1 — the PRD Turn resumes the `.design` Session under the to-prd Skill with a write_artifact
+        // override targeting prd.md, no documents fed (the grill is the context).
+        let prd = try #require(prdTurn.value)
+        #expect(prd.session.id.rawValue == UUID(100))
+        #expect(prd.session.kind == .design)
+        #expect(prd.session.skillFiles == [toPrd.fileUrl])
+        #expect(prd.prompt == AllocateModel.prdPrompt)
+        #expect(prd.inputs == nil)
+        #expect(prd.mcpServers == [Self.artifactServer(command: mcpServerCommand, artifactURL: prdURL)])
+
+        // Step 2 — the auto-propose is a fresh `.allocate` Session under the to-issues Skill reading
+        // prd.md + summary.md as an input bundle, writer-free.
+        let propose = try #require(proposeTurn.value)
+        #expect(propose.kind == .allocate)
+        #expect(propose.skillFiles == [toIssues.fileUrl])
+        #expect(propose.prompt == AllocateModel.proposePrompt(prdPath: prdURL.path, designPath: designPath))
+        let inputs = try #require(propose.inputs)
+        #expect(inputs.root == workflowDirectory)
+        #expect(inputs.relativePaths == ["phases/prd/prd.md", "phases/design/summary.md"])
+        #expect(propose.mcpServers.isEmpty)
+
+        // No commit: no Issues written and the allocate Phase is not completed.
+        let issues = try await database.read { db in try IssueRow.fetchAll(db) }
+        #expect(issues.isEmpty)
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
+        }
+        #expect(phase == nil)
+        #expect(model.engine.errorText == nil)
+        #expect(!model.isBusy)
+    }
+
+    @Test
+    func bridgeAndProposeSurfacesErrorAndSkipsProposeWhenPRDTurnWritesNothing() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        try Self.seedCompletedPhase(
+            database, kind: "design",
+            artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
+        )
+        // A prior committed Issue that a failed bridge must leave untouched.
+        try Self.seedIssue(database, id: UUID(-10), number: 1, title: "Good issue")
+        let proposeStarted = LockIsolated(false)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                // The PRD Turn returns without ever calling write_artifact — no prd.md appears.
+                try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+            $0.agentClient.start = { @Sendable request in
+                proposeStarted.setValue(true)
+                return try await Self.startSession(for: request, id: UUID(101))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.bridgeAndPropose()
+        await model.runTask?.value
+
+        // The unwritten PRD short-circuits before the auto-propose, and the error is surfaced.
+        #expect(!proposeStarted.value)
+        #expect(model.engine.errorText != nil)
+        #expect(model.prdSavedURL == nil)
+        // The prior Issue set and Phase state are fully intact.
+        let current = try await database.read { db in
+            try WorkflowIssuesRequest(workflowID: UUID(-1)).fetch(db)
+        }
+        #expect(current.map(\.title) == ["Good issue"])
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
+        }
+        #expect(phase == nil)
+        #expect(!model.isBusy)
+    }
+
+    @Test
+    func regeneratePRDResumesDesignWithToPrdSkillAndWriteArtifactOverrideThenReProposes() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        let prdURL = AllocateModel.prdURL(in: workflowDirectory)
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        try Self.seedCompletedPhase(
+            database, kind: "design",
+            artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
+        )
+        // A PRD already exists (an earlier bridge), so Regenerate is available; its old modification time
+        // lets the gate see the rewrite advance.
+        try Self.writePRDFile(workflowDirectory, modified: fixedDate)
+        let prdTurn = LockIsolated<SendRequest?>(nil)
+        let reProposed = LockIsolated(false)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                prdTurn.setValue(request)
+                // The regenerated write advances the file's modification time past the old snapshot.
+                try Self.writePRDFile(workflowDirectory)
+                return try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+            $0.agentClient.start = { @Sendable request in
+                reProposed.setValue(true)
+                return try await Self.startSession(for: request, id: UUID(101))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        #expect(model.isRegeneratePRDAvailable)
+        model.regeneratePRD()
+        await model.runTask?.value
+
+        // The regenerate PRD Turn resumes `.design` under to-prd with the regenerate prompt and the same
+        // write_artifact override, then the auto-propose follows.
+        let prd = try #require(prdTurn.value)
+        #expect(prd.session.kind == .design)
+        #expect(prd.session.skillFiles == [loadSkill(.toPrd).fileUrl])
+        #expect(prd.prompt == AllocateModel.regeneratePRDPrompt)
+        #expect(prd.mcpServers == [Self.artifactServer(command: mcpServerCommand, artifactURL: prdURL)])
+        #expect(reProposed.value)
+        #expect(model.engine.errorText == nil)
+        #expect(!model.isBusy)
+    }
+
+    @Test
+    func prdSavedURLReflectsTheWrittenBridgeFile() throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        // No bridge yet — the View PRD disclosure has nothing to open.
+        #expect(model.prdSavedURL == nil)
+
+        // Once the PRD Turn has written the file, the disclosure resolves to it.
+        try Self.writePRDFile(workflowDirectory)
+        #expect(model.prdSavedURL == AllocateModel.prdURL(in: workflowDirectory))
+    }
+
+    // MARK: - PRD checkpoint progress activity
+
+    @Test
+    func prdActivityIsNilUntilTheCheckpointTurnLands() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        // The completed Design Phase supplies the cutover boundary (`fixedDate`).
+        try Self.seedCompletedPhase(
+            database, kind: "design",
+            artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
+        )
+        // Only a pre-boundary grill Turn exists — the checkpoint Turn hasn't spun up yet.
+        try await database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-30), sessionID: UUID(100), userPrompt: "grill",
+                    createdAt: fixedDate.addingTimeInterval(-10), updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.$prdActivityCounts.load()
+
+        // No post-boundary Turn → no activity, so the panel shows a bare spinner rather than a grill count.
+        #expect(model.prdActivity == nil)
+    }
+
+    @Test
+    func prdActivityFreezesElapsedAndShowsCostOnceTheCheckpointFinalizes() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        try Self.seedCompletedPhase(
+            database, kind: "design",
+            artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
+        )
+        // A finalized checkpoint Turn after the boundary, with its duration and cost recorded.
+        try await Self.seedCheckpointTurn(
+            database, sessionID: UUID(100), turnID: UUID(-40),
+            createdAt: fixedDate.addingTimeInterval(5), durationMs: 83_000, costUSD: 0.42
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.$prdActivityCounts.load()
+
+        // The PRD engine is idle, so this is the finalized presentation: elapsed frozen at the run's
+        // duration, cost shown, and the `tool_result` echo excluded from the step count.
+        let activity = try #require(model.prdActivity)
+        #expect(!activity.isRunning)
+        #expect(activity.tools == 12)
+        #expect(activity.steps == 5)  // 4 text + 1 thinking; the 2 tool_result echoes are excluded
+        #expect(activity.elapsed == .milliseconds(83_000))
+        #expect(activity.cost == 0.42)
+    }
+
+    @Test
+    func prdActivityHidesCostAndUsesTheLiveClockWhileTheCheckpointRuns() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        try Self.seedCompletedPhase(
+            database, kind: "design",
+            artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
+        )
+        try await Self.seedCheckpointTurn(
+            database, sessionID: UUID(100), turnID: UUID(-40),
+            createdAt: fixedDate.addingTimeInterval(5), durationMs: 83_000, costUSD: 0.42
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.$prdActivityCounts.load()
+        // Mark the PRD Turn mid-flight, as `runBridge` does.
+        model.prdEngine.isRunning = true
+
+        let activity = try #require(model.prdActivity)
+        #expect(activity.isRunning)
+        // Live counts still show, but cost is withheld until the run finalizes…
+        #expect(activity.tools == 12)
+        #expect(activity.steps == 5)
+        #expect(activity.cost == nil)
+        // …and elapsed derives from the live clock, not the frozen duration. The clock hasn't ticked in
+        // this test, so it reads a floored zero rather than the 83s duration.
+        #expect(activity.elapsed == .seconds(0))
     }
 
     // MARK: - acceptAndWrite
@@ -288,6 +591,330 @@ struct AllocateModelTests {
         #expect(!model.engine.isRunning)
     }
 
+    // MARK: - The small/big fork
+
+    @Test
+    func forkDefaultsToBigAndCanBeReChosen() throws {
+        let database = try Self.makeDatabase()
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: Self.makeWorkflowDirectory(), database: database)
+        }
+
+        // With no grill recommendation, the fork falls to the static default.
+        #expect(model.fork == .big)
+        #expect(model.activeEngine === model.engine)
+
+        // Re-opening Allocate lets the user re-choose the fork (small ↔ big).
+        model.fork = .small
+        #expect(model.activeEngine === model.smallEngine)
+        model.fork = .big
+        #expect(model.activeEngine === model.engine)
+    }
+
+    // MARK: - The small/big recommendation (sentinel carrier)
+
+    @Test
+    func sentinelOnClosingGrillMessagePreselectsBigForkAndSurfacesRationale() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        // The grill's closing verdict: a `true` sentinel recommends the big/PRD path.
+        try Self.seedClosingGrillMessage(
+            database, sessionID: UUID(100), turnID: UUID(-50),
+            text: """
+                This touches several surfaces and carries real migration risk — it earns a PRD checkpoint.
+
+                <!-- prd_recommended: true -->
+                """
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.smallEngine.$conversation.load()
+
+        // The sentinel drives the recommendation and pre-selects the fork…
+        #expect(model.recommendation?.fork == .big)
+        #expect(model.fork == .big)
+        // …and the rationale surfaced beside the choices is the verdict with the sentinel line stripped.
+        #expect(
+            model.recommendation?.rationale
+                == "This touches several surfaces and carries real migration risk — it earns a PRD checkpoint."
+        )
+    }
+
+    @Test
+    func sentinelOnClosingGrillMessagePreselectsSmallForkWhenPRDNotRecommended() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        // A `false` sentinel recommends the small path — and must override the static `.big` default, so
+        // asserting `.small` proves the recommendation drove the fork, not the fallback.
+        try Self.seedClosingGrillMessage(
+            database, sessionID: UUID(100), turnID: UUID(-50),
+            text: """
+                A small, contained change — carve it straight from this conversation.
+
+                <!-- prd_recommended: false -->
+                """
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.smallEngine.$conversation.load()
+
+        #expect(model.recommendation?.fork == .small)
+        #expect(model.fork == .small)
+        #expect(model.recommendation?.rationale == "A small, contained change — carve it straight from this conversation.")
+    }
+
+    @Test
+    func missingSentinelHidesRecommendationAndAppliesStaticDefault() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        // A closing message with a human-readable verdict but no parseable sentinel — an older grill, or one
+        // that never emitted it. The verdict never blocks the user; Allocate simply shows no recommendation.
+        try Self.seedClosingGrillMessage(
+            database, sessionID: UUID(100), turnID: UUID(-50),
+            text: "This feels like a fairly big job to me, but I did not tag a recommendation."
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.smallEngine.$conversation.load()
+
+        // No recommendation surfaces, and the fork falls back to the plain static default.
+        #expect(model.recommendation == nil)
+        #expect(model.fork == AllocateModel.defaultFork)
+    }
+
+    @Test
+    func userForkOverrideWinsOverTheRecommendation() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        // The grill recommends big…
+        try Self.seedClosingGrillMessage(
+            database, sessionID: UUID(100), turnID: UUID(-50),
+            text: "A large, tangled job — take the PRD checkpoint.\n\n<!-- prd_recommended: true -->"
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.smallEngine.$conversation.load()
+        #expect(model.fork == .big)
+
+        // …but the user's judgement wins the moment they flip the picker, and the recommendation still reads.
+        model.fork = .small
+        #expect(model.fork == .small)
+        #expect(model.recommendation?.fork == .big)
+    }
+
+    // MARK: - Small path (live carve)
+
+    @Test
+    func carveResumesTheDesignSessionWithToIssuesSkillAndNoInputDocuments() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        // A live grill Session sits in the `.design` slot for the small path to resume.
+        try Self.seedDesignSession(database, id: UUID(100))
+        let skill = loadSkill(.toIssues)
+        let captured = LockIsolated<SendRequest?>(nil)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                captured.setValue(request)
+                return try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.fork = .small
+        #expect(model.isCarveAvailable)
+        model.carve()
+        await model.runTask?.value
+
+        let request = try #require(captured.value)
+        // A resume (send, not start) of the existing `.design` Session under the to-issues Skill…
+        #expect(request.session.id.rawValue == UUID(100))
+        #expect(request.session.kind == .design)
+        #expect(request.session.skillFiles == [skill.fileUrl])
+        // …with no PRD/Design documents attached — the live grill *is* the context…
+        #expect(request.inputs == nil)
+        // …and writer-free: only acceptAndWrite() carries the create-issue server.
+        #expect(request.mcpServers == nil)
+        #expect(request.prompt == AllocateModel.carvePrompt)
+        #expect(model.smallEngine.errorText == nil)
+        #expect(!model.smallEngine.isRunning)
+    }
+
+    @Test
+    func carveMessagesHideTheGrillTurnsBeforeTheCutoverBoundary() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        let boundary = fixedDate.addingTimeInterval(10)
+        try await database.write { db in
+            // A grill Turn before the boundary; the finalization completed `design` at `boundary`; then a
+            // carve Turn after it — all in the shared `.design` Session.
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-30), sessionID: UUID(100), userPrompt: "grill turn",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try PhaseRow.insert {
+                PhaseRow(
+                    id: UUID(-2), workflowID: UUID(-1), kind: "design", status: "complete",
+                    artifactPath: "/wf/phases/design/summary.md", createdAt: fixedDate, updatedAt: boundary
+                )
+            }
+            .execute(db)
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-40), sessionID: UUID(100), userPrompt: "carve turn",
+                    createdAt: boundary.addingTimeInterval(1), updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.$designPhase.load()
+        try await model.smallEngine.$conversation.load()
+
+        // The boundary is the completed `design` Phase's completion instant.
+        #expect(model.cutoverBoundary == boundary)
+        // The grill Turn is hidden; only the carve Turn shows, so Allocate reads as a clean new Phase.
+        #expect(model.carveMessages.map(\.text) == ["carve turn"])
+    }
+
+    @Test
+    func acceptAndWriteOnSmallPathCommitsOnTheDesignSessionAndCompletesAllocate() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        // A prior committed Issue plus the live grill `.design` Session the small path resumes.
+        try Self.seedIssue(database, id: UUID(-10), number: 1, title: "Stale issue")
+        try Self.seedDesignSession(database, id: UUID(100))
+        let committedKind = LockIsolated<SessionKind?>(nil)
+        let committedServers = LockIsolated<[MCPServer]?>(nil)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                committedKind.setValue(request.session.kind)
+                committedServers.setValue(request.mcpServers)
+                try await Self.seedIssues(request.database, count: 2)
+                return try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.fork = .small
+        #expect(model.isAcceptAvailable)
+        model.acceptAndWrite()
+        await model.runTask?.value
+
+        // The commit resumed the `.design` Session yet completes the `allocate` Phase — SessionKind and
+        // Phase are independent.
+        #expect(committedKind.value == .design)
+        let databasePath = workflowDirectory.appendingPathComponent("workflow.sqlite").path
+        #expect(committedServers.value == [
+            MCPServer(
+                name: "hercules",
+                command: mcpServerCommand,
+                args: [
+                    "--mcp-issue-server",
+                    "--db", databasePath,
+                    "--workflow-id", UUID(-1).uuidString,
+                ],
+                tools: ["create_issue"]
+            )
+        ])
+        // Transactional: the prior Issue is soft-deleted only after the write succeeded.
+        let prior = try await database.read { db in try IssueRow.find(UUID(-10)).fetchOne(db) }
+        #expect(prior?.isDeleted == true)
+        let current = try await database.read { db in
+            try WorkflowIssuesRequest(workflowID: UUID(-1)).fetch(db)
+        }
+        #expect(current.map(\.number) == [1, 2])
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
+        }
+        #expect(phase?.status == "complete")
+        #expect(model.smallEngine.errorText == nil)
+        #expect(!model.smallEngine.isRunning)
+    }
+
+    @Test
+    func acceptAndWriteOnSmallPathLeavesPriorIssuesIntactWhenCommitWroteNoIssues() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedIssue(database, id: UUID(-10), number: 1, title: "Good issue")
+        try Self.seedDesignSession(database, id: UUID(100))
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                // The carve commit Turn returns without writing any Issue.
+                try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.fork = .small
+        model.acceptAndWrite()
+        await model.runTask?.value
+
+        // An empty write leaves the prior set intact and does not complete the Phase.
+        let current = try await database.read { db in
+            try WorkflowIssuesRequest(workflowID: UUID(-1)).fetch(db)
+        }
+        #expect(current.map(\.title) == ["Good issue"])
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
+        }
+        #expect(phase == nil)
+        #expect(!model.smallEngine.isRunning)
+    }
+
     // MARK: - Helpers
 
     @MainActor
@@ -379,19 +1006,28 @@ struct AllocateModelTests {
         }
     }
 
-    /// A Phase completed with no file Artifact — the shape a skipped PRD leaves behind.
-    private static func seedCompletedPhaseWithoutArtifact(
-        _ database: any DatabaseWriter, kind: String, id: UUID
-    ) throws {
-        try database.write { db in
-            try PhaseRow.insert {
-                PhaseRow(
-                    id: id, workflowID: UUID(-1), kind: kind, status: "complete",
-                    artifactPath: nil, createdAt: fixedDate, updatedAt: fixedDate
-                )
-            }
-            .execute(db)
+    /// Writes a non-empty `prd.md` at the fixed bridge path, standing in for the PRD Turn's write_artifact
+    /// child. `modified` back-dates it so a subsequent rewrite's advanced modification time is observable.
+    /// `nonisolated` so the off-main-actor `agentClient` stubs can call it while faking the child's write.
+    nonisolated private static func writePRDFile(_ workflowDirectory: URL, modified: Date? = nil) throws {
+        let url = AllocateModel.prdURL(in: workflowDirectory)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try "# PRD\n\nThe distilled requirements.".write(to: url, atomically: true, encoding: .utf8)
+        if let modified {
+            try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: url.path)
         }
+    }
+
+    /// The write_artifact MCP server the PRD Turn is expected to carry, pointed at `prd.md`.
+    private static func artifactServer(command: String, artifactURL: URL) -> MCPServer {
+        MCPServer(
+            name: "hercules",
+            command: command,
+            args: ["--mcp-artifact-server", "--artifact-path", artifactURL.path],
+            tools: ["write_artifact"]
+        )
     }
 
     private static func seedSession(_ database: any DatabaseWriter, id: UUID) throws {
@@ -400,6 +1036,81 @@ struct AllocateModelTests {
                 SessionRow(
                     id: id, workflowID: UUID(-1), worktreePath: "/repo", mode: "readOnly",
                     kind: "allocate", createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+    }
+
+    /// Seeds a big-path PRD checkpoint Turn (in the `.design` Session) and the content blocks the
+    /// `StreamProjector` would write as it streams: 12 `tool_use`, 4 `text`, 1 `thinking`, and 2
+    /// `tool_result` echoes — the last excluded from the step tally — so the derived counts are
+    /// pin-down-able. `createdAt` is the caller's, so a post-boundary Turn can be placed for the request.
+    private static func seedCheckpointTurn(
+        _ database: any DatabaseWriter,
+        sessionID: UUID,
+        turnID: UUID,
+        createdAt: Date,
+        durationMs: Int?,
+        costUSD: Double?
+    ) async throws {
+        try await database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: turnID, sessionID: sessionID, userPrompt: "distil the PRD",
+                    durationMs: durationMs, costUSD: costUSD, createdAt: createdAt, updatedAt: createdAt
+                )
+            }
+            .execute(db)
+            let blocks: [(kind: String, role: String)] =
+                Array(repeating: ("tool_use", "assistant"), count: 12)
+                + Array(repeating: ("text", "assistant"), count: 4)
+                + Array(repeating: ("thinking", "assistant"), count: 1)
+                + Array(repeating: ("tool_result", "user"), count: 2)
+            for (position, block) in blocks.enumerated() {
+                try ContentBlockRow.insert {
+                    ContentBlockRow(
+                        id: UUID(2000 + position), turnID: turnID, position: position, role: block.role,
+                        kind: block.kind, toolName: block.kind == "tool_use" ? "write_artifact" : nil,
+                        createdAt: createdAt, updatedAt: createdAt
+                    )
+                }
+                .execute(db)
+            }
+        }
+    }
+
+    /// Seeds the grill's closing message — an assistant `text` block in the `.design` Session carrying
+    /// `text` — standing in for the verdict the grill-me Skill emits after finalizing the summary, so the
+    /// recommendation parse can be driven at the model seam.
+    private static func seedClosingGrillMessage(
+        _ database: any DatabaseWriter, sessionID: UUID, turnID: UUID, text: String
+    ) throws {
+        try database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: turnID, sessionID: sessionID, userPrompt: "produce the summary",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try ContentBlockRow.insert {
+                ContentBlockRow(
+                    id: UUID(3000), turnID: turnID, position: 0, role: "assistant",
+                    kind: "text", text: text, createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+    }
+
+    /// The live grill `.design` Session the small path rediscovers and resumes.
+    private static func seedDesignSession(_ database: any DatabaseWriter, id: UUID) throws {
+        try database.write { db in
+            try SessionRow.insert {
+                SessionRow(
+                    id: id, workflowID: UUID(-1), worktreePath: "/repo", mode: "readOnly",
+                    kind: "design", createdAt: fixedDate, updatedAt: fixedDate
                 )
             }
             .execute(db)

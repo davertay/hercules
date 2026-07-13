@@ -4,16 +4,22 @@ import SwiftUI
 /// embed just this as a panel.
 public struct ChatTranscript: View {
     let engine: ChatEngine
+    /// An explicit message list overriding `engine.messages`, used by the Allocate small path to render
+    /// only the carve turns (the grill turns filtered out). `nil` renders the engine's full transcript.
+    let messages: [Message]?
 
-    public init(engine: ChatEngine) {
+    public init(engine: ChatEngine, messages: [Message]? = nil) {
         self.engine = engine
+        self.messages = messages
     }
+
+    private var displayedMessages: [Message] { messages ?? engine.messages }
 
     public var body: some View {
         ScrollViewReader { proxy in
             ScrollView([.vertical]) {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(engine.messages) { message in
+                    ForEach(displayedMessages) { message in
                         ChatMessageBubble(message: message)
                     }
                     if let errorText = engine.errorText {
@@ -35,7 +41,7 @@ public struct ChatTranscript: View {
                 }
                 .padding()
             }
-            .onChange(of: engine.messages.count) { _, _ in scrollToBottom(proxy: proxy) }
+            .onChange(of: displayedMessages.count) { _, _ in scrollToBottom(proxy: proxy) }
             .onChange(of: engine.isRunning) { _, _ in scrollToBottom(proxy: proxy) }
         }
     }

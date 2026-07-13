@@ -11,11 +11,9 @@ public func defaultWorkflowsRoot() -> URL {
 
 /// Creates a Workflow for `repo`: a directory under `root`, its `Store` database, a `workflow` row, and
 /// a git worktree on a fresh `hercules/<short-id>` branch. Atomic — a failed worktree creation rolls
-/// back the directory and row so no half-built Workflow is left behind. `mode` is fixed here and shapes
-/// the Workflow's whole Phase topology.
+/// back the directory and row so no half-built Workflow is left behind.
 public func createWorkflow(
     repo: URL,
-    mode: WorkflowMode = .standard,
     root: URL = defaultWorkflowsRoot()
 ) throws -> WorkflowWindowData {
     @Dependency(\.uuid) var uuid
@@ -33,7 +31,6 @@ public func createWorkflow(
                 WorkflowRow(
                     id: id,
                     repoPath: repo.path,
-                    mode: mode.rawValue,
                     createdAt: timestamp,
                     updatedAt: timestamp
                 )
@@ -56,7 +53,7 @@ public func createWorkflow(
     }
 
     try? database.close()
-    return WorkflowWindowData(id: id, directory: directory, repoPath: repo.path, mode: mode)
+    return WorkflowWindowData(id: id, directory: directory, repoPath: repo.path)
 }
 
 /// The outcome of ``deleteWorkflow(data:root:)``. The folder removal is the operation of record and

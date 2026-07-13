@@ -17,10 +17,10 @@ struct SessionTests {
     }
 
     @Test func kindRoundTrips() throws {
-        let session = Session(id: id, worktree: worktree, mode: .readOnly, kind: .prd)
+        let session = Session(id: id, worktree: worktree, mode: .readOnly, kind: .allocate)
         let data = try JSONEncoder().encode(session)
         let decoded = try JSONDecoder().decode(Session.self, from: data)
-        #expect(decoded.kind == .prd)
+        #expect(decoded.kind == .allocate)
     }
 
     @Test func skillFilesAndAddDirsRoundTrip() throws {

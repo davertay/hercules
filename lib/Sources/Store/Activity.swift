@@ -107,6 +107,64 @@ public struct ReviewActivityRequest: FetchKeyRequest {
     }
 }
 
+/// Live activity for the big-path PRD checkpoint, surfaced on Allocate's prominent progress panel. The
+/// checkpoint runs as one Turn in the workflow's `.design` Session (the to-prd Skill resumes the live
+/// grill), so its activity is that **single Turn's** counts — *not* the whole Session's, which would fold
+/// in every grill Turn and drag the elapsed anchor back to when the grill began. The Turn is identified as
+/// the latest one created after the Design→Allocate cutover boundary (the completed `design` Phase's
+/// `updatedAt`); everything at or before that instant is the grill. Returns `nil` until such a Turn lands,
+/// so the panel shows a bare spinner rather than a stale grill count while the checkpoint spins up.
+public struct PRDCheckpointActivityRequest: FetchKeyRequest {
+    public var workflowID: UUID
+
+    public init(workflowID: UUID = UUID()) {
+        self.workflowID = workflowID
+    }
+
+    public func fetch(_ db: Database) throws -> ActivityCounts? {
+        // The cutover boundary — the grill's Turns sit at or before it and must not count.
+        guard let boundary = try completedPhaseRow(db, workflowID: workflowID, kind: "design")?.updatedAt
+        else { return nil }
+
+        let session = try SessionRow
+            .where { $0.workflowID.eq(workflowID) }
+            .where { $0.kind.eq(SessionKind.design.rawValue) }
+            .where { !$0.isDeleted }
+            .order { $0.createdAt.asc() }
+            .fetchOne(db)
+        guard let sessionID = session?.id else { return nil }
+
+        // The checkpoint's Turn is the latest post-boundary Turn (a regenerate supersedes an earlier one).
+        // Picked in Swift, mirroring this file's aggregate-in-Swift style, rather than via a date predicate.
+        let turns = try TurnRow
+            .where { !$0.isDeleted }
+            .where { $0.sessionID.eq(sessionID) }
+            .fetchAll(db)
+        guard let turn = turns
+            .filter({ $0.createdAt > boundary })
+            .max(by: { $0.createdAt < $1.createdAt })
+        else { return nil }
+
+        var counts = ActivityCounts(
+            startedAt: turn.createdAt,
+            durationMs: turn.durationMs,
+            costUSD: turn.costUSD
+        )
+        let blocks = try ContentBlockRow
+            .where { !$0.isDeleted }
+            .where { $0.turnID.eq(turn.id) }
+            .fetchAll(db)
+        for block in blocks {
+            switch block.kind {
+            case "tool_use": counts.tools += 1
+            case "text", "thinking": counts.steps += 1
+            default: break  // `tool_result` is the user-role echo of a `tool_use`; excluded.
+            }
+        }
+        return counts
+    }
+}
+
 /// Tallies content blocks per Session: counts `tool_use` and `text`/`thinking` blocks, and folds in each
 /// Turn's start, duration, and cost. Aggregated in Swift (mirroring `IssueFailureReasonsRequest`) rather
 /// than via a grouped SQL query, keeping the kind-bucketing legible. A Session with no Turns yet maps to

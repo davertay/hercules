@@ -109,6 +109,17 @@ public final class ChatEngine {
         transcriptMessages(turns: conversation.turns, blocks: conversation.blocks)
     }
 
+    /// The messages whose Turn was created strictly after `boundary`. Lets the Allocate small path hide
+    /// the grill turns that physically precede the carve in the shared `.design` conversation, so the
+    /// surface reads as a clean new Phase. A `nil` boundary applies no filter and returns everything.
+    public func messages(after boundary: Date?) -> [Message] {
+        guard let boundary else { return messages }
+        let turns = conversation.turns.filter { $0.createdAt > boundary }
+        let turnIDs = Set(turns.map(\.id))
+        let blocks = conversation.blocks.filter { turnIDs.contains($0.turnID) }
+        return transcriptMessages(turns: turns, blocks: blocks)
+    }
+
     /// Empty-state condition: a host shows an intake prompt instead of an empty transcript.
     public var isIntake: Bool {
         messages.isEmpty && !isRunning && errorText == nil

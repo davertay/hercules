@@ -1,3 +1,5 @@
+import Foundation
+import Store
 import SwiftUI
 
 public struct NodeActivity: Equatable, Sendable {
@@ -20,6 +22,51 @@ public struct NodeActivity: Equatable, Sendable {
         self.cost = cost
         self.isRunning = isRunning
     }
+
+    /// Turns raw run tallies into the render-ready activity — the single derivation every DAG surface
+    /// shares (Execute Issue cards, Validate Persona cards, the Allocate PRD-checkpoint panel). Each caller
+    /// decides `running` from its own status and passes the current `clock` the live timer counts to.
+    ///
+    /// Two rules that must read identically across all three surfaces live here so they can't drift:
+    /// - **Elapsed:** live `clock - startedAt` while running, the frozen finalized `durationMs` once done,
+    ///   else `nil` (a node that has never run).
+    /// - **Cost:** shown only once finalized and above zero — a genuine `$0.00` (e.g. a fully cached run)
+    ///   reads as broken, so it's hidden.
+    public init(counts: ActivityCounts, running: Bool, clock: Date) {
+        let elapsed: Duration?
+        if running, let startedAt = counts.startedAt {
+            elapsed = .seconds(max(0, clock.timeIntervalSince(startedAt)))
+        } else if let durationMs = counts.durationMs {
+            elapsed = .milliseconds(durationMs)
+        } else {
+            elapsed = nil
+        }
+        let cost = (!running && (counts.costUSD ?? 0) > 0) ? counts.costUSD : nil
+        self.init(
+            steps: counts.steps,
+            tools: counts.tools,
+            elapsed: elapsed,
+            cost: cost,
+            isRunning: running
+        )
+    }
+
+    /// Adaptive, no wasted leading zeros: `8s` under a minute, `1:23` for minutes, `1:02:03` past an hour.
+    /// Shared by every presentation of the activity (the compact footer and the prominent panel).
+    static func formatElapsed(_ elapsed: Duration) -> String {
+        let total = max(0, Int(elapsed.components.seconds))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, seconds) }
+        if minutes > 0 { return String(format: "%d:%02d", minutes, seconds) }
+        return "\(seconds)s"
+    }
+
+    /// `$0.04`, with a `$0.01` floor so a sub-cent run never reads as the broken-looking `$0.00`.
+    static func formatCost(_ cost: Double) -> String {
+        String(format: "$%.2f", max(cost, 0.01))
+    }
 }
 
 public struct NodeActivityFooter: View {
@@ -32,7 +79,7 @@ public struct NodeActivityFooter: View {
     public var body: some View {
         HStack(spacing: 6) {
             if let elapsed = activity.elapsed {
-                chip("clock", Self.formatElapsed(elapsed), help: "Elapsed time")
+                chip("clock", NodeActivity.formatElapsed(elapsed), help: "Elapsed time")
             }
             chip("text.bubble", "\(activity.steps)", help: "Messages and reasoning steps")
             chip("wrench.and.screwdriver", "\(activity.tools)", help: "Tools invoked")
@@ -41,7 +88,7 @@ public struct NodeActivityFooter: View {
                 ProgressView()
                     .controlSize(.mini)
             } else if let cost = activity.cost {
-                Text(Self.formatCost(cost))
+                Text(NodeActivity.formatCost(cost))
                     .fixedSize(horizontal: true, vertical: false)
                     .help("Run cost")
             }
@@ -61,21 +108,55 @@ public struct NodeActivityFooter: View {
         }
         .help(help)
     }
+}
 
-    /// Adaptive, no wasted leading zeros: `8s` under a minute, `1:23` for minutes, `1:02:03` past an hour.
-    static func formatElapsed(_ elapsed: Duration) -> String {
-        let total = max(0, Int(elapsed.components.seconds))
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
-        if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, seconds) }
-        if minutes > 0 { return String(format: "%d:%02d", minutes, seconds) }
-        return "\(seconds)s"
+/// A prominent, panel-sized presentation of the same `NodeActivity` the compact `NodeActivityFooter`
+/// renders in the DAG cards' footers — for surfaces that hand a single run the whole panel rather than a
+/// card corner, like Allocate's big-path PRD checkpoint. Same data (live-ticking elapsed, steps, tools,
+/// and cost once the run finalizes), bigger presentation: a large running spinner over a row of stat
+/// tiles, so a mechanical multi-step run reads as working and roughly how far along.
+public struct NodeActivityPanel: View {
+    let activity: NodeActivity
+
+    public init(activity: NodeActivity) {
+        self.activity = activity
     }
 
-    /// `$0.04`, with a `$0.01` floor so a sub-cent run never reads as the broken-looking `$0.00`.
-    static func formatCost(_ cost: Double) -> String {
-        String(format: "$%.2f", max(cost, 0.01))
+    public var body: some View {
+        VStack(spacing: 20) {
+            if activity.isRunning {
+                ProgressView()
+                    .controlSize(.large)
+            }
+            HStack(alignment: .top, spacing: 32) {
+                if let elapsed = activity.elapsed {
+                    stat("clock", NodeActivity.formatElapsed(elapsed), "Elapsed")
+                }
+                stat("text.bubble", "\(activity.steps)", "Steps")
+                stat("wrench.and.screwdriver", "\(activity.tools)", "Tools")
+                // Cost lands only once the run finalizes — the model nils it while running, mirroring the
+                // footer's rule — so a live panel shows no cost tile.
+                if let cost = activity.cost {
+                    stat("dollarsign.circle", NodeActivity.formatCost(cost), "Cost")
+                }
+            }
+        }
+    }
+
+    private func stat(_ symbol: String, _ value: String, _ label: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title.monospacedDigit().weight(.semibold))
+                .contentTransition(.numericText())
+            Text(label)
+                .font(.caption.weight(.medium))
+                .textCase(.uppercase)
+                .foregroundStyle(.secondary)
+        }
+        .frame(minWidth: 64)
     }
 }
 
@@ -95,6 +176,20 @@ public struct NodeActivityFooter: View {
     }
     .frame(width: 188)
     .padding(16)
+}
+
+#Preview("Panel states") {
+    VStack(spacing: 32) {
+        NodeActivityPanel(
+            activity: NodeActivity(steps: 5, tools: 12, elapsed: .seconds(83), isRunning: true)
+        )
+        Divider()
+        NodeActivityPanel(
+            activity: NodeActivity(steps: 190, tools: 221, elapsed: .seconds(3723), cost: 0.42)
+        )
+    }
+    .frame(width: 460)
+    .padding(32)
 }
 
 #endif

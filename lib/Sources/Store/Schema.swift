@@ -11,9 +11,6 @@ public struct WorkflowRow: Identifiable, Equatable, Sendable {
     public var repoPath: String
     /// The user-editable title. Empty means unnamed; the UI falls back to the bare repo name.
     public var title: String
-    /// Fixed at creation: `standard` (five Phases) or `small` (the three-Phase Small Job). Drives the
-    /// Phase topology. Stored as the ``WorkflowMode`` raw value.
-    public var mode: String
     public var createdAt: Date
     public var updatedAt: Date
     public var isDeleted: Bool
@@ -22,7 +19,6 @@ public struct WorkflowRow: Identifiable, Equatable, Sendable {
         id: UUID,
         repoPath: String = "",
         title: String = "",
-        mode: String = WorkflowMode.standard.rawValue,
         createdAt: Date,
         updatedAt: Date,
         isDeleted: Bool = false
@@ -30,7 +26,6 @@ public struct WorkflowRow: Identifiable, Equatable, Sendable {
         self.id = id
         self.repoPath = repoPath
         self.title = title
-        self.mode = mode
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDeleted = isDeleted

@@ -1,11 +1,15 @@
 import Chat
+import DAGGraphUI
 import Store
 import SwiftUI
 
-/// The Allocate Phase surface: intake shows the Propose action; once a proposal exists the Transcript,
-/// composer, and committed-Issue list take over, with Propose and Accept & Write in the toolbar.
+/// The Allocate Phase surface. A fork picker chooses how Issues are carved, and the body branches on it:
+/// the **big** path proposes from the PRD & Design summary in a fresh Session, the **small** path carves
+/// straight from the live grill (its grill turns filtered out). Committed Issues and the composer sit
+/// below, and the primary action plus Accept & Write live in the toolbar.
 public struct AllocateView: View {
     @Bindable var model: AllocateModel
+    @Environment(\.openURL) private var openURL
 
     public init(model: AllocateModel) {
         self.model = model
@@ -13,54 +17,193 @@ public struct AllocateView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            if model.isIntake {
-                IntakeActionView(isProposeAvailable: model.isProposeAvailable) {
-                    model.propose()
-                }
-            } else {
-                ChatTranscript(engine: model.engine)
-            }
+            ForkPicker(fork: $model.fork, recommendation: model.recommendation)
+            Divider()
+            content
             if !model.issues.isEmpty {
                 Divider()
                 CommittedIssuesView(issues: model.issues)
             }
             Divider()
-            ChatComposer(engine: model.engine)
+            ChatComposer(engine: model.activeEngine)
         }
         .frame(minWidth: 500, minHeight: 400)
         .toolbar {
-            if !model.isIntake {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button("Propose Issues from PRD & Design", systemImage: "list.bullet.rectangle") {
-                        model.propose()
+            ToolbarItemGroup(placement: .primaryAction) {
+                if model.fork == .big {
+                    bigActions
+                } else {
+                    Button("Carve Issues from the grill", systemImage: "scissors") {
+                        model.carve()
                     }
-                    .disabled(!model.isProposeAvailable)
-                    Button("Accept & Write Issues", systemImage: "checkmark.circle") {
-                        model.acceptAndWrite()
-                    }
-                    .disabled(!model.isAcceptAvailable)
+                    .disabled(!model.isCarveAvailable)
                 }
+                Button("Accept & Write Issues", systemImage: "checkmark.circle") {
+                    model.acceptAndWrite()
+                }
+                .disabled(!model.isAcceptAvailable)
+            }
+        }
+    }
+
+    /// The big-path actions: one button runs the PRD Turn then auto-proposes before any proposal exists;
+    /// afterward it splits into the everyday **Re-propose** and the deliberate **Regenerate PRD**. The
+    /// written PRD hides behind a low-key **View PRD** disclosure, subordinate to the prominent actions.
+    @ViewBuilder
+    private var bigActions: some View {
+        if model.hasProposed {
+            Button("Re-propose", systemImage: "arrow.clockwise") {
+                model.propose()
+            }
+            .disabled(!model.isProposeAvailable)
+            Button("Regenerate PRD", systemImage: "doc.badge.gearshape") {
+                model.regeneratePRD()
+            }
+            .disabled(!model.isRegeneratePRDAvailable)
+        } else {
+            Button("Generate PRD & Propose Issues", systemImage: "list.bullet.rectangle") {
+                model.bridgeAndPropose()
+            }
+            .disabled(!model.isBridgeAvailable)
+        }
+        if let prdURL = model.prdSavedURL {
+            Button("View PRD", systemImage: "doc.text") {
+                openURL(prdURL)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.fork {
+        case .big:
+            if model.isGeneratingPRD {
+                PRDProgressView(activity: model.prdActivity)
+            } else if model.isIntake {
+                BigIntakeActionView(isBridgeAvailable: model.isBridgeAvailable) {
+                    model.bridgeAndPropose()
+                }
+            } else {
+                ChatTranscript(engine: model.engine)
+            }
+        case .small:
+            if model.isSmallIntake {
+                SmallIntakeActionView(isCarveAvailable: model.isCarveAvailable) {
+                    model.carve()
+                }
+            } else {
+                // The shared `.design` conversation filtered to the carve turns, so the grill is hidden.
+                ChatTranscript(engine: model.smallEngine, messages: model.carveMessages)
             }
         }
     }
 }
 
-private struct IntakeActionView: View {
-    let isProposeAvailable: Bool
-    let propose: () -> Void
+/// Chooses how Allocate carves Issues. The grill pre-selects the fork via its `recommendation`, whose
+/// rationale is surfaced beneath the two choices so the user decides with the reasoning in view. When the
+/// grill left no recommendation the rationale is simply hidden and the picker rests on the static default.
+private struct ForkPicker: View {
+    @Binding var fork: AllocateFork
+    let recommendation: AllocateRecommendation?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("How to carve Issues", selection: $fork) {
+                Text("Small — carve from the grill").tag(AllocateFork.small)
+                Text("Big — from PRD & Design").tag(AllocateFork.big)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if let recommendation, !recommendation.rationale.isEmpty {
+                Label {
+                    Text(recommendation.rationale)
+                } icon: {
+                    Image(systemName: "sparkles")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+}
+
+private struct BigIntakeActionView: View {
+    let isBridgeAvailable: Bool
+    let bridgeAndPropose: () -> Void
 
     var body: some View {
         VStack(spacing: 12) {
             Spacer()
-            Text("Break the PRD and Design summary into Issues, grounded in the repo.")
+            Text("Distil the grill into a PRD, then break it into Issues — grounded in the repo.")
                 .font(.title3)
                 .foregroundStyle(.secondary)
-            Button("Propose Issues from PRD & Design", systemImage: "list.bullet.rectangle") {
-                propose()
+            Button("Generate PRD & Propose Issues", systemImage: "list.bullet.rectangle") {
+                bridgeAndPropose()
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(!isProposeAvailable)
+            .disabled(!isBridgeAvailable)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The prominent progress surface shown while the big-path PRD Turn distils the grill into `prd.md`, ahead
+/// of the auto-propose that follows — so the mechanical checkpoint reads as working and roughly how far
+/// along, not stalled. It renders the live `NodeActivity` through the panel-sized `NodeActivityPanel`
+/// (steps, tools, and a live-ticking clock), falling back to a bare spinner until the checkpoint Turn's
+/// first rows land.
+private struct PRDProgressView: View {
+    let activity: NodeActivity?
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            VStack(spacing: 8) {
+                Text("Distilling the grill into a PRD…")
+                    .font(.title2.weight(.semibold))
+                Text("A one-time context reset before Issues are proposed — this runs as a few steps.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+            }
+            if let activity {
+                NodeActivityPanel(activity: activity)
+            } else {
+                ProgressView()
+                    .controlSize(.large)
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
+    }
+}
+
+private struct SmallIntakeActionView: View {
+    let isCarveAvailable: Bool
+    let carve: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Text("Carve Issues straight from the grill you just had — no PRD needed.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Button("Carve Issues from the grill", systemImage: "scissors") {
+                carve()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!isCarveAvailable)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

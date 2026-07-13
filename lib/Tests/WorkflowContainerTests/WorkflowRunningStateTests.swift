@@ -9,11 +9,10 @@ import Validate
 @testable import Allocate
 @testable import Design
 @testable import Execute
-@testable import PRD
 @testable import WorkflowContainer
 
 /// The Workflow's single aggregate running state: ``WorkflowContainerModel/isRunning`` is the OR of all
-/// five Phases' running signals, and flips as any one of them enters or leaves its running state.
+/// four Phases' running signals, and flips as any one of them enters or leaves its running state.
 @MainActor
 @Suite("Workflow running state")
 struct WorkflowRunningStateTests {
@@ -26,14 +25,13 @@ struct WorkflowRunningStateTests {
 
         let model = Self.makeModel(id: UUID(0), root: root)
         let design = try #require(model.designModel)
-        let prd = try #require(model.prdModel)
         let allocate = try #require(model.allocateModel)
 
         #expect(model.isIdle)
         #expect(!model.isRunning)
 
         // Each chat Phase's `isBusy` reflects its engine's run flag; flipping any one flips the aggregate.
-        for engine in [design.engine, prd.engine, allocate.engine] {
+        for engine in [design.engine, allocate.engine] {
             engine.isRunning = true
             #expect(model.isRunning)
             #expect(!model.isIdle)
@@ -174,7 +172,7 @@ struct WorkflowRunningStateTests {
             #expect(model.isRunning)
             #expect(!model.isIdle)
 
-            // One press stops everything across all five Phases.
+            // One press stops everything across all four Phases.
             model.stopAll()
             await design.engine.runTask?.value
             await execute.runTask.value?.value

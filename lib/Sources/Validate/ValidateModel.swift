@@ -122,22 +122,7 @@ public final class ValidateModel {
     public func activity(for persona: ReviewPersona) -> NodeActivity? {
         guard let counts = reviewActivity[persona.rawValue] else { return nil }
         let running = isRunning(persona) || status(for: persona) == .running
-        let elapsed: Duration?
-        if running, let startedAt = counts.startedAt {
-            elapsed = .seconds(max(0, clock.timeIntervalSince(startedAt)))
-        } else if let durationMs = counts.durationMs {
-            elapsed = .milliseconds(durationMs)
-        } else {
-            elapsed = nil
-        }
-        let cost = (!running && (counts.costUSD ?? 0) > 0) ? counts.costUSD : nil
-        return NodeActivity(
-            steps: counts.steps,
-            tools: counts.tools,
-            elapsed: elapsed,
-            cost: cost,
-            isRunning: running
-        )
+        return NodeActivity(counts: counts, running: running, clock: clock)
     }
 
     public func reviewRow(for persona: ReviewPersona) -> ReviewRow? {

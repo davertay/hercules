@@ -4,9 +4,7 @@ import Dependencies
 import Execute
 import Foundation
 import Observation
-import PRD
 import SQLiteData
-import SmallJob
 import Store
 import Validate
 
@@ -17,29 +15,16 @@ public final class WorkflowContainerModel {
     public let directory: URL
     public let repoPath: String
 
-    /// Fixed at creation and carried on ``WorkflowWindowData`` (the launcher reads it back from the
-    /// `workflow` row when reopening). Drives which Phase models are built and the sidebar's Phase list.
-    public let mode: WorkflowMode
-
     /// The per-Workflow Store, opened once for the window's lifetime so the Phases can observe it.
     @ObservationIgnored
     let database: (any DatabaseWriter)?
 
-    /// The standard-mode chat Phases. `nil` if the Store could not be opened, or in Small Job mode, where
-    /// PRD and Allocate are skipped and the Design slot is driven by ``smallJobModel`` instead.
+    /// The four Phase models, built once the Store opens. `nil` if the Store could not be opened.
     @ObservationIgnored
     public let designModel: DesignModel?
 
     @ObservationIgnored
-    public let prdModel: PRDModel?
-
-    @ObservationIgnored
     public let allocateModel: AllocateModel?
-
-    /// The Small Job mode's first-Phase model — a grill chat that also carves Issues. Non-nil only in
-    /// `small` mode, where it occupies the Design slot in place of ``designModel``.
-    @ObservationIgnored
-    public let smallJobModel: SmallJobModel?
 
     @ObservationIgnored
     public let executeModel: ExecuteModel?
@@ -77,59 +62,29 @@ public final class WorkflowContainerModel {
         // recomputes it and reads the already-existing on-disk worktree without re-creating it.
         let worktree = workflowWorktree(in: data.directory)
 
-        // The mode is fixed at creation and carried on the window data (read from the `workflow` row when
-        // the launcher reopens an existing Workflow), so we build only the Phase models the mode needs —
-        // Small Job skips PRD/Allocate and drives the Design slot via `smallJobModel`.
-        let mode = data.mode
-        self.mode = mode
-
         let database = try? openWorkflowDatabase(at: data.directory)
         self.database = database
         if let database {
-            // Scope `defaultDatabase` so the models' fetches observe this Workflow's Store.
-            let (design, prd, allocate, smallJob, execute, validate, phases, row): (DesignModel?, PRDModel?, AllocateModel?, SmallJobModel?, ExecuteModel, ValidateModel, Fetch<[PhaseRow]>, Fetch<WorkflowRow?>) = withDependencies {
+            // Scope `defaultDatabase` so the models' fetches observe this Workflow's Store. Every Workflow
+            // runs the same four Phases (Design → Allocate → Execute → Validate), so all four models are
+            // built unconditionally.
+            let (design, allocate, execute, validate, phases, row): (DesignModel, AllocateModel, ExecuteModel, ValidateModel, Fetch<[PhaseRow]>, Fetch<WorkflowRow?>) = withDependencies {
                 $0.defaultDatabase = database
             } operation: {
-                let design: DesignModel?
-                let prd: PRDModel?
-                let allocate: AllocateModel?
-                let smallJob: SmallJobModel?
-                switch mode {
-                case .standard:
-                    design = DesignModel(
-                        worktree: worktree,
-                        workflowID: data.id,
-                        workflowDirectory: data.directory,
-                        mcpServerCommand: Self.mcpServerCommand,
-                        database: database
-                    )
-                    prd = PRDModel(
-                        worktree: worktree,
-                        workflowID: data.id,
-                        workflowDirectory: data.directory,
-                        mcpServerCommand: Self.mcpServerCommand,
-                        database: database
-                    )
-                    allocate = AllocateModel(
-                        worktree: worktree,
-                        workflowID: data.id,
-                        workflowDirectory: data.directory,
-                        mcpServerCommand: Self.mcpServerCommand,
-                        database: database
-                    )
-                    smallJob = nil
-                case .small:
-                    design = nil
-                    prd = nil
-                    allocate = nil
-                    smallJob = SmallJobModel(
-                        worktree: worktree,
-                        workflowID: data.id,
-                        workflowDirectory: data.directory,
-                        mcpServerCommand: Self.mcpServerCommand,
-                        database: database
-                    )
-                }
+                let design = DesignModel(
+                    worktree: worktree,
+                    workflowID: data.id,
+                    workflowDirectory: data.directory,
+                    mcpServerCommand: Self.mcpServerCommand,
+                    database: database
+                )
+                let allocate = AllocateModel(
+                    worktree: worktree,
+                    workflowID: data.id,
+                    workflowDirectory: data.directory,
+                    mcpServerCommand: Self.mcpServerCommand,
+                    database: database
+                )
                 let execute = ExecuteModel(
                     workflowID: data.id,
                     database: database,
@@ -153,21 +108,17 @@ public final class WorkflowContainerModel {
                     WorkflowRowRequest(workflowID: data.id),
                     animation: .default
                 )
-                return (design, prd, allocate, smallJob, execute, validate, phases, row)
+                return (design, allocate, execute, validate, phases, row)
             }
             designModel = design
-            prdModel = prd
             allocateModel = allocate
-            smallJobModel = smallJob
             executeModel = execute
             validateModel = validate
             _completedPhases = phases
             _workflowRow = row
         } else {
             designModel = nil
-            prdModel = nil
             allocateModel = nil
-            smallJobModel = nil
             executeModel = nil
             validateModel = nil
             _completedPhases = Fetch(wrappedValue: [])
@@ -183,30 +134,26 @@ public final class WorkflowContainerModel {
         registry?.unregisterOnTeardown(id)
     }
 
-    /// `true` while any one of the five Phases' agents is running — the chat Phases (Design/PRD/Allocate)
+    /// `true` while any one of the four Phases' agents is running — the chat Phases (Design/Allocate)
     /// mid-Turn, the Execute run loop in flight, or any Validate Persona reviewing. The single aggregate
     /// the toolbar consumes: ``isIdle`` gates Destroy, and this will gate Stop in a later slice.
     public var isRunning: Bool {
         designModel?.isBusy == true
-            || prdModel?.isBusy == true
             || allocateModel?.isBusy == true
-            || smallJobModel?.isBusy == true
             || executeModel?.isRunning == true
             || validateModel?.isAnyRunning == true
     }
 
-    /// The whole Workflow is quiescent — none of the five Phases' agents are running.
+    /// The whole Workflow is quiescent — none of the four Phases' agents are running.
     public var isIdle: Bool { !isRunning }
 
-    /// Stops every running agent across all five Phases in one call — the Workflow-level "stop
-    /// everything". The three chat Phases cancel their in-flight Turn, Execute cancels its run loop (which
+    /// Stops every running agent across all four Phases in one call — the Workflow-level "stop
+    /// everything". The two chat Phases cancel their in-flight Turn, Execute cancels its run loop (which
     /// leaves the in-flight Issue `failed`), and Validate cancels every in-flight Persona. Each cancel is
     /// a no-op when its Phase is idle, so this is safe to call at any time.
     public func stopAll() {
         designModel?.cancel()
-        prdModel?.cancel()
         allocateModel?.cancel()
-        smallJobModel?.cancel()
         executeModel?.cancelRun()
         validateModel?.cancelAll()
     }
@@ -228,7 +175,7 @@ public final class WorkflowContainerModel {
     }
 
     public func isUnlocked(_ phase: Phase) -> Bool {
-        guard let predecessor = phase.predecessor(in: mode) else { return true }
+        guard let predecessor = phase.predecessor else { return true }
         return completedPhases.contains { $0.kind == predecessor.rawValue }
     }
 
