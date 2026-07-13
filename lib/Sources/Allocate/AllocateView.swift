@@ -8,6 +8,7 @@ import SwiftUI
 /// below, and the primary action plus Accept & Write live in the toolbar.
 public struct AllocateView: View {
     @Bindable var model: AllocateModel
+    @Environment(\.openURL) private var openURL
 
     public init(model: AllocateModel) {
         self.model = model
@@ -29,10 +30,7 @@ public struct AllocateView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 if model.fork == .big {
-                    Button("Propose Issues from PRD & Design", systemImage: "list.bullet.rectangle") {
-                        model.propose()
-                    }
-                    .disabled(!model.isProposeAvailable)
+                    bigActions
                 } else {
                     Button("Carve Issues from the grill", systemImage: "scissors") {
                         model.carve()
@@ -47,13 +45,44 @@ public struct AllocateView: View {
         }
     }
 
+    /// The big-path actions: one button runs the PRD Turn then auto-proposes before any proposal exists;
+    /// afterward it splits into the everyday **Re-propose** and the deliberate **Regenerate PRD**. The
+    /// written PRD hides behind a low-key **View PRD** disclosure, subordinate to the prominent actions.
+    @ViewBuilder
+    private var bigActions: some View {
+        if model.hasProposed {
+            Button("Re-propose", systemImage: "arrow.clockwise") {
+                model.propose()
+            }
+            .disabled(!model.isProposeAvailable)
+            Button("Regenerate PRD", systemImage: "doc.badge.gearshape") {
+                model.regeneratePRD()
+            }
+            .disabled(!model.isRegeneratePRDAvailable)
+        } else {
+            Button("Generate PRD & Propose Issues", systemImage: "list.bullet.rectangle") {
+                model.bridgeAndPropose()
+            }
+            .disabled(!model.isBridgeAvailable)
+        }
+        if let prdURL = model.prdSavedURL {
+            Button("View PRD", systemImage: "doc.text") {
+                openURL(prdURL)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         switch model.fork {
         case .big:
-            if model.isIntake {
-                BigIntakeActionView(isProposeAvailable: model.isProposeAvailable) {
-                    model.propose()
+            if model.isGeneratingPRD {
+                PRDProgressView()
+            } else if model.isIntake {
+                BigIntakeActionView(isBridgeAvailable: model.isBridgeAvailable) {
+                    model.bridgeAndPropose()
                 }
             } else {
                 ChatTranscript(engine: model.engine)
@@ -89,21 +118,38 @@ private struct ForkPicker: View {
 }
 
 private struct BigIntakeActionView: View {
-    let isProposeAvailable: Bool
-    let propose: () -> Void
+    let isBridgeAvailable: Bool
+    let bridgeAndPropose: () -> Void
 
     var body: some View {
         VStack(spacing: 12) {
             Spacer()
-            Text("Break the PRD and Design summary into Issues, grounded in the repo.")
+            Text("Distil the grill into a PRD, then break it into Issues — grounded in the repo.")
                 .font(.title3)
                 .foregroundStyle(.secondary)
-            Button("Propose Issues from PRD & Design", systemImage: "list.bullet.rectangle") {
-                propose()
+            Button("Generate PRD & Propose Issues", systemImage: "list.bullet.rectangle") {
+                bridgeAndPropose()
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(!isProposeAvailable)
+            .disabled(!isBridgeAvailable)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The prominent progress surface shown while the big-path PRD Turn distils the grill into `prd.md`,
+/// ahead of the auto-propose that follows — so the checkpoint reads as working, not stalled.
+private struct PRDProgressView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            ProgressView()
+                .controlSize(.large)
+            Text("Distilling the grill into a PRD…")
+                .font(.title3)
+                .foregroundStyle(.secondary)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

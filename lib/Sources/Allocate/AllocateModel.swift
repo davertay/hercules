@@ -20,8 +20,18 @@ public enum AllocateFork: String, Sendable, CaseIterable, Identifiable {
 /// Drives the Allocate Phase, which forks live on a small/big choice the user makes here (guided, in a
 /// later slice, by the grill's recommendation; for now a static default the user can flip).
 ///
-/// - **Big path:** a fresh `.allocate` Session reads the PRD + Design summary and proposes an Issue
-///   breakdown as text (`propose()`), writer-free like every chat Turn.
+/// - **Big path:** the context-reset checkpoint for a long, messy grill whose context should not pollute
+///   the carve. One button (`bridgeAndPropose()`) chains two mechanical steps but *not* the commit:
+///   1. a **PRD Turn** — a `kind: .design` engine under the to-prd Skill *resumes the live grill* and
+///      writes the hidden `prd.md` via a per-Turn `write_artifact` override (mirroring
+///      `DesignModel.generateSummary`, since a Design Session already exists — the writer is attached
+///      per-Turn, not pinned), then
+///   2. **auto-propose** — a genuinely fresh `.allocate` Session reads `prd.md` + `summary.md` as an
+///      input bundle and proposes the Issue breakdown as text (`propose()`), writer-free like every chat
+///      Turn.
+///   `regeneratePRD()` rebuilds the bridge when the PRD itself is wrong; a bare `propose()` re-slices
+///   when the PRD is fine but the breakdown isn't. The PRD stays a hidden file behind a "View PRD"
+///   disclosure — not a Phase.
 /// - **Small path:** an engine built with `kind: .design` + the to-issues Skill *resumes the live grill*
 ///   and carves in place (`carve()`), no documents fed — the grill conversation is the context. The
 ///   Allocate view filters that shared conversation to Turns after the Design cutover boundary, hiding
@@ -42,6 +52,11 @@ public final class AllocateModel {
     /// The small-path engine: `kind: .design` + the to-issues Skill, so it rediscovers and resumes the
     /// live grill conversation and carves Issues in place (ADR 0005).
     let smallEngine: ChatEngine
+
+    /// The big-path PRD-Turn engine: `kind: .design` + the to-prd Skill, so it rediscovers and resumes the
+    /// same live grill conversation and distils it into the hidden `prd.md` (ADR 0005). It shares the
+    /// `.design` Session with the grill and `smallEngine`; the writer is attached per-Turn, never pinned.
+    let prdEngine: ChatEngine
 
     /// The fork the user has chosen. A static default for now — the recommendation that pre-selects it
     /// lands in a later slice — re-choosable when Allocate is reopened.
@@ -64,6 +79,9 @@ public final class AllocateModel {
 
     @ObservationIgnored
     private let skill: SkillResource
+
+    @ObservationIgnored
+    private let prdSkill: SkillResource
 
     @ObservationIgnored
     private let mcpServerCommand: String
@@ -91,6 +109,7 @@ public final class AllocateModel {
         self.database = database
         self.mcpServerCommand = mcpServerCommand
         self.skill = loadSkill(.toIssues)
+        self.prdSkill = loadSkill(.toPrd)
         self.engine = ChatEngine(
             worktree: worktree,
             mode: .readOnly,
@@ -109,6 +128,17 @@ public final class AllocateModel {
             kind: .design,
             skillFiles: [skill.fileUrl],
             addDirs: [skill.folderUrl],
+            database: database
+        )
+        // The to-prd Skill over `kind: .design`, so the PRD Turn resumes that same live grill Session and
+        // distils it into `prd.md`. No servers are pinned — the `write_artifact` writer rides the Turn.
+        self.prdEngine = ChatEngine(
+            worktree: worktree,
+            mode: .readOnly,
+            workflowID: workflowID,
+            kind: .design,
+            skillFiles: [prdSkill.fileUrl],
+            addDirs: [prdSkill.folderUrl],
             database: database
         )
         _issues = Fetch(
@@ -149,23 +179,49 @@ public final class AllocateModel {
         carveMessages.isEmpty && !smallEngine.isRunning && smallEngine.errorText == nil
     }
 
-    /// Whether either fork's agent is mid-Turn — the Allocate contribution to the Workflow's aggregate
-    /// running state. Both engines are polled so a fork switched mid-run is still reported as busy.
-    public var isBusy: Bool { engine.isRunning || smallEngine.isRunning }
+    /// Whether any fork's agent is mid-Turn — the Allocate contribution to the Workflow's aggregate
+    /// running state. All engines are polled so a fork switched mid-run is still reported as busy, and the
+    /// big path's PRD Turn (on `prdEngine`) counts too.
+    public var isBusy: Bool { engine.isRunning || smallEngine.isRunning || prdEngine.isRunning }
 
-    /// Cancels an in-flight Turn on either fork — the Allocate contribution to the Workflow-level
-    /// stop-all. A no-op on whichever engine is idle.
+    /// Whether the big path is mid-PRD-Turn, so the surface can show a prominent "generating the PRD"
+    /// state ahead of the auto-propose that follows it.
+    public var isGeneratingPRD: Bool { prdEngine.isRunning }
+
+    /// Cancels an in-flight Turn on any fork — the Allocate contribution to the Workflow-level stop-all.
+    /// A no-op on whichever engine is idle.
     public func cancel() {
         engine.cancel()
         smallEngine.cancel()
+        prdEngine.cancel()
     }
 
-    public var isProposeAvailable: Bool { !engine.isRunning }
+    public var isProposeAvailable: Bool { !engine.isRunning && !prdEngine.isRunning }
+
+    /// The big-path button runs the PRD Turn first, which resumes the live grill, so it needs an existing
+    /// `.design` Session just like the small-path carve.
+    public var isBridgeAvailable: Bool {
+        prdEngine.session != nil && !engine.isRunning && !prdEngine.isRunning
+    }
+
+    /// Regenerating the bridge needs a PRD already written and the live grill to resume.
+    public var isRegeneratePRDAvailable: Bool {
+        prdSavedURL != nil && prdEngine.session != nil && !engine.isRunning && !prdEngine.isRunning
+    }
 
     /// The small-path carve resumes the live grill, so it needs an existing `.design` Session.
     public var isCarveAvailable: Bool { smallEngine.session != nil && !smallEngine.isRunning }
 
     public var isAcceptAvailable: Bool { activeEngine.session != nil && !activeEngine.isRunning }
+
+    /// Whether the big path has an auto-propose Session yet — the toolbar offers "Generate PRD & Propose"
+    /// before, "Re-propose" / "Regenerate PRD" after.
+    public var hasProposed: Bool { engine.session != nil }
+
+    /// The written PRD, present only once the PRD Turn has produced the file — surfaced low-key behind the
+    /// "View PRD" disclosure for debugging. Reads the fixed path each access; the PRD Turn flips
+    /// `isRunning` when it finishes, re-rendering the disclosure.
+    public var prdSavedURL: URL? { writtenPRDURL() }
 
     static func proposePrompt(prdPath: String?, designPath: String) -> String {
         if let prdPath {
@@ -188,12 +244,28 @@ public final class AllocateModel {
         plain text. Do not write any Issues yet.
         """
 
+    /// The PRD Turn's directed prompt: like the summary finalization, no documents are fed — the resumed
+    /// grill conversation is the context — it just distils it into `prd.md` via `write_artifact`.
+    static let prdPrompt = """
+        Distil everything we worked through into the complete PRD now, and save it by calling the \
+        write_artifact tool with the full markdown document.
+        """
+
+    /// Regenerating the bridge: rebuild the PRD from the same grill when the first cut was wrong.
+    static let regeneratePRDPrompt = """
+        Rebuild the complete PRD from everything we worked through — revise it as needed — and save it \
+        again by calling the write_artifact tool with the full markdown document.
+        """
+
     static let commitPrompt = """
         Write the agreed set of Issues now from scratch: make exactly one create_issue call per Issue in \
         the set, even if you already created Issues in an earlier Turn. Recreate every Issue in the agreed \
         set — do not skip any as "already created".
         """
 
+    /// Re-slice: the everyday big-path iteration when the PRD is fine but the breakdown isn't. Runs an
+    /// auto-propose Turn in the fresh `.allocate` Session (starting it on the first call, resuming
+    /// thereafter), reading the already-written `prd.md` and `summary.md` again.
     public func propose() {
         guard isProposeAvailable else { return }
         engine.errorText = nil
@@ -201,20 +273,77 @@ public final class AllocateModel {
 
         runTask = Task { [self] in
             do {
-                let design = try artifactURL(kind: "design")
-                let prd = optionalArtifactURL(kind: "prd")
-                let relativePaths = [prd, design]
-                    .compactMap { $0 }
-                    .map { workflowRelativePath(of: $0.path, under: workflowDirectory) }
-                try await engine.send(
-                    Self.proposePrompt(prdPath: prd?.path, designPath: design.path),
-                    inputs: InputBundle(root: workflowDirectory, relativePaths: relativePaths)
-                )
+                try await runPropose()
             } catch {
                 engine.errorText = error.localizedDescription
             }
             engine.isRunning = false
         }
+    }
+
+    /// The one big-path button: distil the live grill into `prd.md`, then auto-propose from it — chaining
+    /// the two mechanical steps but *not* the commit. A failed PRD Turn throws before propose runs, so the
+    /// prior Issue set and Phase state stay intact (`acceptAndWrite()` is the only thing that touches them).
+    public func bridgeAndPropose() {
+        runBridge(regenerate: false, available: isBridgeAvailable)
+    }
+
+    /// Regenerate the bridge: rebuild `prd.md` from the same grill, then re-propose — the deliberate move
+    /// for when the PRD itself is wrong rather than just the slicing.
+    public func regeneratePRD() {
+        runBridge(regenerate: true, available: isRegeneratePRDAvailable)
+    }
+
+    /// The shared big-path chain. `engine.isRunning` spans the whole run so the surface reads busy through
+    /// both steps; `prdEngine.isRunning` marks just the PRD-Turn window so it can show the generating
+    /// state. Any failure (a crashed PRD Turn, or one that never called the writer) lands on
+    /// `engine.errorText` and short-circuits before propose — the prior Issues are never touched.
+    private func runBridge(regenerate: Bool, available: Bool) {
+        guard available else { return }
+        engine.errorText = nil
+        prdEngine.errorText = nil
+        engine.isRunning = true
+        prdEngine.isRunning = true
+
+        runTask = Task { [self] in
+            do {
+                try await runPRDTurn(regenerate: regenerate)
+                prdEngine.isRunning = false
+                try await runPropose()
+            } catch {
+                engine.errorText = error.localizedDescription
+            }
+            prdEngine.isRunning = false
+            engine.isRunning = false
+        }
+    }
+
+    /// The PRD Turn: resume the live grill under the to-prd Skill and write `prd.md` via a per-Turn
+    /// `write_artifact` override (no documents fed — the grill is the context). Gated transactionally like
+    /// `DesignModel.generateSummary`: snapshot the destination first, and count the Turn only if it left a
+    /// non-empty file whose modification time advanced — a Turn that never called the writer throws.
+    private func runPRDTurn(regenerate: Bool) async throws {
+        let url = Self.prdURL(in: workflowDirectory)
+        let before = artifactSnapshot(at: url)
+        try await prdEngine.send(
+            regenerate ? Self.regeneratePRDPrompt : Self.prdPrompt,
+            overrideMCPServers: [Self.artifactServer(command: mcpServerCommand, artifactURL: url)]
+        )
+        guard artifactWasWritten(at: url, since: before) else {
+            throw AllocateError.prdNotWritten
+        }
+    }
+
+    private func runPropose() async throws {
+        let design = try artifactURL(kind: "design")
+        let prd = writtenPRDURL()
+        let relativePaths = [prd, design]
+            .compactMap { $0 }
+            .map { workflowRelativePath(of: $0.path, under: workflowDirectory) }
+        try await engine.send(
+            Self.proposePrompt(prdPath: prd?.path, designPath: design.path),
+            inputs: InputBundle(root: workflowDirectory, relativePaths: relativePaths)
+        )
     }
 
     /// The small path's opening carve: a resume of the live grill (`kind: .design`) under the to-issues
@@ -300,6 +429,25 @@ public final class AllocateModel {
         )
     }
 
+    /// The `write_artifact` writer the PRD Turn carries, pointed at `prd.md` — attached per-Turn, never
+    /// pinned, so only the PRD Turn can write it.
+    private static func artifactServer(command: String, artifactURL: URL) -> MCPServer {
+        MCPServer(
+            name: "hercules",
+            command: command,
+            args: ["--mcp-artifact-server", "--artifact-path", artifactURL.path],
+            tools: ["write_artifact"]
+        )
+    }
+
+    /// The PRD bridge's fixed destination — also the `write_artifact` server's `--artifact-path`. It is a
+    /// hidden file, not a Phase Artifact, so it is located by path rather than by a completed Phase row.
+    nonisolated static func prdURL(in workflowDirectory: URL) -> URL {
+        workflowDirectory
+            .appending(path: "phases/prd", directoryHint: .isDirectory)
+            .appending(path: "prd.md")
+    }
+
     private func artifactURL(kind: String) throws -> URL {
         guard let path = try database.completedArtifactPath(workflowID: workflowID, kind: kind) else {
             throw AllocateError.artifactMissing(kind)
@@ -307,10 +455,11 @@ public final class AllocateModel {
         return URL(fileURLWithPath: path)
     }
 
-    private func optionalArtifactURL(kind: String) -> URL? {
-        (try? database.completedArtifactPath(workflowID: workflowID, kind: kind))
-            .flatMap { $0 }
-            .map { URL(fileURLWithPath: $0) }
+    /// The written PRD, or `nil` when the PRD Turn hasn't produced it yet — so the auto-propose can bridge
+    /// via `prd.md` when present and fall back to the summary alone when it isn't.
+    private func writtenPRDURL() -> URL? {
+        let url = Self.prdURL(in: workflowDirectory)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     private func currentIssues() throws -> [IssueRow] {
@@ -322,11 +471,14 @@ public final class AllocateModel {
 
 enum AllocateError: LocalizedError {
     case artifactMissing(String)
+    case prdNotWritten
 
     var errorDescription: String? {
         switch self {
         case .artifactMissing(let kind):
             "The completed \(kind) Phase's Artifact could not be found."
+        case .prdNotWritten:
+            "The PRD was not saved — the agent must call write_artifact to write it."
         }
     }
 }

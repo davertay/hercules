@@ -13,23 +13,24 @@ extension AllocateModel {
         let proposeTurn = UUID()
         let commitTurn = UUID()
 
+        // The hidden PRD bridge the big-path proposal was grounded in — a file, not a Phase, so the
+        // "View PRD" disclosure renders.
+        let prdURL = AllocateModel.prdURL(in: directory)
+        try FileManager.default.createDirectory(
+            at: prdURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try "# PRD\n\nThe distilled requirements.".write(to: prdURL, atomically: true, encoding: .utf8)
+
         try database.write { db in
             try WorkflowRow.insert {
                 WorkflowRow(id: workflowID, repoPath: "/path/to/repo", createdAt: now, updatedAt: now)
             }
             .execute(db)
-            // The completed PRD/Design Phases the proposal was grounded in.
+            // The completed Design Phase the proposal was grounded in.
             try PhaseRow.insert {
                 PhaseRow(
                     id: UUID(), workflowID: workflowID, kind: "design", status: "complete",
                     artifactPath: "/wf/phases/design/summary.md", createdAt: now, updatedAt: now
-                )
-            }
-            .execute(db)
-            try PhaseRow.insert {
-                PhaseRow(
-                    id: UUID(), workflowID: workflowID, kind: "prd", status: "complete",
-                    artifactPath: "/wf/phases/prd/prd.md", createdAt: now, updatedAt: now
                 )
             }
             .execute(db)

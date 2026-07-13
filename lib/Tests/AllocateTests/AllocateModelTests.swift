@@ -27,16 +27,26 @@ struct AllocateModelTests {
         #expect(FileManager.default.fileExists(atPath: skill.fileUrl.path))
     }
 
+    @Test
+    func toPrdSkillResolvesFromBundle() {
+        let skill = loadSkill(.toPrd)
+        #expect(skill.name == "to-prd")
+        #expect(skill.fileUrl.path.hasSuffix("skills/to-prd/SKILL.md"))
+        #expect(skill.folderUrl == skill.fileUrl.deletingLastPathComponent())
+        #expect(FileManager.default.fileExists(atPath: skill.fileUrl.path))
+    }
+
     // MARK: - propose
 
     @Test
     func proposeRunsOneReadOnlyAllocateTurnWithBothArtifactsAndSkillButNoWriter() async throws {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
-        let prdPath = Self.artifactPath(workflowDirectory, "phases/prd/prd.md")
+        let prdPath = AllocateModel.prdURL(in: workflowDirectory).path
         let designPath = Self.artifactPath(workflowDirectory, "phases/design/summary.md")
         try Self.seedWorkflow(database)
-        try Self.seedCompletedPhase(database, kind: "prd", artifactPath: prdPath, id: UUID(-2))
+        // The PRD is a hidden file the PRD Turn writes, not a Phase — present it at its fixed path.
+        try Self.writePRDFile(workflowDirectory)
         try Self.seedCompletedPhase(database, kind: "design", artifactPath: designPath, id: UUID(-3))
         let skill = loadSkill(.toIssues)
         let captured = LockIsolated<StartRequest?>(nil)
@@ -76,13 +86,12 @@ struct AllocateModelTests {
     }
 
     @Test
-    func proposeToleratesASkippedPRDAndAttachesTheDesignSummaryAlone() async throws {
+    func proposeAttachesTheDesignSummaryAloneWhenNoPRDWasWritten() async throws {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
         let designPath = Self.artifactPath(workflowDirectory, "phases/design/summary.md")
         try Self.seedWorkflow(database)
-        // A skipped PRD Phase: completed, but with no Artifact path.
-        try Self.seedCompletedPhaseWithoutArtifact(database, kind: "prd", id: UUID(-2))
+        // No PRD file was written (e.g. propose called before any PRD Turn) — only the summary is fed.
         try Self.seedCompletedPhase(database, kind: "design", artifactPath: designPath, id: UUID(-3))
         let captured = LockIsolated<StartRequest?>(nil)
 
@@ -116,9 +125,7 @@ struct AllocateModelTests {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
         try Self.seedWorkflow(database)
-        try Self.seedCompletedPhase(
-            database, kind: "prd", artifactPath: Self.artifactPath(workflowDirectory, "phases/prd/prd.md"), id: UUID(-2)
-        )
+        try Self.writePRDFile(workflowDirectory)
         try Self.seedCompletedPhase(
             database, kind: "design",
             artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
@@ -144,6 +151,197 @@ struct AllocateModelTests {
             try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
         }
         #expect(phase == nil)
+    }
+
+    // MARK: - Big path (PRD checkpoint → fresh carve)
+
+    @Test
+    func bridgeAndProposeRunsPRDTurnThenAutoProposesWithoutCommitting() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        let designPath = Self.artifactPath(workflowDirectory, "phases/design/summary.md")
+        let prdURL = AllocateModel.prdURL(in: workflowDirectory)
+        try Self.seedWorkflow(database)
+        // The live grill sits in the `.design` slot for the PRD Turn to resume; the completed Design Phase
+        // supplies the summary the auto-propose reads.
+        try Self.seedDesignSession(database, id: UUID(100))
+        try Self.seedCompletedPhase(database, kind: "design", artifactPath: designPath, id: UUID(-3))
+        let toIssues = loadSkill(.toIssues)
+        let toPrd = loadSkill(.toPrd)
+        let prdTurn = LockIsolated<SendRequest?>(nil)
+        let proposeTurn = LockIsolated<StartRequest?>(nil)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                // The PRD Turn resumes the `.design` grill; stub the write_artifact child by leaving a
+                // non-empty prd.md so the completion gate passes and the auto-propose finds the bridge.
+                prdTurn.setValue(request)
+                try Self.writePRDFile(workflowDirectory)
+                return try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+            $0.agentClient.start = { @Sendable request in
+                proposeTurn.setValue(request)
+                return try await Self.startSession(for: request, id: UUID(101))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        #expect(model.isBridgeAvailable)
+        model.bridgeAndPropose()
+        await model.runTask?.value
+
+        // Step 1 — the PRD Turn resumes the `.design` Session under the to-prd Skill with a write_artifact
+        // override targeting prd.md, no documents fed (the grill is the context).
+        let prd = try #require(prdTurn.value)
+        #expect(prd.session.id.rawValue == UUID(100))
+        #expect(prd.session.kind == .design)
+        #expect(prd.session.skillFiles == [toPrd.fileUrl])
+        #expect(prd.prompt == AllocateModel.prdPrompt)
+        #expect(prd.inputs == nil)
+        #expect(prd.mcpServers == [Self.artifactServer(command: mcpServerCommand, artifactURL: prdURL)])
+
+        // Step 2 — the auto-propose is a fresh `.allocate` Session under the to-issues Skill reading
+        // prd.md + summary.md as an input bundle, writer-free.
+        let propose = try #require(proposeTurn.value)
+        #expect(propose.kind == .allocate)
+        #expect(propose.skillFiles == [toIssues.fileUrl])
+        #expect(propose.prompt == AllocateModel.proposePrompt(prdPath: prdURL.path, designPath: designPath))
+        let inputs = try #require(propose.inputs)
+        #expect(inputs.root == workflowDirectory)
+        #expect(inputs.relativePaths == ["phases/prd/prd.md", "phases/design/summary.md"])
+        #expect(propose.mcpServers.isEmpty)
+
+        // No commit: no Issues written and the allocate Phase is not completed.
+        let issues = try await database.read { db in try IssueRow.fetchAll(db) }
+        #expect(issues.isEmpty)
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
+        }
+        #expect(phase == nil)
+        #expect(model.engine.errorText == nil)
+        #expect(!model.isBusy)
+    }
+
+    @Test
+    func bridgeAndProposeSurfacesErrorAndSkipsProposeWhenPRDTurnWritesNothing() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        try Self.seedCompletedPhase(
+            database, kind: "design",
+            artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
+        )
+        // A prior committed Issue that a failed bridge must leave untouched.
+        try Self.seedIssue(database, id: UUID(-10), number: 1, title: "Good issue")
+        let proposeStarted = LockIsolated(false)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                // The PRD Turn returns without ever calling write_artifact — no prd.md appears.
+                try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+            $0.agentClient.start = { @Sendable request in
+                proposeStarted.setValue(true)
+                return try await Self.startSession(for: request, id: UUID(101))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.bridgeAndPropose()
+        await model.runTask?.value
+
+        // The unwritten PRD short-circuits before the auto-propose, and the error is surfaced.
+        #expect(!proposeStarted.value)
+        #expect(model.engine.errorText != nil)
+        #expect(model.prdSavedURL == nil)
+        // The prior Issue set and Phase state are fully intact.
+        let current = try await database.read { db in
+            try WorkflowIssuesRequest(workflowID: UUID(-1)).fetch(db)
+        }
+        #expect(current.map(\.title) == ["Good issue"])
+        let phase = try await database.read { db in
+            try PhaseRow.where { $0.kind.eq("allocate") }.fetchOne(db)
+        }
+        #expect(phase == nil)
+        #expect(!model.isBusy)
+    }
+
+    @Test
+    func regeneratePRDResumesDesignWithToPrdSkillAndWriteArtifactOverrideThenReProposes() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        let prdURL = AllocateModel.prdURL(in: workflowDirectory)
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        try Self.seedCompletedPhase(
+            database, kind: "design",
+            artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
+        )
+        // A PRD already exists (an earlier bridge), so Regenerate is available; its old modification time
+        // lets the gate see the rewrite advance.
+        try Self.writePRDFile(workflowDirectory, modified: fixedDate)
+        let prdTurn = LockIsolated<SendRequest?>(nil)
+        let reProposed = LockIsolated(false)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                prdTurn.setValue(request)
+                // The regenerated write advances the file's modification time past the old snapshot.
+                try Self.writePRDFile(workflowDirectory)
+                return try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+            $0.agentClient.start = { @Sendable request in
+                reProposed.setValue(true)
+                return try await Self.startSession(for: request, id: UUID(101))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        #expect(model.isRegeneratePRDAvailable)
+        model.regeneratePRD()
+        await model.runTask?.value
+
+        // The regenerate PRD Turn resumes `.design` under to-prd with the regenerate prompt and the same
+        // write_artifact override, then the auto-propose follows.
+        let prd = try #require(prdTurn.value)
+        #expect(prd.session.kind == .design)
+        #expect(prd.session.skillFiles == [loadSkill(.toPrd).fileUrl])
+        #expect(prd.prompt == AllocateModel.regeneratePRDPrompt)
+        #expect(prd.mcpServers == [Self.artifactServer(command: mcpServerCommand, artifactURL: prdURL)])
+        #expect(reProposed.value)
+        #expect(model.engine.errorText == nil)
+        #expect(!model.isBusy)
+    }
+
+    @Test
+    func prdSavedURLReflectsTheWrittenBridgeFile() throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        // No bridge yet — the View PRD disclosure has nothing to open.
+        #expect(model.prdSavedURL == nil)
+
+        // Once the PRD Turn has written the file, the disclosure resolves to it.
+        try Self.writePRDFile(workflowDirectory)
+        #expect(model.prdSavedURL == AllocateModel.prdURL(in: workflowDirectory))
     }
 
     // MARK: - acceptAndWrite
@@ -589,19 +787,28 @@ struct AllocateModelTests {
         }
     }
 
-    /// A Phase completed with no file Artifact — the shape a skipped PRD leaves behind.
-    private static func seedCompletedPhaseWithoutArtifact(
-        _ database: any DatabaseWriter, kind: String, id: UUID
-    ) throws {
-        try database.write { db in
-            try PhaseRow.insert {
-                PhaseRow(
-                    id: id, workflowID: UUID(-1), kind: kind, status: "complete",
-                    artifactPath: nil, createdAt: fixedDate, updatedAt: fixedDate
-                )
-            }
-            .execute(db)
+    /// Writes a non-empty `prd.md` at the fixed bridge path, standing in for the PRD Turn's write_artifact
+    /// child. `modified` back-dates it so a subsequent rewrite's advanced modification time is observable.
+    /// `nonisolated` so the off-main-actor `agentClient` stubs can call it while faking the child's write.
+    nonisolated private static func writePRDFile(_ workflowDirectory: URL, modified: Date? = nil) throws {
+        let url = AllocateModel.prdURL(in: workflowDirectory)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try "# PRD\n\nThe distilled requirements.".write(to: url, atomically: true, encoding: .utf8)
+        if let modified {
+            try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: url.path)
         }
+    }
+
+    /// The write_artifact MCP server the PRD Turn is expected to carry, pointed at `prd.md`.
+    private static func artifactServer(command: String, artifactURL: URL) -> MCPServer {
+        MCPServer(
+            name: "hercules",
+            command: command,
+            args: ["--mcp-artifact-server", "--artifact-path", artifactURL.path],
+            tools: ["write_artifact"]
+        )
     }
 
     private static func seedSession(_ database: any DatabaseWriter, id: UUID) throws {
