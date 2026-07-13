@@ -116,24 +116,7 @@ public final class ExecuteModel {
     /// `nil` for a node that has never run (no Session yet) so its card shows no footer.
     public func activity(for node: DAGNode) -> NodeActivity? {
         guard let counts = activityCounts[node.number] else { return nil }
-        let running = node.status == .inProgress
-        let elapsed: Duration?
-        if running, let startedAt = counts.startedAt {
-            elapsed = .seconds(max(0, clock.timeIntervalSince(startedAt)))
-        } else if let durationMs = counts.durationMs {
-            elapsed = .milliseconds(durationMs)
-        } else {
-            elapsed = nil
-        }
-        // A genuine `$0.00` reads as broken, so a finalized zero (e.g. fully cached) shows nothing.
-        let cost = (!running && (counts.costUSD ?? 0) > 0) ? counts.costUSD : nil
-        return NodeActivity(
-            steps: counts.steps,
-            tools: counts.tools,
-            elapsed: elapsed,
-            cost: cost,
-            isRunning: running
-        )
+        return NodeActivity(counts: counts, running: node.status == .inProgress, clock: clock)
     }
 
     public func failureReason(for issue: IssueRow) -> String? {

@@ -1,3 +1,5 @@
+import Foundation
+import Store
 import SwiftUI
 
 public struct NodeActivity: Equatable, Sendable {
@@ -19,6 +21,34 @@ public struct NodeActivity: Equatable, Sendable {
         self.elapsed = elapsed
         self.cost = cost
         self.isRunning = isRunning
+    }
+
+    /// Turns raw run tallies into the render-ready activity — the single derivation every DAG surface
+    /// shares (Execute Issue cards, Validate Persona cards, the Allocate PRD-checkpoint panel). Each caller
+    /// decides `running` from its own status and passes the current `clock` the live timer counts to.
+    ///
+    /// Two rules that must read identically across all three surfaces live here so they can't drift:
+    /// - **Elapsed:** live `clock - startedAt` while running, the frozen finalized `durationMs` once done,
+    ///   else `nil` (a node that has never run).
+    /// - **Cost:** shown only once finalized and above zero — a genuine `$0.00` (e.g. a fully cached run)
+    ///   reads as broken, so it's hidden.
+    public init(counts: ActivityCounts, running: Bool, clock: Date) {
+        let elapsed: Duration?
+        if running, let startedAt = counts.startedAt {
+            elapsed = .seconds(max(0, clock.timeIntervalSince(startedAt)))
+        } else if let durationMs = counts.durationMs {
+            elapsed = .milliseconds(durationMs)
+        } else {
+            elapsed = nil
+        }
+        let cost = (!running && (counts.costUSD ?? 0) > 0) ? counts.costUSD : nil
+        self.init(
+            steps: counts.steps,
+            tools: counts.tools,
+            elapsed: elapsed,
+            cost: cost,
+            isRunning: running
+        )
     }
 
     /// Adaptive, no wasted leading zeros: `8s` under a minute, `1:23` for minutes, `1:02:03` past an hour.

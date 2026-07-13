@@ -244,29 +244,12 @@ public final class AllocateModel {
 
     /// The render-ready activity for the big-path PRD checkpoint's prominent progress panel: live counts
     /// always, elapsed live-ticking off `clock` while the checkpoint runs and frozen at its duration once
-    /// done, cost shown only once finalized — the same derivation the Execute/Validate DAG cards use
-    /// (`ExecuteModel.activity(for:)`), presented in a panel rather than a footer. `nil` until the
-    /// checkpoint Turn lands, so the panel shows a bare spinner rather than a stale grill count.
+    /// done, cost shown only once finalized — the same `NodeActivity(counts:running:clock:)` derivation the
+    /// Execute/Validate DAG cards use, presented in a panel rather than a footer. `nil` until the checkpoint
+    /// Turn lands, so the panel shows a bare spinner rather than a stale grill count.
     public var prdActivity: NodeActivity? {
         guard let counts = prdActivityCounts else { return nil }
-        let running = isGeneratingPRD
-        let elapsed: Duration?
-        if running, let startedAt = counts.startedAt {
-            elapsed = .seconds(max(0, clock.timeIntervalSince(startedAt)))
-        } else if let durationMs = counts.durationMs {
-            elapsed = .milliseconds(durationMs)
-        } else {
-            elapsed = nil
-        }
-        // A genuine `$0.00` reads as broken, so a finalized zero (e.g. fully cached) shows nothing.
-        let cost = (!running && (counts.costUSD ?? 0) > 0) ? counts.costUSD : nil
-        return NodeActivity(
-            steps: counts.steps,
-            tools: counts.tools,
-            elapsed: elapsed,
-            cost: cost,
-            isRunning: running
-        )
+        return NodeActivity(counts: counts, running: isGeneratingPRD, clock: clock)
     }
 
     /// Cancels an in-flight Turn on any fork — the Allocate contribution to the Workflow-level stop-all.

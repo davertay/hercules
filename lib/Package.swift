@@ -164,6 +164,7 @@ let package = Package(
             name: "DAGGraphUI",
             dependencies: [
                 "IssueGraph",
+                "Store",
             ]
         ),
         .testTarget(
