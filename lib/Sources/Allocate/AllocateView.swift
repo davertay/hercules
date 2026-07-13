@@ -1,4 +1,5 @@
 import Chat
+import DAGGraphUI
 import Store
 import SwiftUI
 
@@ -79,7 +80,7 @@ public struct AllocateView: View {
         switch model.fork {
         case .big:
             if model.isGeneratingPRD {
-                PRDProgressView()
+                PRDProgressView(activity: model.prdActivity)
             } else if model.isIntake {
                 BigIntakeActionView(isBridgeAvailable: model.isBridgeAvailable) {
                     model.bridgeAndPropose()
@@ -139,20 +140,36 @@ private struct BigIntakeActionView: View {
     }
 }
 
-/// The prominent progress surface shown while the big-path PRD Turn distils the grill into `prd.md`,
-/// ahead of the auto-propose that follows — so the checkpoint reads as working, not stalled.
+/// The prominent progress surface shown while the big-path PRD Turn distils the grill into `prd.md`, ahead
+/// of the auto-propose that follows — so the mechanical checkpoint reads as working and roughly how far
+/// along, not stalled. It renders the live `NodeActivity` through the panel-sized `NodeActivityPanel`
+/// (steps, tools, and a live-ticking clock), falling back to a bare spinner until the checkpoint Turn's
+/// first rows land.
 private struct PRDProgressView: View {
+    let activity: NodeActivity?
+
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 24) {
             Spacer()
-            ProgressView()
-                .controlSize(.large)
-            Text("Distilling the grill into a PRD…")
-                .font(.title3)
-                .foregroundStyle(.secondary)
+            VStack(spacing: 8) {
+                Text("Distilling the grill into a PRD…")
+                    .font(.title2.weight(.semibold))
+                Text("A one-time context reset before Issues are proposed — this runs as a few steps.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+            }
+            if let activity {
+                NodeActivityPanel(activity: activity)
+            } else {
+                ProgressView()
+                    .controlSize(.large)
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
     }
 }
 

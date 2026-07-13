@@ -1,4 +1,5 @@
 import Agent
+import DAGGraphUI
 import Dependencies
 import Foundation
 import Skills
@@ -342,6 +343,109 @@ struct AllocateModelTests {
         // Once the PRD Turn has written the file, the disclosure resolves to it.
         try Self.writePRDFile(workflowDirectory)
         #expect(model.prdSavedURL == AllocateModel.prdURL(in: workflowDirectory))
+    }
+
+    // MARK: - PRD checkpoint progress activity
+
+    @Test
+    func prdActivityIsNilUntilTheCheckpointTurnLands() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        // The completed Design Phase supplies the cutover boundary (`fixedDate`).
+        try Self.seedCompletedPhase(
+            database, kind: "design",
+            artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
+        )
+        // Only a pre-boundary grill Turn exists — the checkpoint Turn hasn't spun up yet.
+        try await database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: UUID(-30), sessionID: UUID(100), userPrompt: "grill",
+                    createdAt: fixedDate.addingTimeInterval(-10), updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.$prdActivityCounts.load()
+
+        // No post-boundary Turn → no activity, so the panel shows a bare spinner rather than a grill count.
+        #expect(model.prdActivity == nil)
+    }
+
+    @Test
+    func prdActivityFreezesElapsedAndShowsCostOnceTheCheckpointFinalizes() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        try Self.seedCompletedPhase(
+            database, kind: "design",
+            artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
+        )
+        // A finalized checkpoint Turn after the boundary, with its duration and cost recorded.
+        try await Self.seedCheckpointTurn(
+            database, sessionID: UUID(100), turnID: UUID(-40),
+            createdAt: fixedDate.addingTimeInterval(5), durationMs: 83_000, costUSD: 0.42
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.$prdActivityCounts.load()
+
+        // The PRD engine is idle, so this is the finalized presentation: elapsed frozen at the run's
+        // duration, cost shown, and the `tool_result` echo excluded from the step count.
+        let activity = try #require(model.prdActivity)
+        #expect(!activity.isRunning)
+        #expect(activity.tools == 12)
+        #expect(activity.steps == 5)  // 4 text + 1 thinking; the 2 tool_result echoes are excluded
+        #expect(activity.elapsed == .milliseconds(83_000))
+        #expect(activity.cost == 0.42)
+    }
+
+    @Test
+    func prdActivityHidesCostAndLeavesTheFrozenDurationWhileTheCheckpointRuns() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        try Self.seedCompletedPhase(
+            database, kind: "design",
+            artifactPath: Self.artifactPath(workflowDirectory, "phases/design/summary.md"), id: UUID(-3)
+        )
+        try await Self.seedCheckpointTurn(
+            database, sessionID: UUID(100), turnID: UUID(-40),
+            createdAt: fixedDate.addingTimeInterval(5), durationMs: 83_000, costUSD: 0.42
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.$prdActivityCounts.load()
+        // Mark the PRD Turn mid-flight, as `runBridge` does.
+        model.prdEngine.isRunning = true
+
+        let activity = try #require(model.prdActivity)
+        #expect(activity.isRunning)
+        // Live counts still show, but cost is withheld until the run finalizes…
+        #expect(activity.tools == 12)
+        #expect(activity.steps == 5)
+        #expect(activity.cost == nil)
+        // …and elapsed derives from the live clock, not the frozen duration. The clock hasn't ticked in
+        // this test, so it reads a floored zero rather than the 83s duration.
+        #expect(activity.elapsed == .seconds(0))
     }
 
     // MARK: - acceptAndWrite
@@ -820,6 +924,44 @@ struct AllocateModelTests {
                 )
             }
             .execute(db)
+        }
+    }
+
+    /// Seeds a big-path PRD checkpoint Turn (in the `.design` Session) and the content blocks the
+    /// `StreamProjector` would write as it streams: 12 `tool_use`, 4 `text`, 1 `thinking`, and 2
+    /// `tool_result` echoes — the last excluded from the step tally — so the derived counts are
+    /// pin-down-able. `createdAt` is the caller's, so a post-boundary Turn can be placed for the request.
+    private static func seedCheckpointTurn(
+        _ database: any DatabaseWriter,
+        sessionID: UUID,
+        turnID: UUID,
+        createdAt: Date,
+        durationMs: Int?,
+        costUSD: Double?
+    ) async throws {
+        try await database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: turnID, sessionID: sessionID, userPrompt: "distil the PRD",
+                    durationMs: durationMs, costUSD: costUSD, createdAt: createdAt, updatedAt: createdAt
+                )
+            }
+            .execute(db)
+            let blocks: [(kind: String, role: String)] =
+                Array(repeating: ("tool_use", "assistant"), count: 12)
+                + Array(repeating: ("text", "assistant"), count: 4)
+                + Array(repeating: ("thinking", "assistant"), count: 1)
+                + Array(repeating: ("tool_result", "user"), count: 2)
+            for (position, block) in blocks.enumerated() {
+                try ContentBlockRow.insert {
+                    ContentBlockRow(
+                        id: UUID(2000 + position), turnID: turnID, position: position, role: block.role,
+                        kind: block.kind, toolName: block.kind == "tool_use" ? "write_artifact" : nil,
+                        createdAt: createdAt, updatedAt: createdAt
+                    )
+                }
+                .execute(db)
+            }
         }
     }
 

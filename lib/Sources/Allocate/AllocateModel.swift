@@ -1,5 +1,6 @@
 import Agent
 import Chat
+import DAGGraphUI
 import Dependencies
 import Foundation
 import Skills
@@ -94,6 +95,19 @@ public final class AllocateModel {
     @ObservationIgnored
     @Fetch var designPhase: PhaseRow?
 
+    /// The big-path PRD checkpoint's live activity, projected from the checkpoint Turn's content-block rows
+    /// as the Harness streams — so the progress panel's steps/tools tick up under `@Fetch` observation,
+    /// without polling. `nil` until the checkpoint Turn lands (the panel then shows a bare spinner).
+    @ObservationIgnored
+    @Fetch var prdActivityCounts: ActivityCounts?
+
+    /// Ticks once a second only while the PRD checkpoint runs, so the panel's elapsed clock counts up. Read
+    /// by `prdActivity` when running; an idle Allocate runs no timer. Mirrors `ExecuteModel`'s DAG clock.
+    public private(set) var clock: Date = .distantPast
+
+    @ObservationIgnored
+    private let tickTask = LockIsolated<Task<Void, Never>?>(nil)
+
     @ObservationIgnored
     var runTask: Task<Void, Never>?
 
@@ -151,6 +165,11 @@ public final class AllocateModel {
             CompletedDesignPhaseRequest(workflowID: workflowID),
             animation: .default
         )
+        _prdActivityCounts = Fetch(
+            wrappedValue: nil,
+            PRDCheckpointActivityRequest(workflowID: workflowID),
+            animation: .default
+        )
     }
 
     /// The engine backing the currently chosen fork — the one the composer, the commit, and the busy /
@@ -188,12 +207,40 @@ public final class AllocateModel {
     /// state ahead of the auto-propose that follows it.
     public var isGeneratingPRD: Bool { prdEngine.isRunning }
 
+    /// The render-ready activity for the big-path PRD checkpoint's prominent progress panel: live counts
+    /// always, elapsed live-ticking off `clock` while the checkpoint runs and frozen at its duration once
+    /// done, cost shown only once finalized — the same derivation the Execute/Validate DAG cards use
+    /// (`ExecuteModel.activity(for:)`), presented in a panel rather than a footer. `nil` until the
+    /// checkpoint Turn lands, so the panel shows a bare spinner rather than a stale grill count.
+    public var prdActivity: NodeActivity? {
+        guard let counts = prdActivityCounts else { return nil }
+        let running = isGeneratingPRD
+        let elapsed: Duration?
+        if running, let startedAt = counts.startedAt {
+            elapsed = .seconds(max(0, clock.timeIntervalSince(startedAt)))
+        } else if let durationMs = counts.durationMs {
+            elapsed = .milliseconds(durationMs)
+        } else {
+            elapsed = nil
+        }
+        // A genuine `$0.00` reads as broken, so a finalized zero (e.g. fully cached) shows nothing.
+        let cost = (!running && (counts.costUSD ?? 0) > 0) ? counts.costUSD : nil
+        return NodeActivity(
+            steps: counts.steps,
+            tools: counts.tools,
+            elapsed: elapsed,
+            cost: cost,
+            isRunning: running
+        )
+    }
+
     /// Cancels an in-flight Turn on any fork — the Allocate contribution to the Workflow-level stop-all.
     /// A no-op on whichever engine is idle.
     public func cancel() {
         engine.cancel()
         smallEngine.cancel()
         prdEngine.cancel()
+        stopClock()
     }
 
     public var isProposeAvailable: Bool { !engine.isRunning && !prdEngine.isRunning }
@@ -304,18 +351,41 @@ public final class AllocateModel {
         prdEngine.errorText = nil
         engine.isRunning = true
         prdEngine.isRunning = true
+        // The clock ticks only across the PRD-Turn window — the span the progress panel is on screen — so
+        // its elapsed counts up; it stops the moment the checkpoint finalizes and the auto-propose begins.
+        startClock()
 
         runTask = Task { [self] in
             do {
                 try await runPRDTurn(regenerate: regenerate)
                 prdEngine.isRunning = false
+                stopClock()
                 try await runPropose()
             } catch {
                 engine.errorText = error.localizedDescription
             }
             prdEngine.isRunning = false
+            stopClock()
             engine.isRunning = false
         }
+    }
+
+    /// Ticks `clock` once a second so the progress panel's live elapsed advances while the checkpoint runs.
+    /// One timer for the window, cancelled when it ends — mirrors `ExecuteModel`'s DAG clock.
+    private func startClock() {
+        clock = now
+        let task = Task { [self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                clock = now
+            }
+        }
+        tickTask.setValue(task)
+    }
+
+    private func stopClock() {
+        tickTask.value?.cancel()
+        tickTask.setValue(nil)
     }
 
     /// The PRD Turn: resume the live grill under the to-prd Skill and write `prd.md` via a per-Turn

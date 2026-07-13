@@ -52,6 +52,7 @@ let package = Package(
             dependencies: [
                 "Agent",
                 "Chat",
+                "DAGGraphUI",
                 "Skills",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
@@ -64,6 +65,7 @@ let package = Package(
                 "Allocate",
                 "Agent",
                 "Chat",
+                "DAGGraphUI",
                 "Skills",
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
