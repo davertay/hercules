@@ -6,7 +6,7 @@ import Testing
 /// cost — the two bits of display logic, shared by the compact footer and the prominent panel, worth
 /// pinning independently of SwiftUI rendering.
 @Suite("NodeActivity formatting")
-struct NodeActivityFooterTests {
+struct NodeActivityFormattingTests {
 
     @Test("elapsed drops to bare seconds under a minute")
     func elapsedSecondsOnly() {

@@ -414,7 +414,7 @@ struct AllocateModelTests {
     }
 
     @Test
-    func prdActivityHidesCostAndLeavesTheFrozenDurationWhileTheCheckpointRuns() async throws {
+    func prdActivityHidesCostAndUsesTheLiveClockWhileTheCheckpointRuns() async throws {
         let database = try Self.makeDatabase()
         let workflowDirectory = Self.makeWorkflowDirectory()
         try Self.seedWorkflow(database)
