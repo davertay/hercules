@@ -17,7 +17,7 @@ public struct AllocateView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            ForkPicker(fork: $model.fork)
+            ForkPicker(fork: $model.fork, recommendation: model.recommendation)
             Divider()
             content
             if !model.issues.isEmpty {
@@ -101,18 +101,33 @@ public struct AllocateView: View {
     }
 }
 
-/// Chooses how Allocate carves Issues. A static default for now; a later slice pre-selects it from the
-/// grill's recommendation.
+/// Chooses how Allocate carves Issues. The grill pre-selects the fork via its `recommendation`, whose
+/// rationale is surfaced beneath the two choices so the user decides with the reasoning in view. When the
+/// grill left no recommendation the rationale is simply hidden and the picker rests on the static default.
 private struct ForkPicker: View {
     @Binding var fork: AllocateFork
+    let recommendation: AllocateRecommendation?
 
     var body: some View {
-        Picker("How to carve Issues", selection: $fork) {
-            Text("Small — carve from the grill").tag(AllocateFork.small)
-            Text("Big — from PRD & Design").tag(AllocateFork.big)
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("How to carve Issues", selection: $fork) {
+                Text("Small — carve from the grill").tag(AllocateFork.small)
+                Text("Big — from PRD & Design").tag(AllocateFork.big)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if let recommendation, !recommendation.rationale.isEmpty {
+                Label {
+                    Text(recommendation.rationale)
+                } icon: {
+                    Image(systemName: "sparkles")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }

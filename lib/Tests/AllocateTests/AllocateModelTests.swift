@@ -602,7 +602,7 @@ struct AllocateModelTests {
             Self.makeModel(workflowDirectory: Self.makeWorkflowDirectory(), database: database)
         }
 
-        // A plain static default for now; the recommendation that pre-selects it lands in a later slice.
+        // With no grill recommendation, the fork falls to the static default.
         #expect(model.fork == .big)
         #expect(model.activeEngine === model.engine)
 
@@ -611,6 +611,121 @@ struct AllocateModelTests {
         #expect(model.activeEngine === model.smallEngine)
         model.fork = .big
         #expect(model.activeEngine === model.engine)
+    }
+
+    // MARK: - The small/big recommendation (sentinel carrier)
+
+    @Test
+    func sentinelOnClosingGrillMessagePreselectsBigForkAndSurfacesRationale() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        // The grill's closing verdict: a `true` sentinel recommends the big/PRD path.
+        try Self.seedClosingGrillMessage(
+            database, sessionID: UUID(100), turnID: UUID(-50),
+            text: """
+                This touches several surfaces and carries real migration risk — it earns a PRD checkpoint.
+
+                <!-- prd_recommended: true -->
+                """
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.smallEngine.$conversation.load()
+
+        // The sentinel drives the recommendation and pre-selects the fork…
+        #expect(model.recommendation?.fork == .big)
+        #expect(model.fork == .big)
+        // …and the rationale surfaced beside the choices is the verdict with the sentinel line stripped.
+        #expect(
+            model.recommendation?.rationale
+                == "This touches several surfaces and carries real migration risk — it earns a PRD checkpoint."
+        )
+    }
+
+    @Test
+    func sentinelOnClosingGrillMessagePreselectsSmallForkWhenPRDNotRecommended() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        // A `false` sentinel recommends the small path — and must override the static `.big` default, so
+        // asserting `.small` proves the recommendation drove the fork, not the fallback.
+        try Self.seedClosingGrillMessage(
+            database, sessionID: UUID(100), turnID: UUID(-50),
+            text: """
+                A small, contained change — carve it straight from this conversation.
+
+                <!-- prd_recommended: false -->
+                """
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.smallEngine.$conversation.load()
+
+        #expect(model.recommendation?.fork == .small)
+        #expect(model.fork == .small)
+        #expect(model.recommendation?.rationale == "A small, contained change — carve it straight from this conversation.")
+    }
+
+    @Test
+    func missingSentinelHidesRecommendationAndAppliesStaticDefault() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        // A closing message with a human-readable verdict but no parseable sentinel — an older grill, or one
+        // that never emitted it. The verdict never blocks the user; Allocate simply shows no recommendation.
+        try Self.seedClosingGrillMessage(
+            database, sessionID: UUID(100), turnID: UUID(-50),
+            text: "This feels like a fairly big job to me, but I did not tag a recommendation."
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.smallEngine.$conversation.load()
+
+        // No recommendation surfaces, and the fork falls back to the plain static default.
+        #expect(model.recommendation == nil)
+        #expect(model.fork == AllocateModel.defaultFork)
+    }
+
+    @Test
+    func userForkOverrideWinsOverTheRecommendation() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        // The grill recommends big…
+        try Self.seedClosingGrillMessage(
+            database, sessionID: UUID(100), turnID: UUID(-50),
+            text: "A large, tangled job — take the PRD checkpoint.\n\n<!-- prd_recommended: true -->"
+        )
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        try await model.smallEngine.$conversation.load()
+        #expect(model.fork == .big)
+
+        // …but the user's judgement wins the moment they flip the picker, and the recommendation still reads.
+        model.fork = .small
+        #expect(model.fork == .small)
+        #expect(model.recommendation?.fork == .big)
     }
 
     // MARK: - Small path (live carve)
@@ -962,6 +1077,30 @@ struct AllocateModelTests {
                 }
                 .execute(db)
             }
+        }
+    }
+
+    /// Seeds the grill's closing message — an assistant `text` block in the `.design` Session carrying
+    /// `text` — standing in for the verdict the grill-me Skill emits after finalizing the summary, so the
+    /// recommendation parse can be driven at the model seam.
+    private static func seedClosingGrillMessage(
+        _ database: any DatabaseWriter, sessionID: UUID, turnID: UUID, text: String
+    ) throws {
+        try database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: turnID, sessionID: sessionID, userPrompt: "produce the summary",
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+            try ContentBlockRow.insert {
+                ContentBlockRow(
+                    id: UUID(3000), turnID: turnID, position: 0, role: "assistant",
+                    kind: "text", text: text, createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
         }
     }
 

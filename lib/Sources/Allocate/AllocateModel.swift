@@ -18,6 +18,18 @@ public enum AllocateFork: String, Sendable, CaseIterable, Identifiable {
     public var id: Self { self }
 }
 
+/// The grill's small/big verdict, recovered from the sentinel it appends to its closing message. It rides
+/// the message, never `write_artifact` (which stays generic), so dropping the sentinel parse entirely
+/// leaves a working Allocate on its static default — the recommendation is a pure convenience layer.
+public struct AllocateRecommendation: Equatable, Sendable {
+    /// The pre-selected fork: `.big` when the grill recommends distilling a PRD first, `.small` when it
+    /// recommends carving straight from the live grill.
+    public let fork: AllocateFork
+    /// The grill's plain-language verdict and reasoning, the sentinel line stripped — surfaced beside the
+    /// two fork choices so the user decides with the rationale in view.
+    public let rationale: String
+}
+
 /// Drives the Allocate Phase, which forks live on a small/big choice the user makes here (guided, in a
 /// later slice, by the grill's recommendation; for now a static default the user can flip).
 ///
@@ -59,9 +71,22 @@ public final class AllocateModel {
     /// `.design` Session with the grill and `smallEngine`; the writer is attached per-Turn, never pinned.
     let prdEngine: ChatEngine
 
-    /// The fork the user has chosen. A static default for now — the recommendation that pre-selects it
-    /// lands in a later slice — re-choosable when Allocate is reopened.
-    public var fork: AllocateFork = .big
+    /// The user's explicit fork choice, set only once they flip the picker. While `nil` the fork follows
+    /// the grill's `recommendation` (or the static default when the grill left none), so the common case
+    /// needs no decision; the picker binding pins this override the moment the user touches it.
+    private var forkOverride: AllocateFork?
+
+    /// Which way Allocate carves Issues. Pre-selected from the grill's small/big `recommendation`,
+    /// overridable via the picker (which pins `forkOverride`), and re-choosable whenever Allocate is
+    /// reopened. Falls back to `defaultFork` when the grill produced no recommendation.
+    public var fork: AllocateFork {
+        get { forkOverride ?? recommendation?.fork ?? Self.defaultFork }
+        set { forkOverride = newValue }
+    }
+
+    /// The static fallback fork when the grill left no recommendation — a sane default the user can flip.
+    /// Big is conservative: a PRD checkpoint never costs correctness, only a little speed.
+    static let defaultFork: AllocateFork = .big
 
     @ObservationIgnored
     @Dependency(\.uuid) private var uuid
@@ -189,6 +214,16 @@ public final class AllocateModel {
     /// grill turns that physically precede them are hidden.
     public var carveMessages: [Message] { smallEngine.messages(after: cutoverBoundary) }
 
+    /// The grill's small/big recommendation, parsed from the sentinel on its closing message. Read off the
+    /// shared `.design` transcript (`smallEngine` observes it whichever fork is active), so the fork
+    /// pre-selects and the rationale surfaces the moment the grill finalizes. `nil` when the grill left no
+    /// sentinel — an older grill, or one that never emitted it — in which case Allocate shows no
+    /// recommendation and `fork` falls back to `defaultFork`. This is the sentinel's only consumer: delete
+    /// it and Allocate still works off the static default (severability).
+    public var recommendation: AllocateRecommendation? {
+        Self.recommendation(from: smallEngine.messages)
+    }
+
     /// Big-path empty state: no proposal Session yet, so the surface shows the Propose intake action.
     public var isIntake: Bool { engine.isIntake }
 
@@ -309,6 +344,43 @@ public final class AllocateModel {
         the set, even if you already created Issues in an earlier Turn. Recreate every Issue in the agreed \
         set — do not skip any as "already created".
         """
+
+    // MARK: - The grill's small/big recommendation (sentinel carrier)
+
+    /// Recovers the grill's recommendation from a `.design` transcript. The grill appends a
+    /// `prd_recommended` sentinel to its closing verdict; the carve/propose turns that follow never emit
+    /// one, so the last assistant message carrying a sentinel *is* that closing verdict. Returns `nil` when
+    /// no message carries the sentinel.
+    static func recommendation(from messages: [Message]) -> AllocateRecommendation? {
+        for message in messages.reversed() where message.kind == .assistant {
+            guard let prdRecommended = parsePRDRecommended(from: message.text) else { continue }
+            return AllocateRecommendation(
+                fork: prdRecommended ? .big : .small,
+                rationale: rationale(strippingSentinelFrom: message.text)
+            )
+        }
+        return nil
+    }
+
+    /// The sentinel: a trivial single-boolean carrier the grill appends to its closing message, e.g.
+    /// `<!-- prd_recommended: true -->`. Matched leniently — any surrounding text, `:` or `=`, any casing —
+    /// so a lightly reworded closing line still parses; `true` → the PRD/big path, `false` → the small path.
+    private static let sentinelRegex = /prd_recommended\s*[:=]\s*(true|false)/.ignoresCase()
+
+    /// The `prd_recommended` boolean carried by the text, or `nil` when it carries no sentinel.
+    static func parsePRDRecommended(from text: String) -> Bool? {
+        guard let match = text.firstMatch(of: sentinelRegex) else { return nil }
+        return String(match.output.1).lowercased() == "true"
+    }
+
+    /// The closing message's prose with the sentinel line removed, for display beside the fork choices.
+    private static func rationale(strippingSentinelFrom text: String) -> String {
+        text
+            .components(separatedBy: "\n")
+            .filter { $0.firstMatch(of: sentinelRegex) == nil }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     /// Re-slice: the everyday big-path iteration when the PRD is fine but the breakdown isn't. Runs an
     /// auto-propose Turn in the fresh `.allocate` Session (starting it on the first call, resuming
