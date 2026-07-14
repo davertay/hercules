@@ -28,8 +28,8 @@ public struct StatusPalette: Sendable {
     }
 
     public static let `default` = StatusPalette(
-        pending: .secondary,
-        ready: .blue,
+        pending: .blue,
+        ready: .yellow,
         inProgress: .orange,
         complete: .green,
         failed: .red,

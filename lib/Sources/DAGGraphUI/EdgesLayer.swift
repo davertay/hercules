@@ -10,13 +10,12 @@ struct EdgesLayer: View {
     let anchors: [Int: Anchor<CGRect>]
 
     let metrics: DAGGraphMetrics
-    let palette: StatusPalette
 
     var body: some View {
         GeometryReader { proxy in
             // Square-aspect arrowhead per ArrowheadShape's contract — length == base width.
             let arrowheadLength = metrics.edgeStrokeWidth * 4
-            let edgeColor = palette.pending
+            let edgeColor = Color.secondary
 
             ZStack {
                 ForEach(edges) { edge in

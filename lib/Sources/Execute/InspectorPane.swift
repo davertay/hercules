@@ -19,10 +19,6 @@ struct InspectorPane: View {
     private var isFailed: Bool { issue?.status == IssueRunStatus.failed.rawValue }
     private var isProposed: Bool { issue?.status == "proposed" }
 
-    private var statusColor: Color {
-        StatusPalette.default.color(for: mapStatus(issue?.status ?? "new"))
-    }
-
     var body: some View {
         if let issue {
             ScrollView {
@@ -33,11 +29,12 @@ struct InspectorPane: View {
                             .foregroundStyle(.secondary)
                         Text(issue.title)
                             .font(.title3.weight(.semibold))
-                        Text(issue.status.capitalized)
+                        Spacer()
+                        Text(issue.statusText)
                             .font(.callout)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(statusColor.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
+                            .background(issue.statusColor.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
                     }
                     if !issue.dependencies.isEmpty {
                         LabeledContent("Depends on") {
@@ -96,6 +93,10 @@ struct InspectorPane: View {
 fileprivate extension IssueRow {
     var statusColor: Color {
         StatusPalette.default.color(for: mapStatus(status))
+    }
+
+    var statusText: String {
+        status.capitalized.replacingOccurrences(of: "_", with: " ")
     }
 }
 

@@ -117,8 +117,7 @@ public struct DAGGraphView<NodeContent: View>: View {
             EdgesLayer(
                 edges: edges,
                 anchors: anchors,
-                metrics: metrics,
-                palette: palette
+                metrics: metrics
             )
         }
         .background {
