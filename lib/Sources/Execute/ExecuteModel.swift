@@ -399,10 +399,12 @@ public final class ExecuteModel {
         start()
     }
 
-    /// Runs every ready Issue sequentially in dependency order, halting on the first failure. Reconciles
-    /// stale `in_progress` Issues (left by a crash) back to `failed` first, and completes the Phase only
-    /// once every Issue is `done` — a blocked branch must not falsely unlock Validate. Re-running resumes
-    /// from the first ready `new` Issue; there is no auto-retry.
+    /// Runs every ready Issue sequentially in dependency order. Reconciles stale `in_progress` Issues
+    /// (left by a crash) back to `failed` first, and completes the Phase only once every Issue is `done`
+    /// — a blocked branch must not falsely unlock Validate. A session-limit failure is the one failure
+    /// that doesn't end the run: it waits out the reset, then re-runs the Issue and carries on downstream.
+    /// Every other failure — and a wait cancelled by Stop — halts the run with the Issue left `failed`
+    /// for a manual Retry. Re-running resumes from the first ready `new` Issue.
     public func run() async {
         try? database.reconcileStaleInProgressIssues(workflowID: workflowID, now: now)
 
