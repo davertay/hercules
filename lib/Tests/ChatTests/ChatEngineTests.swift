@@ -614,6 +614,24 @@ struct ChatEngineTests {
         #expect(engine.isIntake)
     }
 
+    @Test
+    func rediscoversASessionCreatedAfterConstruction() async throws {
+        let database = try Self.makeDatabase()
+        // Built before any `.design` Session exists — the Allocate-at-window-open ordering that, when
+        // rediscovery ran only once at init, left the engine stuck on `nil` and both fork buttons disabled.
+        let engine = Self.makeEngine(database: database, kind: .design)
+        #expect(engine.session == nil)
+
+        // A sibling engine (the Design grill) later starts the shared `.design` Session.
+        try Self.seedSession(database, sessionID: UUID(-2), kind: .design)
+        try await engine.$existingSessionRow.load()
+
+        // The engine picks it up reactively — no reconstruction — so a follow-up resumes it in place
+        // rather than spuriously starting a second Session.
+        #expect(engine.session?.id.rawValue == UUID(-2))
+        #expect(engine.session?.kind == .design)
+    }
+
     // MARK: - Helpers
 
     private static func makeEngine(
