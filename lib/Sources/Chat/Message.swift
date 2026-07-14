@@ -51,21 +51,21 @@ func transcriptMessages(turns: [TurnRow], blocks: [ContentBlockRow]) -> [Message
     return result
 }
 
-/// `nil` to skip the block (empty text/thinking).
+/// `nil` to skip the block (empty text/thinking, or an unrecognised kind).
 func message(for block: ContentBlockRow, isError: Bool) -> Message? {
     let id = "\(block.turnID.uuidString)/\(block.position)"
-    switch block.kind {
-    case "text":
+    switch block.kindValue {
+    case .text:
         guard !block.text.isEmpty else { return nil }
         return Message(id: id, kind: .assistant, text: block.text, isError: isError)
-    case "thinking":
+    case .thinking:
         guard !block.text.isEmpty else { return nil }
         return Message(id: id, kind: .thinking, text: block.text)
-    case "tool_use":
+    case .toolUse:
         return Message(id: id, kind: .toolUse, text: block.text, toolName: block.toolName)
-    case "tool_result":
+    case .toolResult:
         return Message(id: id, kind: .toolResult, text: block.text)
-    default:
+    case nil:
         return nil
     }
 }

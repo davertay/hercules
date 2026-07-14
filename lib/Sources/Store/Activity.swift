@@ -34,6 +34,16 @@ public struct ActivityCounts: Equatable, Sendable {
         self.durationMs = durationMs
         self.costUSD = costUSD
     }
+
+    /// Buckets one content block into the tallies: `toolUse` counts as a tool, `text`/`thinking` as
+    /// steps. `toolResult` — the user-role echo of a `toolUse` — and unrecognised kinds don't count.
+    mutating func tally(_ block: ContentBlockRow) {
+        switch block.kindValue {
+        case .toolUse: tools += 1
+        case .text, .thinking: steps += 1
+        case .toolResult, nil: break
+        }
+    }
 }
 
 /// Per-Issue activity for the Execute DAG, keyed by Issue `number`. A retried Issue has several
@@ -155,11 +165,7 @@ public struct PRDCheckpointActivityRequest: FetchKeyRequest {
             .where { $0.turnID.eq(turn.id) }
             .fetchAll(db)
         for block in blocks {
-            switch block.kind {
-            case "tool_use": counts.tools += 1
-            case "text", "thinking": counts.steps += 1
-            default: break  // `tool_result` is the user-role echo of a `tool_use`; excluded.
-            }
+            counts.tally(block)
         }
         return counts
     }
@@ -196,11 +202,7 @@ func activityCounts(forSessions sessionIDs: Set<UUID>, in db: Database) throws -
     for block in blocks {
         guard let session = sessionByTurn[block.turnID] else { continue }
         var entry = counts[session] ?? ActivityCounts()
-        switch block.kind {
-        case "tool_use": entry.tools += 1
-        case "text", "thinking": entry.steps += 1
-        default: break  // `tool_result` is the user-role echo of a `tool_use`; excluded.
-        }
+        entry.tally(block)
         counts[session] = entry
     }
 

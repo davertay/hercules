@@ -81,13 +81,13 @@ public final class StreamProjector {
             }
 
         case let .textDelta(index, text):
-            append(index: index, text: text, defaultKind: "text")
+            append(index: index, text: text, defaultKind: .text)
 
         case let .thinkingDelta(index, text):
-            append(index: index, text: text, defaultKind: "thinking")
+            append(index: index, text: text, defaultKind: .thinking)
 
         case let .inputJSONDelta(index, partialJSON):
-            append(index: index, text: partialJSON, defaultKind: "tool_use")
+            append(index: index, text: partialJSON, defaultKind: .toolUse)
 
         case let .contentBlockStop(index):
             persist(streamPosition(forIndex: index, isStart: false))
@@ -102,7 +102,7 @@ public final class StreamProjector {
             }
             // Interrupt only on the first question, so a later message can't re-trigger it.
             if !interruptedForQuestion,
-               decoded.contains(where: { $0.kind == "tool_use" && $0.toolName == "AskUserQuestion" }) {
+               decoded.contains(where: { $0.kind == BlockKind.toolUse.rawValue && $0.toolName == "AskUserQuestion" }) {
                 interruptedForQuestion = true
                 return .askedQuestion
             }
@@ -141,11 +141,12 @@ public final class StreamProjector {
         return nextPosition
     }
 
-    private func append(index: Int, text: String, defaultKind: String) {
+    private func append(index: Int, text: String, defaultKind: BlockKind) {
         let position = streamPosition(forIndex: index, isStart: false)
         if blocks[position] == nil {
             blocks[position] = Block(
-                id: uuid(), role: "assistant", kind: defaultKind, toolName: nil, text: "", persisted: false
+                id: uuid(), role: "assistant", kind: defaultKind.rawValue, toolName: nil, text: "",
+                persisted: false
             )
         }
         blocks[position]?.text += text
@@ -325,12 +326,16 @@ extension StreamProjector {
             else { return nil }
             switch blockType {
             case "text":
-                return .contentBlockStart(index: index, kind: "text", role: "assistant", toolName: nil)
+                return .contentBlockStart(
+                    index: index, kind: BlockKind.text.rawValue, role: "assistant", toolName: nil
+                )
             case "thinking":
-                return .contentBlockStart(index: index, kind: "thinking", role: "assistant", toolName: nil)
+                return .contentBlockStart(
+                    index: index, kind: BlockKind.thinking.rawValue, role: "assistant", toolName: nil
+                )
             case "tool_use":
                 return .contentBlockStart(
-                    index: index, kind: "tool_use", role: "assistant",
+                    index: index, kind: BlockKind.toolUse.rawValue, role: "assistant",
                     toolName: block["name"] as? String
                 )
             default:
@@ -369,21 +374,30 @@ extension StreamProjector {
     private static func decodeAssistantBlock(_ item: [String: Any], role: String) -> DecodedBlock {
         switch item["type"] as? String {
         case "thinking":
-            return DecodedBlock(kind: "thinking", role: role, toolName: nil, text: item["thinking"] as? String ?? "")
+            return DecodedBlock(
+                kind: BlockKind.thinking.rawValue, role: role, toolName: nil,
+                text: item["thinking"] as? String ?? ""
+            )
         case "tool_use":
             return DecodedBlock(
-                kind: "tool_use", role: role, toolName: item["name"] as? String,
+                kind: BlockKind.toolUse.rawValue, role: role, toolName: item["name"] as? String,
                 text: jsonString(item["input"]) ?? ""
             )
         default:
             // Treat anything else (including `text`) as plain text so positions stay aligned.
-            return DecodedBlock(kind: "text", role: role, toolName: nil, text: item["text"] as? String ?? "")
+            return DecodedBlock(
+                kind: BlockKind.text.rawValue, role: role, toolName: nil,
+                text: item["text"] as? String ?? ""
+            )
         }
     }
 
     private static func decodeToolResult(_ item: [String: Any]) -> DecodedBlock? {
         guard item["type"] as? String == "tool_result" else { return nil }
-        return DecodedBlock(kind: "tool_result", role: "user", toolName: nil, text: toolResultText(item["content"]))
+        return DecodedBlock(
+            kind: BlockKind.toolResult.rawValue, role: "user", toolName: nil,
+            text: toolResultText(item["content"])
+        )
     }
 
     /// A tool result's content is either a plain string or an array of content blocks.
