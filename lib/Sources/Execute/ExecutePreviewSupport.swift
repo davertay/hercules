@@ -14,11 +14,11 @@ extension ExecuteModel {
             }
             .execute(db)
             // The completed upstream Phases that unlock Execute.
-            for kind in ["design", "prd", "allocate"] {
+            for kind in [PhaseKind.design, .prd, .allocate] {
                 try PhaseRow.insert {
                     PhaseRow(
-                        id: UUID(), workflowID: workflowID, kind: kind, status: "complete",
-                        createdAt: now, updatedAt: now
+                        id: UUID(), workflowID: workflowID, kind: kind.rawValue,
+                        status: PhaseRow.completeStatus, createdAt: now, updatedAt: now
                     )
                 }
                 .execute(db)

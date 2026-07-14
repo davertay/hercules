@@ -29,7 +29,8 @@ extension AllocateModel {
             // The completed Design Phase the proposal was grounded in.
             try PhaseRow.insert {
                 PhaseRow(
-                    id: UUID(), workflowID: workflowID, kind: "design", status: "complete",
+                    id: UUID(), workflowID: workflowID, kind: PhaseKind.design.rawValue,
+                    status: PhaseRow.completeStatus,
                     artifactPath: "/wf/phases/design/summary.md", createdAt: now, updatedAt: now
                 )
             }

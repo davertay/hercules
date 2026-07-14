@@ -1,3 +1,5 @@
+import Store
+
 /// The four stages a Workflow moves through, in order; each consumes the prior Phase's Artifact.
 public enum Phase: String, CaseIterable, Identifiable, Hashable, Sendable {
     case design
@@ -6,6 +8,16 @@ public enum Phase: String, CaseIterable, Identifiable, Hashable, Sendable {
     case validate
 
     public var id: Self { self }
+
+    /// The Store vocabulary this Phase completes under — the value recorded in `PhaseRow.kind`.
+    public var kind: PhaseKind {
+        switch self {
+        case .design: .design
+        case .allocate: .allocate
+        case .execute: .execute
+        case .validate: .validate
+        }
+    }
 
     public var title: String {
         switch self {

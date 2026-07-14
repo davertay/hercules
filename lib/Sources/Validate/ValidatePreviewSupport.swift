@@ -17,11 +17,11 @@ extension ValidateModel {
             }
             .execute(db)
             // The completed upstream Phases that unlock Validate.
-            for kind in ["design", "prd", "allocate", "execute"] {
+            for kind in [PhaseKind.design, .prd, .allocate, .execute] {
                 try PhaseRow.insert {
                     PhaseRow(
-                        id: UUID(), workflowID: workflowID, kind: kind, status: "complete",
-                        createdAt: now, updatedAt: now
+                        id: UUID(), workflowID: workflowID, kind: kind.rawValue,
+                        status: PhaseRow.completeStatus, createdAt: now, updatedAt: now
                     )
                 }
                 .execute(db)

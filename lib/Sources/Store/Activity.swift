@@ -123,7 +123,7 @@ public struct PRDCheckpointActivityRequest: FetchKeyRequest {
 
     public func fetch(_ db: Database) throws -> ActivityCounts? {
         // The cutover boundary — the grill's Turns sit at or before it and must not count.
-        guard let boundary = try completedPhaseRow(db, workflowID: workflowID, kind: "design")?.updatedAt
+        guard let boundary = try completedPhaseRow(db, workflowID: workflowID, kind: .design)?.updatedAt
         else { return nil }
 
         let session = try SessionRow

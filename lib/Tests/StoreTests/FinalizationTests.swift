@@ -16,7 +16,7 @@ struct FinalizationTests {
         try Self.seedWorkflow(database, workflowID: workflowID)
 
         try database.completePhase(
-            workflowID: workflowID, kind: "design", artifactPath: "/wf/summary.md",
+            workflowID: workflowID, kind: .design, artifactPath: "/wf/summary.md",
             id: UUID(2), now: Self.fixedDate
         )
 
@@ -36,11 +36,11 @@ struct FinalizationTests {
         try Self.seedWorkflow(database, workflowID: workflowID)
 
         try database.completePhase(
-            workflowID: workflowID, kind: "design", artifactPath: "/wf/first.md",
+            workflowID: workflowID, kind: .design, artifactPath: "/wf/first.md",
             id: UUID(2), now: Self.fixedDate
         )
         try database.completePhase(
-            workflowID: workflowID, kind: "design", artifactPath: "/wf/second.md",
+            workflowID: workflowID, kind: .design, artifactPath: "/wf/second.md",
             id: UUID(3), now: Self.fixedDate.addingTimeInterval(60)
         )
 
@@ -60,7 +60,7 @@ struct FinalizationTests {
         try Self.seedWorkflow(database, workflowID: workflowID)
 
         try database.completePhase(
-            workflowID: workflowID, kind: "allocate", id: UUID(2), now: Self.fixedDate
+            workflowID: workflowID, kind: .allocate, id: UUID(2), now: Self.fixedDate
         )
 
         // Observable by the same completed-phase query the unlock gate uses.

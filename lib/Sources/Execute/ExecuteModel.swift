@@ -421,7 +421,7 @@ public final class ExecuteModel {
 
         let remaining = (try? currentIssues()) ?? []
         if !remaining.isEmpty, remaining.allSatisfy({ $0.status == IssueRunStatus.done.rawValue }) {
-            try? database.completePhase(workflowID: workflowID, kind: "execute", id: uuid(), now: now)
+            try? database.completePhase(workflowID: workflowID, kind: .execute, id: uuid(), now: now)
         }
     }
 
@@ -468,7 +468,7 @@ public final class ExecuteModel {
     /// missing one (e.g. Small Job mode produces no design summary) never fails, blocks, or warns. Returns
     /// `nil` when none exist, leaving the run identical to before any bundle was attached.
     private func inputArtifacts() -> InputBundle? {
-        let paths = ["prd", "design"].compactMap { kind in
+        let paths = [PhaseKind.prd, .design].compactMap { kind in
             try? database.completedArtifactPath(workflowID: workflowID, kind: kind)
         }
         guard !paths.isEmpty else { return nil }

@@ -176,7 +176,7 @@ public final class WorkflowContainerModel {
 
     public func isUnlocked(_ phase: Phase) -> Bool {
         guard let predecessor = phase.predecessor else { return true }
-        return completedPhases.contains { $0.kind == predecessor.rawValue }
+        return completedPhases.contains { $0.kind == predecessor.kind.rawValue }
     }
 
     /// The window/sidebar title: the repo name prefix plus the user-editable title.
@@ -223,7 +223,7 @@ struct CompletedPhasesRequest: FetchKeyRequest {
     func fetch(_ db: Database) throws -> [PhaseRow] {
         try PhaseRow
             .where { $0.workflowID.eq(workflowID) }
-            .where { $0.status.eq("complete") }
+            .where { $0.status.eq(PhaseRow.completeStatus) }
             .where { !$0.isDeleted }
             .fetchAll(db)
     }

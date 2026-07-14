@@ -73,7 +73,7 @@ public final class DesignModel {
         )
         _designPhase = Fetch(
             wrappedValue: nil,
-            CompletedDesignPhaseRequest(workflowID: workflowID),
+            CompletedPhaseRequest(workflowID: workflowID, kind: .design),
             animation: .default
         )
         // Dismiss the saved-summary confirmation the moment the user sends a new message.
@@ -127,7 +127,7 @@ public final class DesignModel {
                     throw DesignError.summaryNotWritten
                 }
                 try database.completePhase(
-                    workflowID: workflowID, kind: "design", artifactPath: url.path,
+                    workflowID: workflowID, kind: .design, artifactPath: url.path,
                     id: uuid(), now: now
                 )
                 // Reveal the banner again; `summarySavedURL` now reads the freshly persisted row.
@@ -163,13 +163,5 @@ enum DesignError: LocalizedError {
         case .summaryNotWritten:
             "The design summary was not saved — the agent must call write_artifact to write it."
         }
-    }
-}
-
-struct CompletedDesignPhaseRequest: FetchKeyRequest {
-    var workflowID: UUID = UUID()
-
-    func fetch(_ db: Database) throws -> PhaseRow? {
-        try completedPhaseRow(db, workflowID: workflowID, kind: "design")
     }
 }

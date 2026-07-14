@@ -187,7 +187,7 @@ public final class AllocateModel {
         )
         _designPhase = Fetch(
             wrappedValue: nil,
-            CompletedDesignPhaseRequest(workflowID: workflowID),
+            CompletedPhaseRequest(workflowID: workflowID, kind: .design),
             animation: .default
         )
         _prdActivityCounts = Fetch(
@@ -472,7 +472,7 @@ public final class AllocateModel {
     }
 
     private func runPropose() async throws {
-        let design = try artifactURL(kind: "design")
+        let design = try artifactURL(kind: .design)
         let prd = writtenPRDURL()
         let relativePaths = [prd, design]
             .compactMap { $0 }
@@ -540,7 +540,7 @@ public final class AllocateModel {
                 if !newWrite.isEmpty {
                     try database.clearIssues(ids: priorIDs, workflowID: workflowID, now: now)
                     try database.completePhase(
-                        workflowID: workflowID, kind: "allocate", id: uuid(), now: now
+                        workflowID: workflowID, kind: .allocate, id: uuid(), now: now
                     )
                 }
             } catch {
@@ -585,9 +585,9 @@ public final class AllocateModel {
             .appending(path: "prd.md")
     }
 
-    private func artifactURL(kind: String) throws -> URL {
+    private func artifactURL(kind: PhaseKind) throws -> URL {
         guard let path = try database.completedArtifactPath(workflowID: workflowID, kind: kind) else {
-            throw AllocateError.artifactMissing(kind)
+            throw AllocateError.artifactMissing(kind.rawValue)
         }
         return URL(fileURLWithPath: path)
     }
@@ -617,15 +617,5 @@ enum AllocateError: LocalizedError {
         case .prdNotWritten:
             "The PRD was not saved — the agent must call write_artifact to write it."
         }
-    }
-}
-
-/// The completed, non-deleted `design` Phase — its `updatedAt` is the Design→Allocate cutover boundary
-/// the small path filters the shared conversation against.
-struct CompletedDesignPhaseRequest: FetchKeyRequest {
-    var workflowID: UUID = UUID()
-
-    func fetch(_ db: Database) throws -> PhaseRow? {
-        try completedPhaseRow(db, workflowID: workflowID, kind: "design")
     }
 }
