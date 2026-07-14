@@ -24,8 +24,10 @@ public struct AllocateView: View {
                 Divider()
                 CommittedIssuesView(issues: model.issues)
             }
-            Divider()
-            ChatComposer(engine: model.activeEngine)
+            if model.showsComposer {
+                Divider()
+                ChatComposer(engine: model.activeEngine)
+            }
         }
         .frame(minWidth: 500, minHeight: 400)
         .toolbar {

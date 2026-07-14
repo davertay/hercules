@@ -233,6 +233,18 @@ public final class AllocateModel {
         carveMessages.isEmpty && !smallEngine.isRunning && smallEngine.errorText == nil
     }
 
+    /// Whether the chat composer is offered. It accompanies the transcript and is withheld in the intake
+    /// and PRD-progress states, so the user can't message an engine before there's a conversation to
+    /// continue (which otherwise silently starts a stray, context-free Session): the small path opens the
+    /// composer only once the carve is kicked off, and the big path only after the PRD checkpoint finishes
+    /// and the auto-propose Session begins. Mirrors `AllocateView.content`'s transcript-visible branch.
+    public var showsComposer: Bool {
+        switch fork {
+        case .small: !isSmallIntake
+        case .big: !isGeneratingPRD && !isIntake
+        }
+    }
+
     /// Whether any fork's agent is mid-Turn — the Allocate contribution to the Workflow's aggregate
     /// running state. All engines are polled so a fork switched mid-run is still reported as busy, and the
     /// big path's PRD Turn (on `prdEngine`) counts too.

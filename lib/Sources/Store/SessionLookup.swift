@@ -1,17 +1,38 @@
 import Foundation
 import SQLiteData
 
+/// The existing Session for a `(workflowID, kind)` pair (one per pair, ADR 0005), or `nil` — as an
+/// *observable* request, so a surface picks up a Session created *after* it began observing rather than
+/// only at construction. This is what lets Allocate's design-resuming engines (built at window open,
+/// before the grill Session exists) rediscover the grill the moment the Design Phase starts it, instead
+/// of staying stuck with the `nil` they captured at init and leaving both fork buttons disabled. The
+/// earliest non-deleted match wins so rediscovery stays deterministic if several somehow exist.
+public struct ExistingSessionRequest: FetchKeyRequest {
+    public var workflowID: UUID
+    public var kind: SessionKind
+
+    public init(workflowID: UUID, kind: SessionKind) {
+        self.workflowID = workflowID
+        self.kind = kind
+    }
+
+    public func fetch(_ db: Database) throws -> SessionRow? {
+        try SessionRow
+            .where { $0.workflowID.eq(workflowID) }
+            .where { $0.kind.eq(kind.rawValue) }
+            .where { !$0.isDeleted }
+            .order { $0.createdAt.asc() }
+            .fetchOne(db)
+    }
+}
+
 extension DatabaseReader {
-    /// The existing Session for a `(workflowID, kind)` pair (one per pair, ADR 0005), or `nil`. The
-    /// earliest is returned so rediscovery stays deterministic if several somehow exist.
+    /// A one-shot read of ``ExistingSessionRequest`` — the earliest non-deleted Session for a
+    /// `(workflowID, kind)` pair, or `nil`. Used to seed the observable lookup synchronously at
+    /// construction; the observation then keeps it live.
     public func existingSession(workflowID: UUID, kind: SessionKind) throws -> SessionRow? {
         try read { db in
-            try SessionRow
-                .where { $0.workflowID.eq(workflowID) }
-                .where { $0.kind.eq(kind.rawValue) }
-                .where { !$0.isDeleted }
-                .order { $0.createdAt.asc() }
-                .fetchOne(db)
+            try ExistingSessionRequest(workflowID: workflowID, kind: kind).fetch(db)
         }
     }
 

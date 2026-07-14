@@ -915,6 +915,126 @@ struct AllocateModelTests {
         #expect(!model.smallEngine.isRunning)
     }
 
+    // MARK: - Reactive rediscovery of the grill Session
+
+    @Test
+    func forkButtonsUnlockWhenTheGrillSessionAppearsAfterConstruction() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        // Built at window-open, before the grill has created its `.design` Session — the ordering that
+        // left both fork buttons disabled when the design-resuming engines only looked once, at init.
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+        #expect(!model.isCarveAvailable)
+        #expect(!model.isBridgeAvailable)
+
+        // The Design grill then starts the shared `.design` Session.
+        try Self.seedDesignSession(database, id: UUID(100))
+        try await model.smallEngine.$existingSessionRow.load()
+        try await model.prdEngine.$existingSessionRow.load()
+
+        // Both forks resume it now, so their kick-off buttons enable — no reopening the Workflow.
+        #expect(model.isCarveAvailable)
+        #expect(model.isBridgeAvailable)
+    }
+
+    // MARK: - Composer gating
+
+    @Test
+    func composerIsWithheldInBothForkIntakeStates() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        // The live grill exists so the engines resume it, but nothing has been carved or proposed yet.
+        try Self.seedDesignSession(database, id: UUID(100))
+        let model = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        // Small: the composer is withheld until the carve is kicked off.
+        model.fork = .small
+        #expect(model.isSmallIntake)
+        #expect(!model.showsComposer)
+
+        // Big: the composer is withheld until the PRD is done and the auto-propose Session begins.
+        model.fork = .big
+        #expect(model.isIntake)
+        #expect(!model.showsComposer)
+    }
+
+    @Test
+    func composerAppearsOnceTheSmallPathCarveHasRun() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.fork = .small
+        #expect(!model.showsComposer)  // intake — nothing carved yet
+
+        model.carve()
+        await model.runTask?.value
+        try await model.smallEngine.$conversation.load()
+
+        // The carve Turn now populates the transcript, so the composer accompanies it.
+        #expect(!model.isSmallIntake)
+        #expect(model.showsComposer)
+    }
+
+    @Test
+    func composerAppearsOnTheBigPathOnlyAfterTheProposeSessionBegins() async throws {
+        let database = try Self.makeDatabase()
+        let workflowDirectory = Self.makeWorkflowDirectory()
+        let designPath = Self.artifactPath(workflowDirectory, "phases/design/summary.md")
+        try Self.seedWorkflow(database)
+        try Self.seedDesignSession(database, id: UUID(100))
+        try Self.seedCompletedPhase(database, kind: "design", artifactPath: designPath, id: UUID(-3))
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.uuid = .incrementing
+            $0.date.now = fixedDate
+            $0.agentClient.send = { @Sendable request in
+                // The PRD Turn resumes the grill; leave a non-empty prd.md so the completion gate passes.
+                try Self.writePRDFile(workflowDirectory)
+                return try await Self.resumeSession(for: request, turnID: UUID(201))
+            }
+            $0.agentClient.start = { @Sendable request in
+                try await Self.startSession(for: request, id: UUID(101))
+            }
+        } operation: {
+            Self.makeModel(workflowDirectory: workflowDirectory, database: database)
+        }
+
+        model.fork = .big
+        #expect(model.isIntake)
+        #expect(!model.showsComposer)  // before: intake, composer withheld
+
+        model.bridgeAndPropose()
+        await model.runTask?.value
+        try await model.engine.$conversation.load()
+
+        // After the PRD checkpoint completes and the auto-propose Session begins, the composer appears.
+        #expect(!model.isGeneratingPRD)
+        #expect(!model.isIntake)
+        #expect(model.showsComposer)
+    }
+
     // MARK: - Helpers
 
     @MainActor

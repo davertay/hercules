@@ -49,8 +49,37 @@ public final class ChatEngine {
     @ObservationIgnored
     @Fetch var conversation = ConversationRequest.Value()
 
-    /// Pinned once the first Turn starts so follow-ups resume rather than start a new Session.
-    public private(set) var session: Session?
+    /// The existing Session row for this `(workflowID, kind)`, *observed* so a Session created after this
+    /// engine was constructed is picked up reactively (ADR 0005). Seeded synchronously at construction so
+    /// ``session`` is available immediately, then kept live by the observation — the fix for an engine
+    /// (e.g. Allocate's design-resuming engines) built before its Session existed.
+    @ObservationIgnored
+    @Fetch var existingSessionRow: SessionRow?
+
+    /// Pinned once *this* engine's own Turn starts or resumes a Session, taking precedence over the live
+    /// ``existingSessionRow`` lookup so follow-ups resume the exact Session this engine drove.
+    private var startedSession: Session?
+
+    /// The Session this engine drives, or `nil` if none exists yet. It's the Turn-pinned Session once this
+    /// engine has started one; until then it resolves live from ``existingSessionRow`` (seeded at init,
+    /// refreshed by observation) — so a follow-up resumes a Session a sibling engine created after this one
+    /// was built, rather than spuriously starting a second.
+    public var session: Session? {
+        if let startedSession { return startedSession }
+        guard let row = existingSessionRow,
+              let mode = AgentMode(rawValue: row.mode),
+              let kind = SessionKind(rawValue: row.kind)
+        else { return nil }
+        return Session(
+            id: Session.ID(rawValue: row.id),
+            worktree: URL(fileURLWithPath: row.worktreePath),
+            mode: mode,
+            kind: kind,
+            skillFiles: skillFiles,
+            addDirs: addDirs,
+            mcpServers: mcpServers
+        )
+    }
 
     @ObservationIgnored
     public var runTask: Task<Void, Never>?
@@ -86,21 +115,15 @@ public final class ChatEngine {
             ConversationRequest(workflowID: workflowID, kind: kind),
             animation: .default
         )
-        // Rediscover an existing Session so a follow-up resumes it and reopening shows prior history.
+        // Rediscover an existing Session so a follow-up resumes it and reopening shows prior history. Seed
+        // it synchronously so `session` is available at once, then observe so a Session a sibling engine
+        // starts *later* (the grill, for Allocate's design engines) is picked up without reconstruction.
         // Skill files and added directories are supplied by the consumer rather than stored (ADR 0005).
-        if let row = try? database.existingSession(workflowID: workflowID, kind: kind),
-           let mode = AgentMode(rawValue: row.mode),
-           let kind = SessionKind(rawValue: row.kind) {
-            session = Session(
-                id: Session.ID(rawValue: row.id),
-                worktree: URL(fileURLWithPath: row.worktreePath),
-                mode: mode,
-                kind: kind,
-                skillFiles: skillFiles,
-                addDirs: addDirs,
-                mcpServers: mcpServers
-            )
-        }
+        _existingSessionRow = Fetch(
+            wrappedValue: try? database.existingSession(workflowID: workflowID, kind: kind),
+            ExistingSessionRequest(workflowID: workflowID, kind: kind),
+            animation: .default
+        )
     }
 
     /// One user bubble per Turn's prompt, then that Turn's content blocks in order. Built from the
@@ -163,7 +186,7 @@ public final class ChatEngine {
     /// the Session with its configured (pinned) servers.
     public func send(_ prompt: String, inputs: InputBundle? = nil, overrideMCPServers: [MCPServer]? = nil) async throws {
         if let existing = session {
-            session = try await agentClient.send(
+            startedSession = try await agentClient.send(
                 SendRequest(
                     prompt: prompt,
                     session: existing,
@@ -173,7 +196,7 @@ public final class ChatEngine {
                 )
             )
         } else {
-            session = try await agentClient.start(
+            startedSession = try await agentClient.start(
                 StartRequest(
                     prompt: prompt,
                     worktree: worktree,
