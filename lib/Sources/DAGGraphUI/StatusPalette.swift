@@ -36,7 +36,7 @@ public struct StatusPalette: Sendable {
         proposed: .purple
     )
 
-    /// `.skipped` reuses the pending grey — the view's slash overlay carries the skipped cue.
+    /// `.skipped` reuses the pending colour — the view's slash overlay carries the skipped cue.
     public func color(for status: IssueStatus) -> Color {
         switch status {
         case .pending: pending
@@ -49,7 +49,7 @@ public struct StatusPalette: Sendable {
         }
     }
 
-    /// `.white` on the saturated fills, `.primary` on the neutral pending/skipped grey.
+    /// `.white` on the saturated fills, `.primary` on the pending/skipped fill.
     public func foregroundColor(for status: IssueStatus) -> Color {
         switch status {
         case .pending: .primary

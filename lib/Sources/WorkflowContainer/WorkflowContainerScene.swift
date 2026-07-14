@@ -31,6 +31,5 @@ private struct WorkflowContainerHost: View {
 
     var body: some View {
         WorkflowContainerView(model: model)
-            .navigationTitle("Scene Title")
     }
 }
