@@ -7,8 +7,6 @@ public struct NodeView: View {
     let palette: StatusPalette
     let isSelected: Bool
 
-    @State private var pulseActive: Bool = false
-
     public init(
         node: DAGNode,
         metrics: DAGGraphMetrics,
