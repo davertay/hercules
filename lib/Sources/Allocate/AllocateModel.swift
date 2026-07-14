@@ -337,7 +337,7 @@ public final class AllocateModel {
     static let commitPrompt = """
         Write the agreed set of Issues now from scratch: make exactly one create_issue call per Issue in \
         the set, even if you already created Issues in an earlier Turn. Recreate every Issue in the agreed \
-        set — do not skip any as "already created".
+        set — do not skip any as "already created". Be sure to populate the structured dependencies field if needed.
         """
 
     // MARK: - The grill's small/big recommendation (sentinel carrier)
