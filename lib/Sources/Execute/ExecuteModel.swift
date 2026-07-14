@@ -475,3 +475,17 @@ public final class ExecuteModel {
         ((try? currentIssues()) ?? []).first { $0.number == number }?.status
     }
 }
+
+#if DEBUG
+extension ExecuteModel {
+    /// Preview/debug only: drops the model into the paused session-limit presentation without a live run,
+    /// so a screenshot can verify the resume banner and the next-up (not failed) node treatment. Sets the
+    /// same published `resumingAt` and paused-Issue state the run loop holds while it waits out a reset.
+    /// Point `issueNumber` at the seeded `failed` Issue so it matches `haltingFailure` and the banner and
+    /// the recoloured node agree.
+    public func enterResumingStateForPreview(issueNumber: Int, resumingAt: Date) {
+        self.resumingAt = resumingAt
+        self.resumingIssueNumber = issueNumber
+    }
+}
+#endif

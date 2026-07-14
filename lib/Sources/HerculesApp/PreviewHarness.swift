@@ -19,6 +19,7 @@ public enum PreviewTarget: String, CaseIterable, Sendable {
     case designIntake
     case flowExecute
     case flowExecuteDone
+    case flowExecuteResuming
     case flowValidate
     case settings
     case workflowEmpty
@@ -89,6 +90,8 @@ public struct PreviewHarnessView: View {
             FlowExecutePreviewHost()
         case .flowExecuteDone:
             FlowExecutePreviewHost(selectedNode: 1)
+        case .flowExecuteResuming:
+            FlowExecuteResumingPreviewHost()
         case .settings:
             SettingsPreviewHost()
         case .flowValidate:
@@ -193,6 +196,57 @@ private struct FlowExecutePreviewHost: View {
                         await executeModel.loadIssuesForPreview()
                         // Pre-select a node so the inspector renders with content.
                         executeModel.selectNode(selectedNode)
+                    }
+            } else {
+                ContentUnavailableView(
+                    "Workflow store unavailable",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        }
+        .frame(minWidth: 800, minHeight: 600)
+    }
+}
+
+/// Renders the Execute Phase paused on a session-limit halt: the resume banner shows the absolute
+/// auto-resume time and the halted Issue's node reads as pending/next-up rather than a red failure —
+/// the presentation the run holds while it waits out the reset before re-running the Issue.
+private struct FlowExecuteResumingPreviewHost: View {
+    @State private var container: WorkflowContainerModel
+
+    /// The seeded `failed` Issue (`seedCommittedIssuesPreview` marks #6), so it lines up with
+    /// `haltingFailure` and both the banner and the recoloured node point at the same Issue.
+    private let pausedIssue = 6
+
+    init() {
+        let id = UUID()
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("workflow-flow-execute-resuming-\(id.uuidString)", isDirectory: true)
+        try? ExecuteModel.seedCommittedIssuesPreview(at: directory, workflowID: id)
+        // Stand in a worktree so Execute's health check passes and the DAG renders.
+        try? FileManager.default.createDirectory(
+            at: workflowWorktree(in: directory), withIntermediateDirectories: true
+        )
+        _container = State(
+            wrappedValue: WorkflowContainerModel(
+                data: WorkflowWindowData(id: id, directory: directory, repoPath: "/path/to/repo")
+            )
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            if let executeModel = container.executeModel {
+                ExecuteView(model: executeModel)
+                    .task {
+                        await executeModel.loadIssuesForPreview()
+                        executeModel.enterResumingStateForPreview(
+                            issueNumber: pausedIssue,
+                            // A fixed local wall-clock time so the banner reads a stable "7:11 PM".
+                            resumingAt: Calendar.current.date(
+                                bySettingHour: 19, minute: 11, second: 0, of: Date()
+                            ) ?? Date().addingTimeInterval(3600)
+                        )
                     }
             } else {
                 ContentUnavailableView(

@@ -65,3 +65,30 @@ struct ResumeBanner: View {
         .background(.orange.opacity(0.12))
     }
 }
+
+#if DEBUG
+private func previewIssue(_ number: Int, _ title: String) -> IssueRow {
+    IssueRow(id: UUID(), workflowID: UUID(), number: number, title: title, createdAt: .now, updatedAt: .now)
+}
+
+#Preview("Halt (failed)") {
+    HaltBanner(
+        issue: previewIssue(6, "Wire end-to-end"),
+        reason: "The agent produced no commit and made no changes.",
+        onSelect: {},
+        onRetry: {}
+    )
+    .frame(width: 640)
+    .padding()
+}
+
+#Preview("Resuming (session limit)") {
+    ResumeBanner(
+        issue: previewIssue(6, "Wire end-to-end"),
+        resumingAt: Calendar.current.date(bySettingHour: 19, minute: 11, second: 0, of: .now) ?? .now,
+        onSelect: {}
+    )
+    .frame(width: 640)
+    .padding()
+}
+#endif
