@@ -35,7 +35,11 @@ public struct ExecuteView: View {
                 InvalidGraphView(message: message, issues: model.issues)
             } else {
                 VStack(spacing: 0) {
-                    if let failure = model.haltingFailure, !model.isRunning {
+                    if let resumingAt = model.resumingAt, let paused = model.haltingFailure {
+                        ResumeBanner(issue: paused, resumingAt: resumingAt) {
+                            model.selectNode(paused.number)
+                        }
+                    } else if let failure = model.haltingFailure, !model.isRunning {
                         HaltBanner(issue: failure, reason: model.failureReason(for: failure)) {
                             model.selectNode(failure.number)
                         } onRetry: {

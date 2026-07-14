@@ -63,4 +63,30 @@ extension DatabaseReader {
                 .fetchOne(db)
         }?.finalAnswer
     }
+
+    /// The most recent *errored* Turn's `finalAnswer` for the Issue's latest Execute Session, or `nil` —
+    /// the Harness's own words on the failing turn, among them the session-limit notice Execute's
+    /// auto-resume classifies (#160). Read fresh (not the lazily-updated observation) so the run loop can
+    /// classify a fault the instant it lands. Guarded on `isError` so a cleanly-finished no-op Turn's
+    /// answer never masquerades as an error message, and scoped to the *latest* Session so a re-run reads
+    /// its own new message rather than re-arming on a stale earlier attempt's.
+    public func latestExecuteErrorMessage(forIssue number: Int, workflowID: UUID) throws -> String? {
+        try read { db in
+            let session = try SessionRow
+                .where { $0.workflowID.eq(workflowID) }
+                .where { $0.kind.eq(SessionKind.execute.rawValue) }
+                .where { $0.issueNumber.eq(number) }
+                .where { !$0.isDeleted }
+                .order { $0.createdAt.desc() }
+                .fetchOne(db)
+            guard let session else { return nil }
+            return try TurnRow
+                .where { $0.sessionID.eq(session.id) }
+                .where { $0.isError }
+                .where { !$0.isDeleted }
+                .order { $0.createdAt.desc() }
+                .fetchOne(db)?
+                .finalAnswer
+        }
+    }
 }

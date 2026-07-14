@@ -197,6 +197,7 @@ let package = Package(
                 "Skills",
                 "Store",
                 "Worktree",
+                .product(name: "Clocks", package: "swift-clocks"),
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),

@@ -32,6 +32,17 @@ public final class ExecuteModel {
 
     public private(set) var isRunning = false
 
+    /// When a run is paused waiting out a session-limit reset, the instant it will auto-resume (the parsed
+    /// reset time plus a one-minute grace buffer); `nil` otherwise. Drives the resume banner and keeps the
+    /// paused Issue out of `.inProgress` while the run stays `isRunning`. Set for the wait's duration and
+    /// cleared the moment it ends — whether it elapses or Stop cancels it.
+    public private(set) var resumingAt: Date?
+
+    /// The Issue number the run is currently waiting to auto-resume, held alongside `resumingAt` so the
+    /// paused node can be presented as pending/next-up rather than a red failed node.
+    @ObservationIgnored
+    private var resumingIssueNumber: Int?
+
     /// Boxed so the run can be cancelled off the MainActor — both Stop and the window's teardown
     /// (`cancelRun`) route here.
     @ObservationIgnored
@@ -48,6 +59,11 @@ public final class ExecuteModel {
 
     @ObservationIgnored
     @Dependency(\.uuid) private var uuid
+
+    /// Drives the in-loop session-limit wait (`sleep(for:)`), injected so tests advance it with a
+    /// `TestClock` instead of sleeping real hours. Distinct from `clock`, the once-a-second UI tick.
+    @ObservationIgnored
+    @Dependency(\.continuousClock) private var continuousClock
 
     @ObservationIgnored
     private let database: any DatabaseWriter
@@ -123,7 +139,19 @@ public final class ExecuteModel {
         transcriptFailureReasons[issue.number] ?? issue.failureReason
     }
 
-    public var nodes: [DAGNode] { dagNodes(from: issues) }
+    public var nodes: [DAGNode] {
+        let nodes = dagNodes(from: issues)
+        // While waiting out a session-limit reset the Issue is still `failed` in the store (so Stop leaves
+        // it a normal failure with its Retry), but we haven't given up on it — present it as the pending/
+        // next-up node, never a red failed one, and crucially never `.inProgress` (which would clock the
+        // multi-hour wait into its NodeActivity elapsed).
+        guard resumingAt != nil, let paused = resumingIssueNumber else { return nodes }
+        return nodes.map { node in
+            node.number == paused
+                ? DAGNode(number: node.number, title: node.title, status: .ready, dependencies: node.dependencies)
+                : node
+        }
+    }
 
     /// A dependency cycle or reference to an unknown Issue number; `nil` when the graph is a valid DAG.
     public var validationError: IssueGraph.ValidateError? {
@@ -262,7 +290,7 @@ public final class ExecuteModel {
         do {
             session = try await agentClient.start(
                 StartRequest(
-                    prompt: issue.body,
+                    prompt: prompt(for: issue),
                     worktree: worktree,
                     mode: .write,
                     inputs: inputArtifacts(),
@@ -296,6 +324,22 @@ public final class ExecuteModel {
             failIssue(issueNumber, reason: noCommitReason(session: session))
         }
     }
+
+    /// The prompt for one run of an Issue. The **first** run sends the Issue body unchanged; any **re-run**
+    /// — detected purely by an existing execute Session for the Issue, whether from an auto-resume or a
+    /// manual Retry — appends a note telling the fresh session to inspect the worktree and continue the
+    /// possibly-partial work already on disk rather than starting over.
+    private func prompt(for issue: IssueRow) -> String {
+        let priorSession = (try? database.session(forIssue: issue.number, workflowID: workflowID)) ?? nil
+        guard priorSession != nil else { return issue.body }
+        return "\(issue.body)\n\n\(Self.rerunInterruptionNote)"
+    }
+
+    private static let rerunInterruptionNote = """
+        A previous attempt at this issue was interrupted before it finished. It may have left partial, \
+        uncommitted work in the worktree. Inspect the working tree first; continue from where it left off \
+        rather than starting over, and commit when the work is complete.
+        """
 
     private func failIssue(_ number: Int, reason: String) {
         try? database.setIssueStatus(
@@ -353,13 +397,45 @@ public final class ExecuteModel {
 
         while let next = readyIssue() {
             await runIssue(next)
-            if currentStatus(of: next.number) == IssueRunStatus.failed.rawValue { return }
+            if currentStatus(of: next.number) == IssueRunStatus.failed.rawValue {
+                // A session-limit halt isn't the end of the run: wait out the reset, then re-run the Issue
+                // as a fresh session and continue downstream. Every other failure — and a wait cancelled by
+                // Stop — halts here with the Issue left `failed` for a manual Retry.
+                guard await awaitSessionLimitReset(for: next.number) else { return }
+                try? database.resetIssue(workflowID: workflowID, number: next.number, now: now)
+            }
         }
 
         let remaining = (try? currentIssues()) ?? []
         if !remaining.isEmpty, remaining.allSatisfy({ $0.status == IssueRunStatus.done.rawValue }) {
             try? database.completePhase(workflowID: workflowID, kind: "execute", id: uuid(), now: now)
         }
+    }
+
+    /// If the Issue's fault was a session-limit halt — the failing turn is flagged `isError` **and** its
+    /// text parses into a reset `Date` — sleep until that reset plus a one-minute grace buffer, then return
+    /// `true` so the caller re-runs the Issue. Returns `false` for any other failure (unparseable text, a
+    /// non-limit error, an exit-0 no-op), and also when Stop cancels the sleep — leaving the Issue `failed`
+    /// for a manual Retry either way. The run stays `isRunning` throughout; `resumingAt` is published for
+    /// the wait's duration and cleared the instant it ends, whether it elapses or is cancelled.
+    private func awaitSessionLimitReset(for number: Int) async -> Bool {
+        let message = (try? database.latestExecuteErrorMessage(forIssue: number, workflowID: workflowID)) ?? nil
+        guard let message, let resetAt = SessionLimitReset.parse(message, now: now) else { return false }
+
+        let resumeAt = resetAt.addingTimeInterval(60)
+        resumingAt = resumeAt
+        resumingIssueNumber = number
+        defer {
+            resumingAt = nil
+            resumingIssueNumber = nil
+        }
+
+        do {
+            try await continuousClock.sleep(for: .seconds(resumeAt.timeIntervalSince(now)))
+        } catch {
+            return false
+        }
+        return true
     }
 
     /// Lowest-numbered `new` Issue whose every dependency is `done`. Read fresh from the database so it
