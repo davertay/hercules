@@ -139,15 +139,26 @@ public final class ExecuteModel {
         transcriptFailureReasons[issue.number] ?? issue.failureReason
     }
 
+    /// The Issue the run is currently waiting to auto-resume after a session-limit halt, resolved from the
+    /// number captured when the wait armed; `nil` whenever no wait is in flight. The single source of truth
+    /// for the paused Issue: both the resume banner and the paused-node recolouring read it, so the banner
+    /// names the same Issue the node presents as pending. Deliberately *not* `haltingFailure` (the
+    /// lowest-numbered `failed` Issue), which can name a different, pre-existing failure when the paused
+    /// Issue isn't the only one that's `failed`.
+    public var resumingIssue: IssueRow? {
+        guard resumingAt != nil, let number = resumingIssueNumber else { return nil }
+        return issues.first { $0.number == number }
+    }
+
     public var nodes: [DAGNode] {
         let nodes = dagNodes(from: issues)
         // While waiting out a session-limit reset the Issue is still `failed` in the store (so Stop leaves
         // it a normal failure with its Retry), but we haven't given up on it — present it as the pending/
         // next-up node, never a red failed one, and crucially never `.inProgress` (which would clock the
         // multi-hour wait into its NodeActivity elapsed).
-        guard resumingAt != nil, let paused = resumingIssueNumber else { return nodes }
+        guard let paused = resumingIssue else { return nodes }
         return nodes.map { node in
-            node.number == paused
+            node.number == paused.number
                 ? DAGNode(number: node.number, title: node.title, status: .ready, dependencies: node.dependencies)
                 : node
         }
@@ -481,8 +492,8 @@ extension ExecuteModel {
     /// Preview/debug only: drops the model into the paused session-limit presentation without a live run,
     /// so a screenshot can verify the resume banner and the next-up (not failed) node treatment. Sets the
     /// same published `resumingAt` and paused-Issue state the run loop holds while it waits out a reset.
-    /// Point `issueNumber` at the seeded `failed` Issue so it matches `haltingFailure` and the banner and
-    /// the recoloured node agree.
+    /// The banner and the recoloured node both resolve `issueNumber` through `resumingIssue`, so they agree
+    /// by construction whatever Issue it points at.
     public func enterResumingStateForPreview(issueNumber: Int, resumingAt: Date) {
         self.resumingAt = resumingAt
         self.resumingIssueNumber = issueNumber

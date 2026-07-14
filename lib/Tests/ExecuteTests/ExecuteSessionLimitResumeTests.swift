@@ -95,6 +95,60 @@ struct ExecuteSessionLimitResumeTests {
         #expect(prompts.value[2] == "Implement 2.")
     }
 
+    @Test("The paused Issue is named even when a lower-numbered failed Issue would win haltingFailure")
+    func pausedIssueWinsOverLowerNumberedFailure() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        // A pre-existing failure from an earlier, unrelated run. It's the lowest-numbered `failed` Issue, so
+        // `haltingFailure` names it — but it isn't `new`, so the run skips it and never re-runs it.
+        try Self.seedIssue(
+            database, workflowID: workflowID, number: 2, dependencies: [],
+            status: "failed", failureReason: "An earlier, unrelated failure."
+        )
+        // An independent, ready Issue the run does pick up — and pauses on a session limit.
+        try Self.seedIssue(database, workflowID: workflowID, number: 5, dependencies: [])
+
+        let clock = TestClock()
+        let head = LockIsolated(0)
+        let sessionSeq = LockIsolated(200)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.uuid = .incrementing
+            $0.continuousClock = clock
+            $0.agentClient.start = { @Sendable request in
+                // The only ready Issue (#5) hits the session limit: record the errored turn, then throw.
+                let id = UUID(sessionSeq.withValue { $0 += 1; return $0 })
+                try await Self.recordSession(for: request, id: id, finalAnswer: limitMessage, isError: true)
+                throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage)
+            }
+            $0.agentClient.send = { @Sendable _ in throw CancellationError() }
+            $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
+        } operation: {
+            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+        }
+
+        model.start()
+        // Park in the wait, with the observed Issue rows reflecting #5's demotion to `failed`.
+        await Self.waitUntil { model.resumingIssue?.number == 5 }
+
+        // The accessor (and so the resume banner) names the Issue actually being resumed…
+        #expect(model.resumingIssue?.number == 5)
+        // …even though `haltingFailure` — the lowest-numbered `failed` Issue — names the pre-existing #2.
+        // The two diverge; the banner must follow `resumingIssue`, not `haltingFailure`.
+        #expect(model.haltingFailure?.number == 2)
+        // The node recolouring reads the same source, so it can't disagree with the banner: #5 shows as the
+        // pending/next-up node while #2 stays a plain failed one.
+        #expect(model.nodes.first { $0.number == 5 }?.status == .ready)
+        #expect(model.nodes.first { $0.number == 2 }?.status == .failed)
+
+        // Stop cleans up the parked run task.
+        model.stop()
+        await model.runTask.value?.value
+        #expect(model.resumingIssue == nil)
+    }
+
     @Test("Stop during the wait cancels it, leaving the Issue a normal failed with its Retry")
     func stopDuringWaitLeavesIssueFailed() async throws {
         let database = try Self.makeDatabase()
@@ -322,7 +376,8 @@ struct ExecuteSessionLimitResumeTests {
     }
 
     private static func seedIssue(
-        _ database: any DatabaseWriter, workflowID: UUID, number: Int, dependencies: [Int]
+        _ database: any DatabaseWriter, workflowID: UUID, number: Int, dependencies: [Int],
+        status: String = "new", failureReason: String? = nil
     ) throws {
         try database.write { db in
             try WorkflowRow
@@ -333,8 +388,8 @@ struct ExecuteSessionLimitResumeTests {
             try IssueRow.insert {
                 IssueRow(
                     id: UUID(), workflowID: workflowID, number: number, title: "Issue \(number)",
-                    body: "Implement \(number).", dependencies: dependencies, status: "new",
-                    createdAt: fixedDate, updatedAt: fixedDate
+                    body: "Implement \(number).", dependencies: dependencies, status: status,
+                    failureReason: failureReason, createdAt: fixedDate, updatedAt: fixedDate
                 )
             }
             .execute(db)

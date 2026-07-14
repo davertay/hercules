@@ -35,7 +35,7 @@ public struct ExecuteView: View {
                 InvalidGraphView(message: message, issues: model.issues)
             } else {
                 VStack(spacing: 0) {
-                    if let resumingAt = model.resumingAt, let paused = model.haltingFailure {
+                    if let resumingAt = model.resumingAt, let paused = model.resumingIssue {
                         ResumeBanner(issue: paused, resumingAt: resumingAt) {
                             model.selectNode(paused.number)
                         }
