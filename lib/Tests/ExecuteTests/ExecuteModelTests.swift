@@ -133,7 +133,7 @@ struct ExecuteModelTests {
             ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
         }
 
-        func issue(_ number: Int, _ status: IssueRunStatus) -> IssueRow {
+        func issue(_ number: Int, _ status: IssueRow.Status) -> IssueRow {
             IssueRow(id: UUID(), workflowID: workflowID, number: number, status: status.rawValue,
                      createdAt: fixedDate, updatedAt: fixedDate)
         }

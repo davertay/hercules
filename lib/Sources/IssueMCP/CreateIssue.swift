@@ -57,11 +57,6 @@ public struct ProposeIssueArguments: Codable, Equatable, Sendable {
     }
 }
 
-/// Status raw values stamped on inserted Issues. `proposed` is a HITL fix awaiting approval; Execute's run
-/// loop only picks `new`, so a proposed Issue is inert until approved.
-public let newIssueStatus = "new"
-public let proposedIssueStatus = "proposed"
-
 /// `workflowID` comes from the launch context, not the arguments, so the model can't target another
 /// Workflow. Allocate's `create_issue` — the model assigns the `number` and the status is `new`.
 @discardableResult
@@ -76,13 +71,14 @@ public func createIssue(
         title: arguments.title,
         body: arguments.body,
         dependencies: arguments.dependencies,
-        status: newIssueStatus,
+        status: .new,
         into: database
     )
 }
 
 /// Validate's `propose_issue` — the host stamps `proposed` and assigns the next number atomically, so
-/// concurrent reviews can't collide on a number.
+/// concurrent reviews can't collide on a number. Execute's run loop only picks `new`, so a proposed
+/// Issue is inert until approved.
 @discardableResult
 public func proposeIssue(
     _ arguments: ProposeIssueArguments,
@@ -95,7 +91,7 @@ public func proposeIssue(
         title: arguments.title,
         body: arguments.body,
         dependencies: [],
-        status: proposedIssueStatus,
+        status: .proposed,
         into: database
     )
 }
@@ -110,7 +106,7 @@ func insertIssue(
     title: String,
     body: String,
     dependencies: [Int],
-    status: String,
+    status: IssueRow.Status,
     into database: any DatabaseWriter
 ) throws -> IssueRow {
     @Dependency(\.uuid) var uuid
@@ -133,7 +129,7 @@ func insertIssue(
             title: title,
             body: body,
             dependencies: dependencies,
-            status: status,
+            status: status.rawValue,
             createdAt: now,
             updatedAt: now
         )

@@ -166,7 +166,7 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
         title: String = "",
         body: String = "",
         dependencies: [Int] = [],
-        status: String = "new",
+        status: String = Status.new.rawValue,
         failureReason: String? = nil,
         createdAt: Date,
         updatedAt: Date,

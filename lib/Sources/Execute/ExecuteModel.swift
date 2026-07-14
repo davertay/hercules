@@ -213,7 +213,7 @@ public final class ExecuteModel {
 
     public func lastTurnAnswer(for issue: IssueRow) -> String? {
         guard
-            issue.status == IssueRunStatus.done.rawValue,
+            issue.statusValue == .done,
             let session = transcriptSession(for: issue),
             let answer = try? database.latestTurnFinalAnswer(sessionID: session.id),
             !answer.isEmpty
@@ -223,7 +223,7 @@ public final class ExecuteModel {
 
     public var haltingFailure: IssueRow? {
         issues
-            .filter { $0.status == IssueRunStatus.failed.rawValue }
+            .filter { $0.statusValue == .failed }
             .min { $0.number < $1.number }
     }
 
@@ -410,7 +410,7 @@ public final class ExecuteModel {
 
         while let next = readyIssue() {
             await runIssue(next)
-            if currentStatus(of: next.number) == IssueRunStatus.failed.rawValue {
+            if currentStatus(of: next.number) == .failed {
                 // A session-limit halt isn't the end of the run: wait out the reset, then re-run the Issue
                 // as a fresh session and continue downstream. Every other failure — and a wait cancelled by
                 // Stop — halts here with the Issue left `failed` for a manual Retry.
@@ -420,7 +420,7 @@ public final class ExecuteModel {
         }
 
         let remaining = (try? currentIssues()) ?? []
-        if !remaining.isEmpty, remaining.allSatisfy({ $0.status == IssueRunStatus.done.rawValue }) {
+        if !remaining.isEmpty, remaining.allSatisfy({ $0.statusValue == .done }) {
             try? database.completePhase(workflowID: workflowID, kind: .execute, id: uuid(), now: now)
         }
     }
@@ -455,9 +455,9 @@ public final class ExecuteModel {
     /// reflects the status `runIssue` just wrote, not the lazily-updated `issues` observation.
     private func readyIssue() -> IssueRow? {
         let issues = (try? currentIssues()) ?? []
-        let done = Set(issues.filter { $0.status == IssueRunStatus.done.rawValue }.map(\.number))
+        let done = Set(issues.filter { $0.statusValue == .done }.map(\.number))
         return issues
-            .filter { $0.status == "new" }
+            .filter { $0.statusValue == .new }
             .filter { $0.dependencies.allSatisfy(done.contains) }
             .min { $0.number < $1.number }
     }
@@ -484,8 +484,8 @@ public final class ExecuteModel {
         try database.read { db in try WorkflowIssuesRequest(workflowID: workflowID).fetch(db) }
     }
 
-    private func currentStatus(of number: Int) -> String? {
-        ((try? currentIssues()) ?? []).first { $0.number == number }?.status
+    private func currentStatus(of number: Int) -> IssueRow.Status? {
+        ((try? currentIssues()) ?? []).first { $0.number == number }?.statusValue
     }
 }
 

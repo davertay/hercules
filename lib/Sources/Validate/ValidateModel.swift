@@ -227,7 +227,7 @@ public final class ValidateModel {
     }
 
     public var canOpenPullRequest: Bool {
-        !isAnyRunning && !isOpeningPullRequest && !issues.isEmpty && issues.allSatisfy { $0.status == "done" }
+        !isAnyRunning && !isOpeningPullRequest && !issues.isEmpty && issues.allSatisfy { $0.statusValue == .done }
     }
 
     public func openPullRequest() async -> URL? {

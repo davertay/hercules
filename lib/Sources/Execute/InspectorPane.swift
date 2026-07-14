@@ -16,8 +16,8 @@ struct InspectorPane: View {
     let onApprove: (Int) -> Void
     let onDeny: (Int) -> Void
 
-    private var isFailed: Bool { issue?.status == IssueRunStatus.failed.rawValue }
-    private var isProposed: Bool { issue?.status == "proposed" }
+    private var isFailed: Bool { issue?.statusValue == .failed }
+    private var isProposed: Bool { issue?.statusValue == .proposed }
 
     var body: some View {
         if let issue {

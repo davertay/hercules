@@ -27,7 +27,7 @@ extension DatabaseWriter {
     public func setIssueStatus(
         workflowID: UUID,
         number: Int,
-        to status: IssueRunStatus,
+        to status: IssueRow.Status,
         failureReason: String? = nil,
         now: Date
     ) throws {
@@ -52,10 +52,10 @@ extension DatabaseWriter {
             try IssueRow
                 .where { $0.workflowID.eq(workflowID) }
                 .where { $0.number.eq(number) }
-                .where { $0.status.eq(IssueRunStatus.failed.rawValue) }
+                .where { $0.status.eq(IssueRow.Status.failed.rawValue) }
                 .where { !$0.isDeleted }
                 .update {
-                    $0.status = #bind("new")
+                    $0.status = IssueRow.Status.new.rawValue
                     $0.failureReason = #bind(String?.none)
                     $0.updatedAt = now
                 }
@@ -70,10 +70,10 @@ extension DatabaseWriter {
             try IssueRow
                 .where { $0.workflowID.eq(workflowID) }
                 .where { $0.number.eq(number) }
-                .where { $0.status.eq("proposed") }
+                .where { $0.status.eq(IssueRow.Status.proposed.rawValue) }
                 .where { !$0.isDeleted }
                 .update {
-                    $0.status = #bind("new")
+                    $0.status = IssueRow.Status.new.rawValue
                     $0.updatedAt = now
                 }
                 .execute(db)
@@ -87,7 +87,7 @@ extension DatabaseWriter {
             try IssueRow
                 .where { $0.workflowID.eq(workflowID) }
                 .where { $0.number.eq(number) }
-                .where { $0.status.eq("proposed") }
+                .where { $0.status.eq(IssueRow.Status.proposed.rawValue) }
                 .where { !$0.isDeleted }
                 .update {
                     $0.isDeleted = true
@@ -103,10 +103,10 @@ extension DatabaseWriter {
         try write { db in
             try IssueRow
                 .where { $0.workflowID.eq(workflowID) }
-                .where { $0.status.eq(IssueRunStatus.inProgress.rawValue) }
+                .where { $0.status.eq(IssueRow.Status.inProgress.rawValue) }
                 .where { !$0.isDeleted }
                 .update {
-                    $0.status = IssueRunStatus.failed.rawValue
+                    $0.status = IssueRow.Status.failed.rawValue
                     $0.failureReason = #bind("Interrupted — the run was stopped or the app quit while this Issue was in progress.")
                     $0.updatedAt = now
                 }
