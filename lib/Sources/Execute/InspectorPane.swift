@@ -1,8 +1,10 @@
 import Chat
+import DAGGraphUI
+import IssueGraph
 import SQLiteData
-import UISupport
 import Store
 import SwiftUI
+import UISupport
 
 struct InspectorPane: View {
     let issue: IssueRow?
@@ -17,6 +19,10 @@ struct InspectorPane: View {
     private var isFailed: Bool { issue?.status == IssueRunStatus.failed.rawValue }
     private var isProposed: Bool { issue?.status == "proposed" }
 
+    private var statusColor: Color {
+        StatusPalette.default.color(for: mapStatus(issue?.status ?? "new"))
+    }
+
     var body: some View {
         if let issue {
             ScrollView {
@@ -27,9 +33,12 @@ struct InspectorPane: View {
                             .foregroundStyle(.secondary)
                         Text(issue.title)
                             .font(.title3.weight(.semibold))
+                        Text(issue.status.capitalized)
+                            .font(.callout)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(statusColor.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
                     }
-                    LabeledContent("Status") { Text(issue.status) }
-                        .font(.callout)
                     if !issue.dependencies.isEmpty {
                         LabeledContent("Depends on") {
                             Text(issue.dependencies.map { "#\($0)" }.joined(separator: ", "))
@@ -83,3 +92,153 @@ struct InspectorPane: View {
         }
     }
 }
+
+fileprivate extension IssueRow {
+    var statusColor: Color {
+        StatusPalette.default.color(for: mapStatus(status))
+    }
+}
+
+#if DEBUG
+
+#Preview("No Issue") {
+    InspectorPane(
+        issue: nil,
+        failureReason: nil,
+        lastTurnAnswer: nil,
+        transcriptSession: nil,
+        transcriptDatabase: try! defaultDatabase(),
+        onRetry: { _ in },
+        onApprove: { _ in },
+        onDeny: { _ in }
+    )
+}
+
+#Preview("Empty") {
+    InspectorPane(
+        issue: IssueRow(
+            id: UUID(),
+            workflowID: UUID(),
+            number: 3,
+            title: "No Issue Content",
+            status: "new",
+            createdAt: Date(),
+            updatedAt: Date()
+        ),
+        failureReason: nil,
+        lastTurnAnswer: nil,
+        transcriptSession: nil,
+        transcriptDatabase: try! defaultDatabase(),
+        onRetry: { _ in },
+        onApprove: { _ in },
+        onDeny: { _ in }
+    )
+}
+
+#Preview("Ready") {
+    InspectorPane(
+        issue: IssueRow(
+            id: UUID(),
+            workflowID: UUID(),
+            number: 5,
+            title: "General Improvements",
+            body: """
+            ## What to build
+            Do whatever it takes to make the app better.
+            """,
+            dependencies: [2,3],
+            status: "ready",
+            createdAt: Date(),
+            updatedAt: Date()
+        ),
+        failureReason: nil,
+        lastTurnAnswer: nil,
+        transcriptSession: nil,
+        transcriptDatabase: try! defaultDatabase(),
+        onRetry: { _ in },
+        onApprove: { _ in },
+        onDeny: { _ in }
+    )
+}
+
+#Preview("Done") {
+    InspectorPane(
+        issue: IssueRow(
+            id: UUID(),
+            workflowID: UUID(),
+            number: 5,
+            title: "General Improvements",
+            body: """
+            ## What to build
+            Do whatever it takes to make the app better.
+            """,
+            dependencies: [2,3],
+            status: "done",
+            createdAt: Date(),
+            updatedAt: Date()
+        ),
+        failureReason: nil,
+        lastTurnAnswer: """
+            ## What I did
+            I made the app better.
+            """,
+        transcriptSession: nil,
+        transcriptDatabase: try! defaultDatabase(),
+        onRetry: { _ in },
+        onApprove: { _ in },
+        onDeny: { _ in }
+    )
+}
+
+#Preview("Failed") {
+    InspectorPane(
+        issue: IssueRow(
+            id: UUID(),
+            workflowID: UUID(),
+            number: 5,
+            title: "General Improvements",
+            body: """
+            ## What to build
+            Do whatever it takes to make the app better.
+            """,
+            dependencies: [2,3],
+            status: "failed",
+            createdAt: Date(),
+            updatedAt: Date()
+        ),
+        failureReason: "Everything is broken",
+        lastTurnAnswer: nil,
+        transcriptSession: nil,
+        transcriptDatabase: try! defaultDatabase(),
+        onRetry: { _ in },
+        onApprove: { _ in },
+        onDeny: { _ in }
+    )
+}
+
+#Preview("Proposed") {
+    InspectorPane(
+        issue: IssueRow(
+            id: UUID(),
+            workflowID: UUID(),
+            number: 5,
+            title: "Sketchy Idea",
+            body: """
+            ## Something Dubious
+            Probaly don't want this one.
+            """,
+            status: "proposed",
+            createdAt: Date(),
+            updatedAt: Date()
+        ),
+        failureReason: nil,
+        lastTurnAnswer: nil,
+        transcriptSession: nil,
+        transcriptDatabase: try! defaultDatabase(),
+        onRetry: { _ in },
+        onApprove: { _ in },
+        onDeny: { _ in }
+    )
+}
+
+#endif
