@@ -121,7 +121,7 @@ public final class DesignModel {
                 let before = artifactSnapshot(at: url)
                 try await engine.send(
                     Self.finalizationPrompt,
-                    overrideMCPServers: [Self.artifactServer(command: mcpServerCommand, artifactURL: url)]
+                    overrideMCPServers: [MCPServer.artifactWriter(command: mcpServerCommand, artifactURL: url)]
                 )
                 guard artifactWasWritten(at: url, since: before) else {
                     throw DesignError.summaryNotWritten
@@ -143,15 +143,6 @@ public final class DesignModel {
         workflowDirectory
             .appending(path: "phases/design", directoryHint: .isDirectory)
             .appending(path: "summary.md")
-    }
-
-    private static func artifactServer(command: String, artifactURL: URL) -> MCPServer {
-        MCPServer(
-            name: "hercules",
-            command: command,
-            args: ["--mcp-artifact-server", "--artifact-path", artifactURL.path],
-            tools: ["write_artifact"]
-        )
     }
 }
 

@@ -1,5 +1,6 @@
 import Foundation
 import MCP
+import Store
 
 // The stdio MCP server serving the `write_artifact` writer tool (ADR 0006): the app binary re-executed
 // with `--mcp-artifact-server --artifact-path <abs path>`. The destination path is a launch argument
@@ -7,7 +8,7 @@ import MCP
 // the issue server, this writer needs no `--db`/`--workflow-id`: it writes a file, not Store rows.
 
 let writeArtifactTool = Tool(
-    name: writeArtifactToolName,
+    name: HerculesMCP.writeArtifactToolName,
     description: """
         Save the current Phase's document. Call once with the complete markdown; the destination file is \
         fixed by the host, so you supply only the content.
@@ -28,7 +29,7 @@ let writeArtifactTool = Tool(
 /// returns a tool error rather than tearing down the connection.
 public func makeArtifactMCPServer(artifactPath: String) async -> Server {
     let server = Server(
-        name: "hercules",
+        name: HerculesMCP.serverName,
         version: "0.1.0",
         capabilities: .init(tools: .init(listChanged: false))
     )
@@ -63,9 +64,8 @@ public func makeArtifactMCPServer(artifactPath: String) async -> Server {
 }
 
 /// The `@main` re-exec branch, kept off the GUI path so the CLI invocation never initialises AppKit.
+/// The flags parsed here are the `HerculesMCP` contract the descriptors in `Store` are built from.
 public enum ArtifactMCPLaunch {
-    public static let subcommand = "--mcp-artifact-server"
-
     public struct Configuration: Equatable, Sendable {
         /// Absolute path the Phase's markdown Artifact is written to.
         public var artifactPath: String
@@ -77,8 +77,9 @@ public enum ArtifactMCPLaunch {
 
     /// Returns `nil` when the subcommand is absent (the GUI path) or its operand is missing.
     public static func parse(_ arguments: [String]) -> Configuration? {
-        guard arguments.contains(subcommand) else { return nil }
-        guard let artifactPath = mcpLaunchValue(of: "--artifact-path", in: arguments) else { return nil }
+        guard arguments.contains(HerculesMCP.artifactServerSubcommand) else { return nil }
+        guard let artifactPath = mcpLaunchValue(of: HerculesMCP.artifactPathFlag, in: arguments)
+        else { return nil }
         return Configuration(artifactPath: artifactPath)
     }
 

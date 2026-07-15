@@ -8,14 +8,8 @@ import Store
 // are launch arguments fixed by the app and invisible to the model, so a call can't write to another
 // Workflow.
 
-/// The Harness allowlist entry is the qualified `mcp__hercules__create_issue`.
-public let createIssueToolName = "create_issue"
-
-/// Validate's HITL proposal tool; allowlist entry `mcp__hercules__propose_issue`.
-public let proposeIssueToolName = "propose_issue"
-
 let proposeIssueTool = Tool(
-    name: proposeIssueToolName,
+    name: HerculesMCP.proposeIssueToolName,
     description: """
         Propose a fix as a HITL Issue in the current Workflow, for a human to approve before it runs. \
         Supply only the title and body — the Workflow, the Issue number, and its proposed status are \
@@ -38,7 +32,7 @@ let proposeIssueTool = Tool(
 )
 
 let createIssueTool = Tool(
-    name: createIssueToolName,
+    name: HerculesMCP.createIssueToolName,
     description: """
         Create one Allocate Issue in the current Workflow. Call once per Issue. The Issue's Workflow \
         is fixed by the host; you supply only the content.
@@ -77,7 +71,7 @@ public func makeIssueMCPServer(
     propose: Bool = false
 ) async -> Server {
     let server = Server(
-        name: "hercules",
+        name: HerculesMCP.serverName,
         version: "0.1.0",
         capabilities: .init(tools: .init(listChanged: false))
     )
@@ -126,11 +120,8 @@ public func makeIssueMCPServer(
 }
 
 /// The `@main` re-exec branch, kept off the GUI path so the CLI invocation never initialises AppKit.
+/// The flags parsed here are the `HerculesMCP` contract the descriptors in `Store` are built from.
 public enum IssueMCPLaunch {
-    public static let subcommand = "--mcp-issue-server"
-    /// Selects the `propose_issue` tool (host-numbered, `proposed`) over `create_issue`.
-    public static let proposeFlag = "--propose"
-
     public struct Configuration: Equatable, Sendable {
         /// Path to the Workflow's `workflow.sqlite` file.
         public var databasePath: String
@@ -147,16 +138,16 @@ public enum IssueMCPLaunch {
 
     /// Returns `nil` when the subcommand is absent (the GUI path) or its operands are missing/invalid.
     public static func parse(_ arguments: [String]) -> Configuration? {
-        guard arguments.contains(subcommand) else { return nil }
+        guard arguments.contains(HerculesMCP.issueServerSubcommand) else { return nil }
         guard
-            let databasePath = mcpLaunchValue(of: "--db", in: arguments),
-            let workflowIDString = mcpLaunchValue(of: "--workflow-id", in: arguments),
+            let databasePath = mcpLaunchValue(of: HerculesMCP.databaseFlag, in: arguments),
+            let workflowIDString = mcpLaunchValue(of: HerculesMCP.workflowIDFlag, in: arguments),
             let workflowID = UUID(uuidString: workflowIDString)
         else { return nil }
         return Configuration(
             databasePath: databasePath,
             workflowID: workflowID,
-            propose: arguments.contains(proposeFlag)
+            propose: arguments.contains(HerculesMCP.proposeFlag)
         )
     }
 

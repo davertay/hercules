@@ -464,7 +464,7 @@ public final class AllocateModel {
         let before = artifactSnapshot(at: url)
         try await prdEngine.send(
             regenerate ? Self.regeneratePRDPrompt : Self.prdPrompt,
-            overrideMCPServers: [Self.artifactServer(command: mcpServerCommand, artifactURL: url)]
+            overrideMCPServers: [MCPServer.artifactWriter(command: mcpServerCommand, artifactURL: url)]
         )
         guard artifactWasWritten(at: url, since: before) else {
             throw AllocateError.prdNotWritten
@@ -529,7 +529,7 @@ public final class AllocateModel {
                 try await engine.send(
                     Self.commitPrompt,
                     overrideMCPServers: [
-                        Self.issueServer(
+                        MCPServer.issueWriter(
                             command: mcpServerCommand,
                             workflowDirectory: workflowDirectory,
                             workflowID: workflowID
@@ -548,33 +548,6 @@ public final class AllocateModel {
             }
             engine.isRunning = false
         }
-    }
-
-    private static func issueServer(
-        command: String, workflowDirectory: URL, workflowID: UUID
-    ) -> MCPServer {
-        let databasePath = workflowDirectory.appendingPathComponent("workflow.sqlite").path
-        return MCPServer(
-            name: "hercules",
-            command: command,
-            args: [
-                "--mcp-issue-server",
-                "--db", databasePath,
-                "--workflow-id", workflowID.uuidString,
-            ],
-            tools: ["create_issue"]
-        )
-    }
-
-    /// The `write_artifact` writer the PRD Turn carries, pointed at `prd.md` — attached per-Turn, never
-    /// pinned, so only the PRD Turn can write it.
-    private static func artifactServer(command: String, artifactURL: URL) -> MCPServer {
-        MCPServer(
-            name: "hercules",
-            command: command,
-            args: ["--mcp-artifact-server", "--artifact-path", artifactURL.path],
-            tools: ["write_artifact"]
-        )
     }
 
     /// The PRD bridge's fixed destination — also the `write_artifact` server's `--artifact-path`. It is a

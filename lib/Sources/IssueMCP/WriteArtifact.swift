@@ -3,9 +3,6 @@ import MCP
 
 // The seam below the MCP transport, driven directly by tests without real stdio.
 
-/// The Harness allowlist entry is the qualified `mcp__hercules__write_artifact`.
-public let writeArtifactToolName = "write_artifact"
-
 /// The `write_artifact` tool's arguments: the model supplies only the markdown content. The destination
 /// path is fixed by the host launch argument (ADR 0006), never a tool argument, so a call can't redirect
 /// the write.

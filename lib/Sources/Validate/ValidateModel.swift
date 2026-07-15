@@ -207,7 +207,12 @@ public final class ValidateModel {
                     sessionID: sessionID,
                     skillFiles: [resource.fileUrl],
                     addDirs: [resource.folderUrl],
-                    mcpServers: [proposeServer()]
+                    mcpServers: [
+                        MCPServer.issueWriter(
+                            command: mcpServerCommand, workflowDirectory: workflowDirectory,
+                            workflowID: workflowID, propose: true
+                        )
+                    ]
                 )
             )
             // The Summary is the Turn's final answer (same mechanism as Design/PRD finalization), but the
@@ -253,21 +258,6 @@ public final class ValidateModel {
 
     public func dismissPullRequestConfirmation() {
         pullRequestConfirmation = nil
-    }
-
-    private func proposeServer() -> MCPServer {
-        let databasePath = workflowDirectory.appendingPathComponent("workflow.sqlite").path
-        return MCPServer(
-            name: "hercules",
-            command: mcpServerCommand,
-            args: [
-                "--mcp-issue-server",
-                "--propose",
-                "--db", databasePath,
-                "--workflow-id", workflowID.uuidString,
-            ],
-            tools: ["propose_issue"]
-        )
     }
 
     public nonisolated func cancelAll() {

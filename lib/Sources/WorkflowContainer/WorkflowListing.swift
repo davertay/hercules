@@ -33,7 +33,7 @@ public func listWorkflows(root: URL = defaultWorkflowsRoot()) -> [WorkflowSummar
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: directory.path, isDirectory: &isDirectory),
               isDirectory.boolValue,
-              fileManager.fileExists(atPath: directory.appendingPathComponent("workflow.sqlite").path)
+              fileManager.fileExists(atPath: workflowDatabaseURL(in: directory).path)
         else { continue }
 
         guard let database = try? openWorkflowDatabase(at: directory) else { continue }

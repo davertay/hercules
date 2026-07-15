@@ -1,11 +1,17 @@
 import Foundation
 import SQLiteData
 
+/// The Workflow's SQLite file within its directory — the one derivation shared by the opener, the
+/// launcher's listing scan, and the issue server's `--db` launch argument.
+public func workflowDatabaseURL(in directory: URL) -> URL {
+    directory.appendingPathComponent("workflow.sqlite")
+}
+
 /// Creates or opens a Workflow's SQLite database, applying migrations idempotently — safe on every
 /// launch.
 public func openWorkflowDatabase(at directory: URL) throws -> any DatabaseWriter {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let path = directory.appendingPathComponent("workflow.sqlite").path
+    let path = workflowDatabaseURL(in: directory).path
     // The create-issue MCP server writes Issues from a separate process (ADR 0006) while the app streams
     // the live transcript into the same WAL database. SQLite allows only one writer at a time, so without
     // a busy timeout a contending `BEGIN IMMEDIATE` fails outright with "database is locked". Wait and
