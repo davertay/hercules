@@ -52,6 +52,21 @@ final class LiveAgentClient: Sendable {
         return (binary, config.extraArguments)
     }
 
+    /// Marks the Session busy for the duration of `body`, throwing `AgentError.sessionBusy` when it
+    /// already is — one Turn per Session at a time, whichever surface asks.
+    private func withBusySession<T: Sendable>(
+        _ id: Session.ID, _ body: () async throws -> T
+    ) async throws -> T {
+        let alreadyBusy = busySessions.withLock { sessions -> Bool in
+            guard !sessions.contains(id) else { return true }
+            sessions.insert(id)
+            return false
+        }
+        if alreadyBusy { throw AgentError.sessionBusy(id: id) }
+        defer { _ = busySessions.withLock { $0.remove(id) } }
+        return try await body()
+    }
+
     func send(_ request: SendRequest) async throws -> Session {
         let (binaryURL, extraArguments) = resolveHarness()
         guard FileManager.default.isExecutableFile(atPath: binaryURL.path) else {
@@ -60,18 +75,11 @@ final class LiveAgentClient: Sendable {
 
         let session = request.session
 
-        let alreadyBusy = busySessions.withLock { sessions -> Bool in
-            guard !sessions.contains(session.id) else { return true }
-            sessions.insert(session.id)
-            return false
+        return try await withBusySession(session.id) {
+            let runner = HarnessRunner(binaryURL: binaryURL, extraArguments: extraArguments)
+            try await runner.run(request: request)
+            return session
         }
-        if alreadyBusy { throw AgentError.sessionBusy(id: session.id) }
-        defer { _ = busySessions.withLock { $0.remove(session.id) } }
-
-        let runner = HarnessRunner(binaryURL: binaryURL, extraArguments: extraArguments)
-        try await runner.run(request: request)
-
-        return session
     }
 
     func start(_ request: StartRequest) async throws -> Session {
@@ -98,17 +106,10 @@ final class LiveAgentClient: Sendable {
             mcpServers: request.mcpServers
         )
 
-        let alreadyBusy = busySessions.withLock { sessions -> Bool in
-            guard !sessions.contains(sessionId) else { return true }
-            sessions.insert(sessionId)
-            return false
+        return try await withBusySession(sessionId) {
+            let runner = HarnessRunner(binaryURL: binaryURL, extraArguments: extraArguments)
+            try await runner.run(request: request, sessionId: sessionId)
+            return session
         }
-        if alreadyBusy { throw AgentError.sessionBusy(id: sessionId) }
-        defer { _ = busySessions.withLock { $0.remove(sessionId) } }
-
-        let runner = HarnessRunner(binaryURL: binaryURL, extraArguments: extraArguments)
-        try await runner.run(request: request, sessionId: sessionId)
-
-        return session
     }
 }
