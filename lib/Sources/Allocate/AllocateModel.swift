@@ -126,12 +126,13 @@ public final class AllocateModel {
     @ObservationIgnored
     @Fetch var prdActivityCounts: ActivityCounts?
 
-    /// Ticks once a second only while the PRD checkpoint runs, so the panel's elapsed clock counts up. Read
-    /// by `prdActivity` when running; an idle Allocate runs no timer. Mirrors `ExecuteModel`'s DAG clock.
-    public private(set) var clock: Date = .distantPast
-
+    /// Ticks once a second only while the PRD checkpoint runs — the span the progress panel is on
+    /// screen — so its elapsed counts up. Read by `prdActivity` when running; an idle Allocate runs no
+    /// timer. The same shared `TickClock` behind the Execute/Validate DAG cards.
     @ObservationIgnored
-    private let tickTask = LockIsolated<Task<Void, Never>?>(nil)
+    private let ticker = TickClock()
+
+    public var clock: Date { ticker.now }
 
     @ObservationIgnored
     var runTask: Task<Void, Never>?
@@ -270,7 +271,7 @@ public final class AllocateModel {
         engine.cancel()
         smallEngine.cancel()
         prdEngine.cancel()
-        stopClock()
+        ticker.stop()
     }
 
     public var isProposeAvailable: Bool { !engine.isRunning && !prdEngine.isRunning }
@@ -420,39 +421,21 @@ public final class AllocateModel {
         prdEngine.isRunning = true
         // The clock ticks only across the PRD-Turn window — the span the progress panel is on screen — so
         // its elapsed counts up; it stops the moment the checkpoint finalizes and the auto-propose begins.
-        startClock()
+        ticker.start()
 
         runTask = Task { [self] in
             do {
                 try await runPRDTurn(regenerate: regenerate)
                 prdEngine.isRunning = false
-                stopClock()
+                ticker.stop()
                 try await runPropose()
             } catch {
                 engine.errorText = error.localizedDescription
             }
             prdEngine.isRunning = false
-            stopClock()
+            ticker.stop()
             engine.isRunning = false
         }
-    }
-
-    /// Ticks `clock` once a second so the progress panel's live elapsed advances while the checkpoint runs.
-    /// One timer for the window, cancelled when it ends — mirrors `ExecuteModel`'s DAG clock.
-    private func startClock() {
-        clock = now
-        let task = Task { [self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                clock = now
-            }
-        }
-        tickTask.setValue(task)
-    }
-
-    private func stopClock() {
-        tickTask.value?.cancel()
-        tickTask.setValue(nil)
     }
 
     /// The PRD Turn: resume the live grill under the to-prd Skill and write `prd.md` via a per-Turn

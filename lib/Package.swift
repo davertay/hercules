@@ -165,6 +165,7 @@ let package = Package(
             dependencies: [
                 "IssueGraph",
                 "Store",
+                .product(name: "Dependencies", package: "swift-dependencies"),
             ]
         ),
         .testTarget(

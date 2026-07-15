@@ -23,10 +23,12 @@ public final class ExecuteModel {
     @ObservationIgnored
     @Fetch var activityCounts: [Int: ActivityCounts] = [:]
 
-    public private(set) var clock: Date = .distantPast
-
+    /// The shared once-a-second ticker whose tick in-progress cards' elapsed counts up on. One timer
+    /// for the whole run, stopped when it ends — an idle window runs no timer at all.
     @ObservationIgnored
-    let tickTask = LockIsolated<Task<Void, Never>?>(nil)
+    private let ticker = TickClock()
+
+    public var clock: Date { ticker.now }
 
     public var selectedID: Int?
 
@@ -239,32 +241,14 @@ public final class ExecuteModel {
     public func start() {
         guard canRun else { return }
         isRunning = true
-        startClock()
+        ticker.start()
         let task = Task { [self] in
             await run()
             isRunning = false
             runTask.setValue(nil)
-            stopClock()
+            ticker.stop()
         }
         runTask.setValue(task)
-    }
-
-    /// Advances `clock` once a second while a run is underway, so in-progress cards' elapsed counts up.
-    /// One timer for the whole run, cancelled when it ends — an idle window runs no timer at all.
-    private func startClock() {
-        clock = now
-        let task = Task { [self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                clock = now
-            }
-        }
-        tickTask.setValue(task)
-    }
-
-    private func stopClock() {
-        tickTask.value?.cancel()
-        tickTask.setValue(nil)
     }
 
     public func stop() {
@@ -275,7 +259,7 @@ public final class ExecuteModel {
     /// which leaves the worked Issue `failed`.
     public nonisolated func cancelRun() {
         runTask.value?.cancel()
-        tickTask.value?.cancel()
+        ticker.stop()
     }
 
     /// Runs one Issue as a behind-the-scenes write agent and writes its status directly via the Store

@@ -23,10 +23,12 @@ public final class ValidateModel {
     @ObservationIgnored
     @Fetch var reviewActivity: [String: ActivityCounts] = [:]
 
-    public private(set) var clock: Date = .distantPast
-
+    /// The shared once-a-second ticker behind the Persona cards' live elapsed. Started on each Persona
+    /// run (a start while ticking just re-anchors) and stopped once every review has finished.
     @ObservationIgnored
-    let tickTask = LockIsolated<Task<Void, Never>?>(nil)
+    private let ticker = TickClock()
+
+    public var clock: Date { ticker.now }
 
     public var selectedPersona: ReviewPersona?
 
@@ -160,7 +162,7 @@ public final class ValidateModel {
 
     public func run(_ persona: ReviewPersona) {
         guard canRun(persona) else { return }
-        startClockIfNeeded()
+        ticker.start()
         let task = Task { [self] in
             await review(persona)
             runTasks.withValue { $0[persona] = nil }
@@ -169,22 +171,9 @@ public final class ValidateModel {
         runTasks.withValue { $0[persona] = task }
     }
 
-    private func startClockIfNeeded() {
-        clock = now
-        guard tickTask.value == nil else { return }
-        let task = Task { [self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                clock = now
-            }
-        }
-        tickTask.setValue(task)
-    }
-
     private func stopClockIfIdle() {
         guard !isAnyRunning else { return }
-        tickTask.value?.cancel()
-        tickTask.setValue(nil)
+        ticker.stop()
     }
 
     func review(_ persona: ReviewPersona) async {
@@ -264,6 +253,6 @@ public final class ValidateModel {
         runTasks.withValue { tasks in
             for task in tasks.values { task.cancel() }
         }
-        tickTask.value?.cancel()
+        ticker.stop()
     }
 }
