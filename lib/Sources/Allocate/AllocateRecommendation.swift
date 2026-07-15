@@ -40,7 +40,11 @@ public struct AllocateRecommendation: Equatable, Sendable {
     /// The sentinel: a trivial single-boolean carrier the grill appends to its closing message, e.g.
     /// `<!-- prd_recommended: true -->`. Matched leniently — any surrounding text, `:` or `=`, any casing —
     /// so a lightly reworded closing line still parses; `true` → the PRD/big path, `false` → the small path.
-    private static let sentinelRegex = /prd_recommended\s*[:=]\s*(true|false)/.ignoresCase()
+    /// Computed because `Regex` isn't `Sendable`, so a stored static wouldn't be concurrency-safe here
+    /// (its old home compiled only by riding the model's `@MainActor` isolation).
+    private static var sentinelRegex: Regex<(Substring, Substring)> {
+        /prd_recommended\s*[:=]\s*(true|false)/.ignoresCase()
+    }
 
     /// The `prd_recommended` boolean carried by the text, or `nil` when it carries no sentinel.
     static func parsePRDRecommended(from text: String) -> Bool? {
