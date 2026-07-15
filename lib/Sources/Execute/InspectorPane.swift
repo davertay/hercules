@@ -56,9 +56,11 @@ struct InspectorPane: View {
                         )
                     }
                     if isFailed {
-                        FailureCallout(reason: failureReason) {
-                            onRetry(issue.number)
-                        }
+                        FailureCallout(
+                            title: "Run failed",
+                            reason: failureReason ?? "The run failed for an unknown reason.",
+                            retry: { onRetry(issue.number) }
+                        )
                     }
                     if let lastTurnAnswer {
                         Divider()

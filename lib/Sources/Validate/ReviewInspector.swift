@@ -36,7 +36,7 @@ struct ReviewInspector: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if status == .failed, let reason = review?.failureReason {
-                        FailureCallout(reason: reason)
+                        FailureCallout(title: "Review failed", reason: reason)
                     }
                     if let summary = review?.summary, !summary.isEmpty {
                         Divider()
