@@ -89,15 +89,6 @@ extension DatabaseWriter {
 }
 
 extension DatabaseReader {
-    public func latestFinalAnswer(forSession sessionID: UUID) throws -> String? {
-        try read { db in
-            try TurnRow
-                .where { $0.sessionID.eq(sessionID) }
-                .order { $0.createdAt.desc() }
-                .fetchOne(db)
-        }?.finalAnswer
-    }
-
     /// The file Artifact path recorded on `kind`'s completed, non-deleted Phase row, or `nil` when that
     /// Phase hasn't completed or wrote no Artifact. The single completed-Phase lookup shared by every
     /// reader; callers decide whether absence is an error (Allocate/PRD) or merely best-effort (Execute).

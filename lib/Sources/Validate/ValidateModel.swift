@@ -217,7 +217,7 @@ public final class ValidateModel {
             )
             // The Summary is the Turn's final answer (same mechanism as Design/PRD finalization), but the
             // sink is the row's `summary` column rather than a markdown Artifact.
-            let summary = try? database.latestFinalAnswer(forSession: sessionID)
+            let summary = try? database.latestTurnFinalAnswer(sessionID: sessionID)
             try? database.upsertReview(
                 workflowID: workflowID, kind: kind, to: .reviewed, summary: summary ?? nil, now: now
             )

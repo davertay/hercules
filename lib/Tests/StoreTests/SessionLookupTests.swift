@@ -39,6 +39,57 @@ struct SessionLookupTests {
         #expect(try database.session(forIssue: 7, workflowID: workflowID) == nil)
     }
 
+    // MARK: - latestTurnFinalAnswer
+
+    @Test("Returns the most recent Turn's answer")
+    func latestTurnFinalAnswerReturnsMostRecentTurnsAnswer() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        let sessionID = UUID(10)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedSession(
+            database, id: sessionID, workflowID: workflowID, issueNumber: nil, at: Self.fixedDate
+        )
+        try Self.seedTurn(database, id: UUID(20), sessionID: sessionID, answer: "# First", at: Self.fixedDate)
+        try Self.seedTurn(
+            database, id: UUID(21), sessionID: sessionID, answer: "# Second",
+            at: Self.fixedDate.addingTimeInterval(60)
+        )
+
+        #expect(try database.latestTurnFinalAnswer(sessionID: sessionID) == "# Second")
+    }
+
+    @Test("Returns nil when the Session has no Turn")
+    func latestTurnFinalAnswerIsNilWhenSessionHasNoTurn() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        let sessionID = UUID(10)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedSession(
+            database, id: sessionID, workflowID: workflowID, issueNumber: nil, at: Self.fixedDate
+        )
+
+        #expect(try database.latestTurnFinalAnswer(sessionID: sessionID) == nil)
+    }
+
+    @Test("Skips a soft-deleted Turn")
+    func latestTurnFinalAnswerSkipsSoftDeletedTurn() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        let sessionID = UUID(10)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedSession(
+            database, id: sessionID, workflowID: workflowID, issueNumber: nil, at: Self.fixedDate
+        )
+        try Self.seedTurn(database, id: UUID(20), sessionID: sessionID, answer: "# Kept", at: Self.fixedDate)
+        try Self.seedTurn(
+            database, id: UUID(21), sessionID: sessionID, answer: "# Deleted",
+            at: Self.fixedDate.addingTimeInterval(60), isDeleted: true
+        )
+
+        #expect(try database.latestTurnFinalAnswer(sessionID: sessionID) == "# Kept")
+    }
+
     // MARK: - Helpers
 
     private static func makeDatabase() throws -> any DatabaseWriter {
@@ -65,6 +116,21 @@ struct SessionLookupTests {
                 SessionRow(
                     id: id, workflowID: workflowID, worktreePath: "/worktree", mode: "write",
                     kind: kind.rawValue, issueNumber: issueNumber, createdAt: createdAt, updatedAt: createdAt
+                )
+            }
+            .execute(db)
+        }
+    }
+
+    private static func seedTurn(
+        _ database: any DatabaseWriter, id: UUID, sessionID: UUID, answer: String,
+        at createdAt: Date, isDeleted: Bool = false
+    ) throws {
+        try database.write { db in
+            try TurnRow.insert {
+                TurnRow(
+                    id: id, sessionID: sessionID, finalAnswer: answer,
+                    createdAt: createdAt, updatedAt: createdAt, isDeleted: isDeleted
                 )
             }
             .execute(db)

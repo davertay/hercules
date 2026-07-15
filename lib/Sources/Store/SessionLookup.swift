@@ -53,7 +53,8 @@ extension DatabaseReader {
 
     /// The most recent non-deleted Turn's `finalAnswer` for a Session, or `nil` — the agent's parting
     /// words. Execute uses it to explain why an Issue produced no commit (e.g. "I'm blocked …"), since a
-    /// cleanly-finished no-op Turn isn't an error and so escapes `IssueFailureReasonsRequest`.
+    /// cleanly-finished no-op Turn isn't an error and so escapes `IssueFailureReasonsRequest`; Validate
+    /// captures it as a Persona's Summary after the review Turn.
     public func latestTurnFinalAnswer(sessionID: UUID) throws -> String? {
         try read { db in
             try TurnRow

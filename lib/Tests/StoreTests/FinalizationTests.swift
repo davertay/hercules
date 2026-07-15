@@ -77,40 +77,6 @@ struct FinalizationTests {
         #expect(phases.first?.artifactPath == nil)
     }
 
-    // MARK: - latestFinalAnswer
-
-    @Test func latestFinalAnswerReturnsMostRecentTurnsAnswer() throws {
-        let database = try Self.makeDatabase()
-        let sessionID = UUID(10)
-        try Self.seedSession(database, sessionID: sessionID)
-        try database.write { db in
-            try TurnRow.insert {
-                TurnRow(
-                    id: UUID(20), sessionID: sessionID, finalAnswer: "# First",
-                    createdAt: Self.fixedDate, updatedAt: Self.fixedDate
-                )
-            }
-            .execute(db)
-            try TurnRow.insert {
-                TurnRow(
-                    id: UUID(21), sessionID: sessionID, finalAnswer: "# Second",
-                    createdAt: Self.fixedDate.addingTimeInterval(60), updatedAt: Self.fixedDate
-                )
-            }
-            .execute(db)
-        }
-
-        #expect(try database.latestFinalAnswer(forSession: sessionID) == "# Second")
-    }
-
-    @Test func latestFinalAnswerIsNilWhenSessionHasNoTurn() throws {
-        let database = try Self.makeDatabase()
-        let sessionID = UUID(10)
-        try Self.seedSession(database, sessionID: sessionID)
-
-        #expect(try database.latestFinalAnswer(forSession: sessionID) == nil)
-    }
-
     // MARK: - Helpers
 
     private static func makeDatabase() throws -> any DatabaseWriter {
@@ -123,20 +89,6 @@ struct FinalizationTests {
         try database.write { db in
             try WorkflowRow.insert {
                 WorkflowRow(id: workflowID, repoPath: "/repo", createdAt: fixedDate, updatedAt: fixedDate)
-            }
-            .execute(db)
-        }
-    }
-
-    private static func seedSession(_ database: any DatabaseWriter, sessionID: UUID) throws {
-        let workflowID = UUID(1)
-        try seedWorkflow(database, workflowID: workflowID)
-        try database.write { db in
-            try SessionRow.insert {
-                SessionRow(
-                    id: sessionID, workflowID: workflowID, worktreePath: "/repo", mode: "readOnly",
-                    kind: "design", createdAt: fixedDate, updatedAt: fixedDate
-                )
             }
             .execute(db)
         }
