@@ -383,16 +383,8 @@ public final class AllocateModel {
     /// thereafter), reading the already-written `prd.md` and `summary.md` again.
     public func propose() {
         guard isProposeAvailable else { return }
-        engine.errorText = nil
-        engine.isRunning = true
-
-        runTask = Task { [self] in
-            do {
-                try await runPropose()
-            } catch {
-                engine.errorText = error.localizedDescription
-            }
-            engine.isRunning = false
+        runTask = engine.run { [self] in
+            try await runPropose()
         }
     }
 
@@ -415,26 +407,23 @@ public final class AllocateModel {
     /// `engine.errorText` and short-circuits before propose — the prior Issues are never touched.
     private func runBridge(regenerate: Bool, available: Bool) {
         guard available else { return }
-        engine.errorText = nil
         prdEngine.errorText = nil
-        engine.isRunning = true
         prdEngine.isRunning = true
         // The clock ticks only across the PRD-Turn window — the span the progress panel is on screen — so
         // its elapsed counts up; it stops the moment the checkpoint finalizes and the auto-propose begins.
         ticker.start()
 
-        runTask = Task { [self] in
-            do {
-                try await runPRDTurn(regenerate: regenerate)
+        runTask = engine.run { [self] in
+            // The PRD-Turn window — its flag and clock — ends before propose begins; `defer` also
+            // covers a throw from either step.
+            defer {
                 prdEngine.isRunning = false
                 ticker.stop()
-                try await runPropose()
-            } catch {
-                engine.errorText = error.localizedDescription
             }
+            try await runPRDTurn(regenerate: regenerate)
             prdEngine.isRunning = false
             ticker.stop()
-            engine.isRunning = false
+            try await runPropose()
         }
     }
 
@@ -471,16 +460,8 @@ public final class AllocateModel {
     /// every proposal Turn; only `acceptAndWrite()` commits.
     public func carve() {
         guard isCarveAvailable else { return }
-        smallEngine.errorText = nil
-        smallEngine.isRunning = true
-
-        runTask = Task { [self] in
-            do {
-                try await smallEngine.send(Self.carvePrompt)
-            } catch {
-                smallEngine.errorText = error.localizedDescription
-            }
-            smallEngine.isRunning = false
+        runTask = smallEngine.run { [self] in
+            try await smallEngine.send(Self.carvePrompt)
         }
     }
 
@@ -503,33 +484,25 @@ public final class AllocateModel {
     public func acceptAndWrite() {
         guard isAcceptAvailable else { return }
         let engine = activeEngine
-        engine.errorText = nil
-        engine.isRunning = true
-
-        runTask = Task { [self] in
-            do {
-                let priorIDs = Set(try currentIssues().map(\.id))
-                try await engine.send(
-                    Self.commitPrompt,
-                    overrideMCPServers: [
-                        MCPServer.issueWriter(
-                            command: mcpServerCommand,
-                            workflowDirectory: workflowDirectory,
-                            workflowID: workflowID
-                        )
-                    ]
-                )
-                let newWrite = try currentIssues().filter { !priorIDs.contains($0.id) }
-                if !newWrite.isEmpty {
-                    try database.clearIssues(ids: priorIDs, workflowID: workflowID, now: now)
-                    try database.completePhase(
-                        workflowID: workflowID, kind: .allocate, id: uuid(), now: now
+        runTask = engine.run { [self] in
+            let priorIDs = Set(try currentIssues().map(\.id))
+            try await engine.send(
+                Self.commitPrompt,
+                overrideMCPServers: [
+                    MCPServer.issueWriter(
+                        command: mcpServerCommand,
+                        workflowDirectory: workflowDirectory,
+                        workflowID: workflowID
                     )
-                }
-            } catch {
-                engine.errorText = error.localizedDescription
+                ]
+            )
+            let newWrite = try currentIssues().filter { !priorIDs.contains($0.id) }
+            if !newWrite.isEmpty {
+                try database.clearIssues(ids: priorIDs, workflowID: workflowID, now: now)
+                try database.completePhase(
+                    workflowID: workflowID, kind: .allocate, id: uuid(), now: now
+                )
             }
-            engine.isRunning = false
         }
     }
 

@@ -157,11 +157,22 @@ public final class ChatEngine {
         guard !prompt.isEmpty, !isRunning else { return }
         draftText = ""
         onSend?()
+        runTask = run { [self] in
+            try await send(prompt)
+        }
+    }
+
+    /// Runs one orchestration under the engine's run lifecycle — the wrapper every button-triggered
+    /// Turn shares: clears `errorText`, raises `isRunning`, lands a thrown error's description on
+    /// `errorText`, and lowers the flag once the work ends. Returns the task so the host can retain
+    /// it; storing it in ``runTask`` (as ``submit()`` does) additionally routes it through ``cancel()``.
+    @discardableResult
+    public func run(_ operation: @escaping @MainActor () async throws -> Void) -> Task<Void, Never> {
         errorText = nil
         isRunning = true
-        runTask = Task { [self] in
+        return Task {
             do {
-                try await send(prompt)
+                try await operation()
             } catch {
                 errorText = error.localizedDescription
             }

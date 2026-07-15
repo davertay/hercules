@@ -112,30 +112,22 @@ public final class DesignModel {
     /// untouched and surfaces an error instead of falsely completing.
     public func generateSummary() {
         guard engine.session != nil, !engine.isRunning else { return }
-        engine.errorText = nil
-        engine.isRunning = true
-
-        runTask = Task { [self] in
-            do {
-                let url = summaryURL()
-                let before = artifactSnapshot(at: url)
-                try await engine.send(
-                    Self.finalizationPrompt,
-                    overrideMCPServers: [MCPServer.artifactWriter(command: mcpServerCommand, artifactURL: url)]
-                )
-                guard artifactWasWritten(at: url, since: before) else {
-                    throw DesignError.summaryNotWritten
-                }
-                try database.completePhase(
-                    workflowID: workflowID, kind: .design, artifactPath: url.path,
-                    id: uuid(), now: now
-                )
-                // Reveal the banner again; `summarySavedURL` now reads the freshly persisted row.
-                summaryDismissed = false
-            } catch {
-                engine.errorText = error.localizedDescription
+        runTask = engine.run { [self] in
+            let url = summaryURL()
+            let before = artifactSnapshot(at: url)
+            try await engine.send(
+                Self.finalizationPrompt,
+                overrideMCPServers: [MCPServer.artifactWriter(command: mcpServerCommand, artifactURL: url)]
+            )
+            guard artifactWasWritten(at: url, since: before) else {
+                throw DesignError.summaryNotWritten
             }
-            engine.isRunning = false
+            try database.completePhase(
+                workflowID: workflowID, kind: .design, artifactPath: url.path,
+                id: uuid(), now: now
+            )
+            // Reveal the banner again; `summarySavedURL` now reads the freshly persisted row.
+            summaryDismissed = false
         }
     }
 
