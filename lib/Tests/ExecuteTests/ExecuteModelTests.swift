@@ -19,7 +19,11 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: UUID(0), database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: UUID(0), database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         #expect(model.isEmpty)
@@ -35,7 +39,11 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
         try await model.$issues.load()
 
@@ -68,7 +76,11 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
         try await model.$issues.load()
 
@@ -87,7 +99,11 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: UUID(0), database: database, worktree: worktree, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: UUID(0), database: database,
+                worktree: worktree,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         #expect(!model.worktreeMissing)
@@ -103,7 +119,11 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: UUID(0), database: database, worktree: worktree, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: UUID(0), database: database,
+                worktree: worktree,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         #expect(model.worktreeMissing)
@@ -130,7 +150,11 @@ struct ExecuteModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         func issue(_ number: Int, _ status: IssueRow.Status) -> IssueRow {

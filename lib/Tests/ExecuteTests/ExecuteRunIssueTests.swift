@@ -49,7 +49,11 @@ struct ExecuteRunIssueTests {
             // HEAD advances across the run, standing in for the agent's commit so the gate passes.
             $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 2))
@@ -102,10 +106,11 @@ struct ExecuteRunIssueTests {
             }
             $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
         } operation: {
-            ExecuteModel(
+            ExecuteModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
-                worktree: FileManager.default.temporaryDirectory, workflowDirectory: workflowDirectory
-            )
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: workflowDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -133,11 +138,11 @@ struct ExecuteRunIssueTests {
             }
             $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
         } operation: {
-            ExecuteModel(
+            ExecuteModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: Self.makeWorkflowDirectory()
-            )
+                workflowDirectory: Self.makeWorkflowDirectory(), mcpServerCommand: "hercules"
+            ))
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -170,10 +175,11 @@ struct ExecuteRunIssueTests {
             }
             $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
         } operation: {
-            ExecuteModel(
+            ExecuteModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
-                worktree: FileManager.default.temporaryDirectory, workflowDirectory: workflowDirectory
-            )
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: workflowDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -199,7 +205,11 @@ struct ExecuteRunIssueTests {
                 throw AgentError.cancelled
             }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -230,7 +240,11 @@ struct ExecuteRunIssueTests {
             // HEAD is constant across the run: the agent committed nothing.
             $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -256,7 +270,11 @@ struct ExecuteRunIssueTests {
             $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
             $0.worktreeClient.isDirty = { @Sendable _ in false }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -282,7 +300,11 @@ struct ExecuteRunIssueTests {
             $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
             $0.worktreeClient.isDirty = { @Sendable _ in true }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
@@ -313,7 +335,11 @@ struct ExecuteRunIssueTests {
             // Reading HEAD throws — we can't confirm work, so the run must not reach `done`.
             $0.worktreeClient.headSHA = { @Sendable _ in throw AgentError.cancelled }
         } operation: {
-            ExecuteModel(workflowID: workflowID, database: database, worktree: FileManager.default.temporaryDirectory, workflowDirectory: FileManager.default.temporaryDirectory)
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
 
         let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))

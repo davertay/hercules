@@ -38,11 +38,11 @@ struct DesignModelTests {
                 )
             }
         } operation: {
-            DesignModel(
-                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
-                workflowDirectory: Self.makeWorkflowDirectory(),
-                mcpServerCommand: mcpServerCommand, database: database
-            )
+            DesignModel(context: WorkflowContext(
+                workflowID: UUID(-1), database: database,
+                worktree: URL(fileURLWithPath: "/repo"),
+                workflowDirectory: Self.makeWorkflowDirectory(), mcpServerCommand: mcpServerCommand
+            ))
         }
 
         model.engine.draftText = "What are we building?"
@@ -68,11 +68,11 @@ struct DesignModelTests {
                 Session(id: Session.ID(rawValue: UUID(100)), worktree: request.worktree, mode: request.mode, kind: request.kind)
             }
         } operation: {
-            DesignModel(
-                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
-                workflowDirectory: Self.makeWorkflowDirectory(),
-                mcpServerCommand: mcpServerCommand, database: database
-            )
+            DesignModel(context: WorkflowContext(
+                workflowID: UUID(-1), database: database,
+                worktree: URL(fileURLWithPath: "/repo"),
+                workflowDirectory: Self.makeWorkflowDirectory(), mcpServerCommand: mcpServerCommand
+            ))
         }
         #expect(!model.isGenerateSummaryAvailable)
 
@@ -120,11 +120,11 @@ struct DesignModelTests {
                 return request.session
             }
         } operation: {
-            DesignModel(
-                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
-                workflowDirectory: workflowDirectory,
-                mcpServerCommand: mcpServerCommand, database: database
-            )
+            DesignModel(context: WorkflowContext(
+                workflowID: UUID(-1), database: database,
+                worktree: URL(fileURLWithPath: "/repo"),
+                workflowDirectory: workflowDirectory, mcpServerCommand: mcpServerCommand
+            ))
         }
 
         model.engine.draftText = "kick off"
@@ -188,11 +188,11 @@ struct DesignModelTests {
                 return request.session
             }
         } operation: {
-            DesignModel(
-                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
-                workflowDirectory: workflowDirectory,
-                mcpServerCommand: mcpServerCommand, database: database
-            )
+            DesignModel(context: WorkflowContext(
+                workflowID: UUID(-1), database: database,
+                worktree: URL(fileURLWithPath: "/repo"),
+                workflowDirectory: workflowDirectory, mcpServerCommand: mcpServerCommand
+            ))
         }
 
         model.engine.draftText = "kick off"
@@ -248,11 +248,11 @@ struct DesignModelTests {
                 return request.session
             }
         } operation: {
-            DesignModel(
-                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
-                workflowDirectory: workflowDirectory,
-                mcpServerCommand: mcpServerCommand, database: database
-            )
+            DesignModel(context: WorkflowContext(
+                workflowID: UUID(-1), database: database,
+                worktree: URL(fileURLWithPath: "/repo"),
+                workflowDirectory: workflowDirectory, mcpServerCommand: mcpServerCommand
+            ))
         }
 
         model.engine.draftText = "kick off"
@@ -289,11 +289,11 @@ struct DesignModelTests {
         let model = withDependencies {
             $0.defaultDatabase = database
         } operation: {
-            DesignModel(
-                worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
-                workflowDirectory: Self.makeWorkflowDirectory(),
-                mcpServerCommand: mcpServerCommand, database: database
-            )
+            DesignModel(context: WorkflowContext(
+                workflowID: UUID(-1), database: database,
+                worktree: URL(fileURLWithPath: "/repo"),
+                workflowDirectory: Self.makeWorkflowDirectory(), mcpServerCommand: mcpServerCommand
+            ))
         }
         try await model.$designPhase.load()
 

@@ -137,63 +137,57 @@ public final class AllocateModel {
     @ObservationIgnored
     var runTask: Task<Void, Never>?
 
-    public init(
-        worktree: URL,
-        workflowID: UUID,
-        workflowDirectory: URL,
-        mcpServerCommand: String,
-        database: any DatabaseWriter
-    ) {
-        self.workflowID = workflowID
-        self.workflowDirectory = workflowDirectory
-        self.database = database
-        self.mcpServerCommand = mcpServerCommand
+    public init(context: WorkflowContext) {
+        self.workflowID = context.workflowID
+        self.workflowDirectory = context.workflowDirectory
+        self.database = context.database
+        self.mcpServerCommand = context.mcpServerCommand
         self.skill = loadSkill(.toIssues)
         self.prdSkill = loadSkill(.toPrd)
         self.engine = ChatEngine(
-            worktree: worktree,
+            worktree: context.worktree,
             mode: .readOnly,
-            workflowID: workflowID,
+            workflowID: context.workflowID,
             kind: .allocate,
             skillFiles: [skill.fileUrl],
             addDirs: [skill.folderUrl],
-            database: database
+            database: context.database
         )
         // The same to-issues Skill over `kind: .design`, so this engine resumes the live grill Session
         // and carves from it rather than starting fresh.
         self.smallEngine = ChatEngine(
-            worktree: worktree,
+            worktree: context.worktree,
             mode: .readOnly,
-            workflowID: workflowID,
+            workflowID: context.workflowID,
             kind: .design,
             skillFiles: [skill.fileUrl],
             addDirs: [skill.folderUrl],
-            database: database
+            database: context.database
         )
         // The to-prd Skill over `kind: .design`, so the PRD Turn resumes that same live grill Session and
         // distils it into `prd.md`. No servers are pinned — the `write_artifact` writer rides the Turn.
         self.prdEngine = ChatEngine(
-            worktree: worktree,
+            worktree: context.worktree,
             mode: .readOnly,
-            workflowID: workflowID,
+            workflowID: context.workflowID,
             kind: .design,
             skillFiles: [prdSkill.fileUrl],
             addDirs: [prdSkill.folderUrl],
-            database: database
+            database: context.database
         )
         _issues = Fetch(
             wrappedValue: [],
-            WorkflowIssuesRequest(workflowID: workflowID),
+            WorkflowIssuesRequest(workflowID: context.workflowID),
             animation: .default
         )
         _designPhase = Fetch(
             wrappedValue: nil,
-            CompletedPhaseRequest(workflowID: workflowID, kind: .design),
+            CompletedPhaseRequest(workflowID: context.workflowID, kind: .design),
             animation: .default
         )
         _prdActivityCounts = Fetch(
             wrappedValue: nil,
-            PRDCheckpointActivityRequest(workflowID: workflowID),
+            PRDCheckpointActivityRequest(workflowID: context.workflowID),
             animation: .default
         )
     }

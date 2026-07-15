@@ -65,39 +65,23 @@ public final class WorkflowContainerModel {
         let database = try? openWorkflowDatabase(at: data.directory)
         self.database = database
         if let database {
+            let context = WorkflowContext(
+                workflowID: data.id,
+                database: database,
+                worktree: worktree,
+                workflowDirectory: data.directory,
+                mcpServerCommand: Self.mcpServerCommand
+            )
             // Scope `defaultDatabase` so the models' fetches observe this Workflow's Store. Every Workflow
             // runs the same four Phases (Design → Allocate → Execute → Validate), so all four models are
             // built unconditionally.
             let (design, allocate, execute, validate, phases, row): (DesignModel, AllocateModel, ExecuteModel, ValidateModel, Fetch<[PhaseRow]>, Fetch<WorkflowRow?>) = withDependencies {
                 $0.defaultDatabase = database
             } operation: {
-                let design = DesignModel(
-                    worktree: worktree,
-                    workflowID: data.id,
-                    workflowDirectory: data.directory,
-                    mcpServerCommand: Self.mcpServerCommand,
-                    database: database
-                )
-                let allocate = AllocateModel(
-                    worktree: worktree,
-                    workflowID: data.id,
-                    workflowDirectory: data.directory,
-                    mcpServerCommand: Self.mcpServerCommand,
-                    database: database
-                )
-                let execute = ExecuteModel(
-                    workflowID: data.id,
-                    database: database,
-                    worktree: worktree,
-                    workflowDirectory: data.directory
-                )
-                let validate = ValidateModel(
-                    workflowID: data.id,
-                    database: database,
-                    worktree: worktree,
-                    workflowDirectory: data.directory,
-                    mcpServerCommand: Self.mcpServerCommand
-                )
+                let design = DesignModel(context: context)
+                let allocate = AllocateModel(context: context)
+                let execute = ExecuteModel(context: context)
+                let validate = ValidateModel(context: context)
                 let phases = Fetch(
                     wrappedValue: [],
                     CompletedPhasesRequest(workflowID: data.id),

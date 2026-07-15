@@ -88,26 +88,26 @@ public final class ExecuteModel {
     /// Hercules, which blocks the Phase rather than falling back to the user's raw checkout.
     public let worktreeMissing: Bool
 
-    public init(workflowID: UUID, database: any DatabaseWriter, worktree: URL, workflowDirectory: URL) {
-        self.workflowID = workflowID
-        self.database = database
-        self.worktree = worktree
-        self.workflowDirectory = workflowDirectory
+    public init(context: WorkflowContext) {
+        self.workflowID = context.workflowID
+        self.database = context.database
+        self.worktree = context.worktree
+        self.workflowDirectory = context.workflowDirectory
         self.skill = loadSkill(.implementIssue)
-        worktreeMissing = !FileManager.default.fileExists(atPath: worktree.path)
+        worktreeMissing = !FileManager.default.fileExists(atPath: context.worktree.path)
         _issues = Fetch(
             wrappedValue: [],
-            WorkflowIssuesRequest(workflowID: workflowID),
+            WorkflowIssuesRequest(workflowID: context.workflowID),
             animation: .default
         )
         _transcriptFailureReasons = Fetch(
             wrappedValue: [:],
-            IssueFailureReasonsRequest(workflowID: workflowID),
+            IssueFailureReasonsRequest(workflowID: context.workflowID),
             animation: .default
         )
         _activityCounts = Fetch(
             wrappedValue: [:],
-            IssueActivityRequest(workflowID: workflowID),
+            IssueActivityRequest(workflowID: context.workflowID),
             animation: .default
         )
     }

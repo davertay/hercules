@@ -50,30 +50,24 @@ public final class DesignModel {
         return designPhase?.artifactPath.map { URL(fileURLWithPath: $0) }
     }
 
-    public init(
-        worktree: URL,
-        workflowID: UUID,
-        workflowDirectory: URL,
-        mcpServerCommand: String,
-        database: any DatabaseWriter
-    ) {
-        self.workflowID = workflowID
-        self.workflowDirectory = workflowDirectory
-        self.mcpServerCommand = mcpServerCommand
-        self.database = database
+    public init(context: WorkflowContext) {
+        self.workflowID = context.workflowID
+        self.workflowDirectory = context.workflowDirectory
+        self.mcpServerCommand = context.mcpServerCommand
+        self.database = context.database
         self.skill = loadSkill(.grillMe)
         self.engine = ChatEngine(
-            worktree: worktree,
+            worktree: context.worktree,
             mode: .readOnly,
-            workflowID: workflowID,
+            workflowID: context.workflowID,
             kind: .design,
             skillFiles: [skill.fileUrl],
             addDirs: [skill.folderUrl],
-            database: database
+            database: context.database
         )
         _designPhase = Fetch(
             wrappedValue: nil,
-            CompletedPhaseRequest(workflowID: workflowID, kind: .design),
+            CompletedPhaseRequest(workflowID: context.workflowID, kind: .design),
             animation: .default
         )
         // Dismiss the saved-summary confirmation the moment the user sends a new message.

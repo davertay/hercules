@@ -73,32 +73,26 @@ public final class ValidateModel {
     @ObservationIgnored
     private var didReconcile = false
 
-    public init(
-        workflowID: UUID,
-        database: any DatabaseWriter,
-        worktree: URL,
-        workflowDirectory: URL,
-        mcpServerCommand: String
-    ) {
-        self.workflowID = workflowID
-        self.database = database
-        self.worktree = worktree
-        self.workflowDirectory = workflowDirectory
-        self.mcpServerCommand = mcpServerCommand
-        worktreeMissing = !FileManager.default.fileExists(atPath: worktree.path)
+    public init(context: WorkflowContext) {
+        self.workflowID = context.workflowID
+        self.database = context.database
+        self.worktree = context.worktree
+        self.workflowDirectory = context.workflowDirectory
+        self.mcpServerCommand = context.mcpServerCommand
+        worktreeMissing = !FileManager.default.fileExists(atPath: context.worktree.path)
         _reviews = Fetch(
             wrappedValue: [],
-            WorkflowReviewsRequest(workflowID: workflowID),
+            WorkflowReviewsRequest(workflowID: context.workflowID),
             animation: .default
         )
         _issues = Fetch(
             wrappedValue: [],
-            WorkflowIssuesRequest(workflowID: workflowID),
+            WorkflowIssuesRequest(workflowID: context.workflowID),
             animation: .default
         )
         _reviewActivity = Fetch(
             wrappedValue: [:],
-            ReviewActivityRequest(workflowID: workflowID),
+            ReviewActivityRequest(workflowID: context.workflowID),
             animation: .default
         )
     }

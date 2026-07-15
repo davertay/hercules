@@ -67,11 +67,11 @@ struct ExecuteProposedIssueTests {
             $0.defaultDatabase = database
             $0.date.now = fixedDate
         } operation: {
-            ExecuteModel(
+            ExecuteModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: FileManager.default.temporaryDirectory
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
         }
     }
 

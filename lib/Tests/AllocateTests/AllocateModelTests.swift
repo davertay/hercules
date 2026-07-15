@@ -1042,10 +1042,11 @@ struct AllocateModelTests {
         workflowDirectory: URL,
         database: any DatabaseWriter
     ) -> AllocateModel {
-        AllocateModel(
-            worktree: URL(fileURLWithPath: "/repo"), workflowID: UUID(-1),
-            workflowDirectory: workflowDirectory, mcpServerCommand: mcpServerCommand, database: database
-        )
+        AllocateModel(context: WorkflowContext(
+            workflowID: UUID(-1), database: database,
+            worktree: URL(fileURLWithPath: "/repo"),
+            workflowDirectory: workflowDirectory, mcpServerCommand: mcpServerCommand
+        ))
     }
 
     /// Stands in for the live client's `start`, recording the Session and its one Turn.

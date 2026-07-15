@@ -46,12 +46,11 @@ struct ValidateModelTests {
                 throw CancellationError()
             }
         } operation: {
-            ValidateModel(
+            ValidateModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: FileManager.default.temporaryDirectory,
-                mcpServerCommand: "/path/to/Hercules"
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
         }
 
         await Self.runScoped(model, .codeQuality)
@@ -105,12 +104,11 @@ struct ValidateModelTests {
                 )
             }
         } operation: {
-            ValidateModel(
+            ValidateModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: FileManager.default.temporaryDirectory,
-                mcpServerCommand: "/path/to/Hercules"
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
         }
 
         await Self.runScoped(model, .codeQuality)
@@ -132,12 +130,11 @@ struct ValidateModelTests {
             $0.uuid = .incrementing
             $0.agentClient.start = { @Sendable _ in throw AgentError.cancelled }
         } operation: {
-            ValidateModel(
+            ValidateModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: FileManager.default.temporaryDirectory,
-                mcpServerCommand: "/path/to/Hercules"
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
         }
 
         await Self.runScoped(model, .codeQuality)
@@ -166,12 +163,11 @@ struct ValidateModelTests {
                 return try await Self.startSession(for: nil, id: UUID(100), finalAnswer: "")
             }
         } operation: {
-            ValidateModel(
+            ValidateModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: FileManager.default.temporaryDirectory,
-                mcpServerCommand: "/path/to/Hercules"
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
         }
 
         // Create the run task inside a uuid scope so its Store writes resolve `\.uuid` (production uses
@@ -210,12 +206,11 @@ struct ValidateModelTests {
                 return try await Self.startSession(for: request, id: UUID(id), finalAnswer: summary)
             }
         } operation: {
-            ValidateModel(
+            ValidateModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: FileManager.default.temporaryDirectory,
-                mcpServerCommand: "/path/to/Hercules"
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
         }
 
         // Start both at once; both tasks share the run map, neither blocks the other.
@@ -250,12 +245,11 @@ struct ValidateModelTests {
             $0.defaultDatabase = database
             $0.date.now = fixedDate
         } operation: {
-            ValidateModel(
+            ValidateModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: FileManager.default.temporaryDirectory,
-                mcpServerCommand: "/path/to/Hercules"
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
         }
         await model.refresh()
 
@@ -321,12 +315,11 @@ struct ValidateModelTests {
             }
             $0.worktreeClient.compareURL = { @Sendable _ in compareURL }
         } operation: {
-            ValidateModel(
+            ValidateModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: URL(fileURLWithPath: "/tmp/worktree"),
-                workflowDirectory: FileManager.default.temporaryDirectory,
-                mcpServerCommand: "/path/to/Hercules"
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
         }
 
         let url = await model.openPullRequest()
@@ -354,12 +347,11 @@ struct ValidateModelTests {
             }
             $0.worktreeClient.push = { @Sendable _ in pushed.setValue(true) }
         } operation: {
-            ValidateModel(
+            ValidateModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: FileManager.default.temporaryDirectory,
-                mcpServerCommand: "/path/to/Hercules"
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
         }
 
         let url = await model.openPullRequest()
@@ -392,12 +384,11 @@ struct ValidateModelTests {
             $0.worktreeClient.push = { @Sendable _ in pushCount.withValue { $0 += 1 } }
             $0.worktreeClient.compareURL = { @Sendable _ in compareURL }
         } operation: {
-            ValidateModel(
+            ValidateModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: FileManager.default.temporaryDirectory,
-                mcpServerCommand: "/path/to/Hercules"
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
         }
 
         // First call runs until it suspends inside the (gated) detached rebase, flag now set.
@@ -428,12 +419,11 @@ struct ValidateModelTests {
             $0.date.now = fixedDate
             $0.worktreeClient.push = { @Sendable _ in throw WorktreeError.unsupportedRemote("nope") }
         } operation: {
-            ValidateModel(
+            ValidateModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: FileManager.default.temporaryDirectory,
-                mcpServerCommand: "/path/to/Hercules"
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
         }
 
         let url = await model.openPullRequest()
@@ -450,12 +440,11 @@ struct ValidateModelTests {
             $0.defaultDatabase = database
             $0.date.now = fixedDate
         } operation: {
-            ValidateModel(
+            ValidateModel(context: WorkflowContext(
                 workflowID: workflowID, database: database,
                 worktree: FileManager.default.temporaryDirectory,
-                workflowDirectory: FileManager.default.temporaryDirectory,
-                mcpServerCommand: "/path/to/Hercules"
-            )
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
         }
     }
 
