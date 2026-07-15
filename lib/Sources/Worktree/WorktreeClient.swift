@@ -258,3 +258,9 @@ private enum LiveGit {
         return String(decoding: outData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+/// The user-facing explanation for a Phase blocked on a missing worktree — one wording shared by the
+/// Execute and Validate surfaces, which differ only in the Phase they name.
+public func missingWorktreeMessage(phase: String, worktree: URL) -> String {
+    "This Workflow's git worktree is missing — expected at \(worktree.path). It may have been pruned or deleted outside Hercules. Recreating it isn't supported yet, so the \(phase) Phase can't run until it's restored."
+}

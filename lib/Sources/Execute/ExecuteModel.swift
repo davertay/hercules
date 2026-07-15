@@ -114,7 +114,7 @@ public final class ExecuteModel {
 
     public var worktreeMessage: String? {
         guard worktreeMissing else { return nil }
-        return "This Workflow's git worktree is missing — expected at \(worktree.path). It may have been pruned or deleted outside Hercules. Recreating it isn't supported yet, so the Execute Phase can't run until it's restored."
+        return missingWorktreeMessage(phase: "Execute", worktree: worktree)
     }
 
     public var isEmpty: Bool { issues.isEmpty }
