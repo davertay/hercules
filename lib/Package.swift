@@ -9,7 +9,7 @@ let package = Package(
         .library(name: "HerculesApp", targets: ["HerculesApp"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/pointfreeco/sqlite-data", exact: "1.6.6"),
+        .package(url: "https://github.com/pointfreeco/sqlite-data", exact: "1.7.0"),
         .package(url: "https://github.com/pointfreeco/swift-clocks", exact: "1.1.0"),
         .package(url: "https://github.com/pointfreeco/swift-custom-dump", exact: "1.6.1"),
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.14.1"),
