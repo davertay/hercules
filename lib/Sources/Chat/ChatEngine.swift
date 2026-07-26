@@ -114,7 +114,7 @@ public final class ChatEngine {
             ConversationRequest(workflowID: workflowID, kind: kind),
             animation: .default
         )
-        // Skill files and added directories are supplied by the consumer rather than stored (ADR 0005).
+        // Skill files and added directories are supplied by the consumer rather than stored (ADR 0004).
         _existingSessionRow = Fetch(
             wrappedValue: try? database.existingSession(workflowID: workflowID, kind: kind),
             ExistingSessionRequest(workflowID: workflowID, kind: kind),
