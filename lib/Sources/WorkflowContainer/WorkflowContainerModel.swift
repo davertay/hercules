@@ -120,7 +120,7 @@ public final class WorkflowContainerModel {
 
     /// `true` while any one of the four Phases' agents is running — the chat Phases (Design/Allocate)
     /// mid-Turn, the Execute run loop in flight, or any Validate Persona reviewing. The single aggregate
-    /// the toolbar consumes: ``isIdle`` gates Destroy, and this will gate Stop in a later slice.
+    /// the toolbar consumes: ``isIdle`` gates Destroy, and this gates Stop.
     public var isRunning: Bool {
         designModel?.isBusy == true
             || allocateModel?.isBusy == true

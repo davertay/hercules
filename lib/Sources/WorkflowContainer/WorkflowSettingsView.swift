@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Per-Workflow settings, presented as a sheet from the toolbar and auto-presented on first launch so a
-/// new Workflow gets named. For now it holds only the title; built as a `Form` so future settings drop in.
+/// Per-Workflow settings, presented as a sheet from the toolbar. Holds only the title for now; built as
+/// a `Form` so future settings drop in.
 struct WorkflowSettingsView: View {
     let model: WorkflowContainerModel
     @Environment(\.dismiss) private var dismiss

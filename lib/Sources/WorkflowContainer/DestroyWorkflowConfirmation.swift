@@ -1,11 +1,8 @@
 import SwiftUI
 
 public extension View {
-    /// Presents the standard "Destroy this Workflow?" confirmation dialog.
-    ///
-    /// Use this on any view that needs to confirm a destructive destroy action.
-    /// Keeps the title, message, and button labels in one place so both the
-    /// launcher row and the in-window toolbar always agree.
+    /// Presents the standard "Destroy this Workflow?" confirmation dialog, keeping the title, message,
+    /// and button labels in one place so the launcher row and the in-window toolbar always agree.
     func destroyWorkflowConfirmationDialog(
         isPresented: Binding<Bool>,
         action: @escaping () -> Void
