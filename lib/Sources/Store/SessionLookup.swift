@@ -67,7 +67,7 @@ extension DatabaseReader {
 
     /// The most recent *errored* Turn's `finalAnswer` for the Issue's latest Execute Session, or `nil` —
     /// the Harness's own words on the failing turn, among them the session-limit notice Execute's
-    /// auto-resume classifies (#160). Read fresh (not the lazily-updated observation) so the run loop can
+    /// auto-resume classifies. Read fresh (not the lazily-updated observation) so the run loop can
     /// classify a fault the instant it lands. Guarded on `isError` so a cleanly-finished no-op Turn's
     /// answer never masquerades as an error message, and scoped to the *latest* Session so a re-run reads
     /// its own new message rather than re-arming on a stale earlier attempt's.

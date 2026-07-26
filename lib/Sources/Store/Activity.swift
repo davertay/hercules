@@ -1,9 +1,9 @@
 import Foundation
 import SQLiteData
 
-// Per-node activity counters surfaced on the Execute/Validate DAG cards (issue #134): how many tools the
-// run has invoked, how much non-tool content (text + thinking) it has produced, when it started, and —
-// once finalized — its wall-clock and cost. Derived live from the `content_block`/`turn` rows the
+// Per-node activity counters surfaced on the Execute/Validate DAG cards: how many tools the run has
+// invoked, how much non-tool content (text + thinking) it has produced, when it started, and — once
+// finalized — its wall-clock and cost. Derived live from the `content_block`/`turn` rows the
 // `StreamProjector` writes as the Harness streams, so an in-progress card ticks up without polling.
 
 /// The raw activity tallies for one run, before the feature model turns them into a render-ready
@@ -35,8 +35,7 @@ public struct ActivityCounts: Equatable, Sendable {
         self.costUSD = costUSD
     }
 
-    /// Buckets one content block into the tallies: `toolUse` counts as a tool, `text`/`thinking` as
-    /// steps. `toolResult` — the user-role echo of a `toolUse` — and unrecognised kinds don't count.
+    /// Buckets one content block into the tallies; `toolResult` and unrecognised kinds don't count.
     mutating func tally(_ block: ContentBlockRow) {
         switch block.kindValue {
         case .toolUse: tools += 1
@@ -47,8 +46,8 @@ public struct ActivityCounts: Equatable, Sendable {
 }
 
 /// Per-Issue activity for the Execute DAG, keyed by Issue `number`. A retried Issue has several
-/// `execute` Sessions; only the latest is counted, so the card describes the current/most-recent attempt
-/// rather than a lifetime sum (whose elapsed would be the meaningless sum of both runs' wall-clocks).
+/// `execute` Sessions; only the latest is counted, so the card describes the most-recent attempt rather
+/// than a lifetime sum, whose elapsed would be the meaningless sum of both runs' wall-clocks.
 public struct IssueActivityRequest: FetchKeyRequest {
     public var workflowID: UUID
 
@@ -117,13 +116,13 @@ public struct ReviewActivityRequest: FetchKeyRequest {
     }
 }
 
-/// Live activity for the big-path PRD checkpoint, surfaced on Allocate's prominent progress panel. The
-/// checkpoint runs as one Turn in the workflow's `.design` Session (the to-prd Skill resumes the live
-/// grill), so its activity is that **single Turn's** counts — *not* the whole Session's, which would fold
-/// in every grill Turn and drag the elapsed anchor back to when the grill began. The Turn is identified as
-/// the latest one created after the Design→Allocate cutover boundary (the completed `design` Phase's
-/// `updatedAt`); everything at or before that instant is the grill. Returns `nil` until such a Turn lands,
-/// so the panel shows a bare spinner rather than a stale grill count while the checkpoint spins up.
+/// Live activity for the big-path PRD checkpoint, surfaced on Allocate's progress panel. The checkpoint
+/// runs as one Turn in the workflow's `.design` Session (the to-prd Skill resumes the live grill), so
+/// its activity is that **single Turn's** counts — *not* the whole Session's, which would fold in every
+/// grill Turn and drag the elapsed anchor back to when the grill began. The Turn is the latest one
+/// created after the Design→Allocate cutover boundary (the completed `design` Phase's `updatedAt`);
+/// everything at or before that instant is the grill. Returns `nil` until such a Turn lands, so the
+/// panel shows a bare spinner rather than a stale grill count.
 public struct PRDCheckpointActivityRequest: FetchKeyRequest {
     public var workflowID: UUID
 
@@ -132,7 +131,6 @@ public struct PRDCheckpointActivityRequest: FetchKeyRequest {
     }
 
     public func fetch(_ db: Database) throws -> ActivityCounts? {
-        // The cutover boundary — the grill's Turns sit at or before it and must not count.
         guard let boundary = try completedPhaseRow(db, workflowID: workflowID, kind: .design)?.updatedAt
         else { return nil }
 
@@ -144,8 +142,8 @@ public struct PRDCheckpointActivityRequest: FetchKeyRequest {
             .fetchOne(db)
         guard let sessionID = session?.id else { return nil }
 
-        // The checkpoint's Turn is the latest post-boundary Turn (a regenerate supersedes an earlier one).
-        // Picked in Swift, mirroring this file's aggregate-in-Swift style, rather than via a date predicate.
+        // A regenerate supersedes an earlier checkpoint Turn. Picked in Swift, mirroring this file's
+        // aggregate-in-Swift style, rather than via a date predicate.
         let turns = try TurnRow
             .where { !$0.isDeleted }
             .where { $0.sessionID.eq(sessionID) }
@@ -171,10 +169,10 @@ public struct PRDCheckpointActivityRequest: FetchKeyRequest {
     }
 }
 
-/// Tallies content blocks per Session: counts `tool_use` and `text`/`thinking` blocks, and folds in each
-/// Turn's start, duration, and cost. Aggregated in Swift (mirroring `IssueFailureReasonsRequest`) rather
-/// than via a grouped SQL query, keeping the kind-bucketing legible. A Session with no Turns yet maps to
-/// nothing — its card shows no footer until the first Turn row lands.
+/// Tallies content blocks per Session, folding in each Turn's start, duration, and cost. Aggregated in
+/// Swift (mirroring `IssueFailureReasonsRequest`) rather than via a grouped SQL query, keeping the
+/// kind-bucketing legible. A Session with no Turns yet maps to nothing — its card shows no footer until
+/// the first Turn row lands.
 func activityCounts(forSessions sessionIDs: Set<UUID>, in db: Database) throws -> [UUID: ActivityCounts] {
     guard !sessionIDs.isEmpty else { return [:] }
 

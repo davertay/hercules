@@ -2,9 +2,9 @@ import Testing
 
 @testable import DAGGraphUI
 
-/// Tests for `NodeActivity`'s formatters (issue #134): the adaptive elapsed clock and the floor-guarded
-/// cost — the two bits of display logic, shared by the compact footer and the prominent panel, worth
-/// pinning independently of SwiftUI rendering.
+/// Tests for `NodeActivity`'s formatters: the adaptive elapsed clock and the floor-guarded cost — the
+/// two bits of display logic, shared by the compact footer and the prominent panel, worth pinning
+/// independently of SwiftUI rendering.
 @Suite("NodeActivity formatting")
 struct NodeActivityFormattingTests {
 

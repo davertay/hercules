@@ -17,9 +17,9 @@ private let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 /// `SessionLimitReset` can turn into a `Date` — the trigger for auto-resume.
 private let limitMessage = "You've hit your session limit · resets 11pm (UTC)"
 
-/// Exercises the auto-resume-after-session-limit behaviour (#160) on `ExecuteModel.run`: a fault whose
-/// errored turn is a parseable session-limit message pauses the run on a cancellable clock, then re-runs
-/// the Issue and carries on; every other fault halts as before.
+/// Exercises the auto-resume-after-session-limit behaviour on `ExecuteModel.run`: a fault whose errored
+/// turn is a parseable session-limit message pauses the run on a cancellable clock, then re-runs the
+/// Issue and carries on; every other fault halts the run.
 @MainActor
 @Suite("ExecuteModel session-limit auto-resume")
 struct ExecuteSessionLimitResumeTests {

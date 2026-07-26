@@ -23,8 +23,8 @@ public final class ExecuteModel {
     @ObservationIgnored
     @Fetch var activityCounts: [Int: ActivityCounts] = [:]
 
-    /// The shared once-a-second ticker whose tick in-progress cards' elapsed counts up on. One timer
-    /// for the whole run, stopped when it ends — an idle window runs no timer at all.
+    /// The shared once-a-second ticker in-progress cards' elapsed counts up on. One timer for the whole
+    /// run, stopped when it ends — an idle window runs none.
     @ObservationIgnored
     private let ticker = TickClock()
 
@@ -34,10 +34,10 @@ public final class ExecuteModel {
 
     public private(set) var isRunning = false
 
-    /// When a run is paused waiting out a session-limit reset, the instant it will auto-resume (the parsed
-    /// reset time plus a one-minute grace buffer); `nil` otherwise. Drives the resume banner and keeps the
-    /// paused Issue out of `.inProgress` while the run stays `isRunning`. Set for the wait's duration and
-    /// cleared the moment it ends — whether it elapses or Stop cancels it.
+    /// When a run is paused waiting out a session-limit reset, the instant it will auto-resume (the
+    /// parsed reset time plus a one-minute grace buffer); `nil` otherwise. Drives the resume banner and
+    /// keeps the paused Issue out of `.inProgress` while the run stays `isRunning`. Cleared the moment
+    /// the wait ends, whether it elapses or Stop cancels it.
     public private(set) var resumingAt: Date?
 
     /// The Issue number the run is currently waiting to auto-resume, held alongside `resumingAt` so the
@@ -80,7 +80,7 @@ public final class ExecuteModel {
     private let worktree: URL
 
     /// Root for the input bundle attached to each write agent — the completed Phases' Artifacts are
-    /// recorded as paths under here (ADR: artifacts live in the Workflow directory, not the worktree).
+    /// recorded as paths under here, in the Workflow directory rather than the worktree.
     @ObservationIgnored
     private let workflowDirectory: URL
 
@@ -121,17 +121,16 @@ public final class ExecuteModel {
 
     /// Re-reads the Issue rows from disk. The Allocate Phase writes Issues out-of-process through the
     /// create-issue MCP server (ADR 0006), and cross-process commits don't fire this `@Fetch`'s
-    /// observation — so the view forces a reload when it appears rather than trusting the snapshot taken
-    /// when the window opened.
+    /// observation — so the view forces a reload when it appears rather than trusting the snapshot
+    /// taken when the window opened.
     public func refresh() async {
         try? await $issues.load()
         try? await $transcriptFailureReasons.load()
         try? await $activityCounts.load()
     }
 
-    /// The render-ready activity for one node: live counts always, elapsed live-ticking while the node is
-    /// `.inProgress` and frozen at the run's duration once done, cost shown only once finalized. Returns
-    /// `nil` for a node that has never run (no Session yet) so its card shows no footer.
+    /// The render-ready activity for one node. Returns `nil` for a node that has never run (no Session
+    /// yet) so its card shows no footer.
     public func activity(for node: DAGNode) -> NodeActivity? {
         guard let counts = activityCounts[node.number] else { return nil }
         return NodeActivity(counts: counts, running: node.status == .inProgress, clock: clock)
@@ -141,12 +140,10 @@ public final class ExecuteModel {
         transcriptFailureReasons[issue.number] ?? issue.failureReason
     }
 
-    /// The Issue the run is currently waiting to auto-resume after a session-limit halt, resolved from the
-    /// number captured when the wait armed; `nil` whenever no wait is in flight. The single source of truth
-    /// for the paused Issue: both the resume banner and the paused-node recolouring read it, so the banner
-    /// names the same Issue the node presents as pending. Deliberately *not* `haltingFailure` (the
-    /// lowest-numbered `failed` Issue), which can name a different, pre-existing failure when the paused
-    /// Issue isn't the only one that's `failed`.
+    /// The Issue the run is waiting to auto-resume after a session-limit halt; `nil` when no wait is in
+    /// flight. The single source of truth for the paused Issue, so the resume banner and the paused-node
+    /// recolouring name the same one. Deliberately *not* `haltingFailure` (the lowest-numbered `failed`
+    /// Issue), which can name a different, pre-existing failure.
     public var resumingIssue: IssueRow? {
         guard resumingAt != nil, let number = resumingIssueNumber else { return nil }
         return issues.first { $0.number == number }
@@ -154,10 +151,10 @@ public final class ExecuteModel {
 
     public var nodes: [DAGNode] {
         let nodes = dagNodes(from: issues)
-        // While waiting out a session-limit reset the Issue is still `failed` in the store (so Stop leaves
-        // it a normal failure with its Retry), but we haven't given up on it — present it as the pending/
-        // next-up node, never a red failed one, and crucially never `.inProgress` (which would clock the
-        // multi-hour wait into its NodeActivity elapsed).
+        // While waiting out a session-limit reset the Issue is still `failed` in the store (so Stop
+        // leaves it a normal failure with its Retry) — present it as the pending/next-up node, never a
+        // red failed one, and never `.inProgress`, which would clock the multi-hour wait into its
+        // NodeActivity elapsed.
         guard let paused = resumingIssue else { return nodes }
         return nodes.map { node in
             node.number == paused.number
@@ -237,7 +234,6 @@ public final class ExecuteModel {
         !isRunning && validationError == nil && !isEmpty && !worktreeMissing
     }
 
-    /// The task is retained in `runTask` so `stop()` and the window's teardown can cancel it.
     public func start() {
         guard canRun else { return }
         isRunning = true
@@ -264,9 +260,8 @@ public final class ExecuteModel {
 
     /// Runs one Issue as a behind-the-scenes write agent and writes its status directly via the Store
     /// (no MCP, no presented chat). `done` is contingent on the agent committing: HEAD must advance over
-    /// the run (issue #127). A no-op, a blocked agent, or one that ended on a question all leave HEAD
-    /// where it was and are recorded `failed`, never `done`. The catch path covers a throw before any
-    /// Turn exists (e.g. a missing harness binary).
+    /// the run. A no-op, a blocked agent, or one that ended on a question all leave HEAD where it was
+    /// and are recorded `failed`, never `done`.
     public func runIssue(_ issue: IssueRow) async {
         let issueNumber = issue.number
         try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .inProgress, now: now)
@@ -304,8 +299,6 @@ public final class ExecuteModel {
             return
         }
 
-        // The Turn finished without throwing, but "finished" isn't "did the work". Only a new commit —
-        // HEAD advancing — counts as `done`.
         let after: String
         do {
             after = try worktreeClient.headSHA(worktree)
@@ -320,10 +313,10 @@ public final class ExecuteModel {
         }
     }
 
-    /// The prompt for one run of an Issue. The **first** run sends the Issue body unchanged; any **re-run**
-    /// — detected purely by an existing execute Session for the Issue, whether from an auto-resume or a
-    /// manual Retry — appends a note telling the fresh session to inspect the worktree and continue the
-    /// possibly-partial work already on disk rather than starting over.
+    /// The prompt for one run of an Issue. The **first** run sends the Issue body unchanged; any
+    /// **re-run** — detected purely by an existing execute Session for the Issue, whether from an
+    /// auto-resume or a manual Retry — appends a note telling the fresh session to inspect the worktree
+    /// and continue the possibly-partial work already on disk rather than starting over.
     private func prompt(for issue: IssueRow) -> String {
         let priorSession = (try? database.session(forIssue: issue.number, workflowID: workflowID)) ?? nil
         guard priorSession != nil else { return issue.body }
@@ -386,18 +379,15 @@ public final class ExecuteModel {
     /// Runs every ready Issue sequentially in dependency order. Reconciles stale `in_progress` Issues
     /// (left by a crash) back to `failed` first, and completes the Phase only once every Issue is `done`
     /// — a blocked branch must not falsely unlock Validate. A session-limit failure is the one failure
-    /// that doesn't end the run: it waits out the reset, then re-runs the Issue and carries on downstream.
-    /// Every other failure — and a wait cancelled by Stop — halts the run with the Issue left `failed`
-    /// for a manual Retry. Re-running resumes from the first ready `new` Issue.
+    /// that doesn't end the run: it waits out the reset, then re-runs the Issue and carries on
+    /// downstream. Every other failure — and a wait cancelled by Stop — halts the run with the Issue
+    /// left `failed` for a manual Retry.
     public func run() async {
         try? database.reconcileStaleInProgressIssues(workflowID: workflowID, now: now)
 
         while let next = readyIssue() {
             await runIssue(next)
             if currentStatus(of: next.number) == .failed {
-                // A session-limit halt isn't the end of the run: wait out the reset, then re-run the Issue
-                // as a fresh session and continue downstream. Every other failure — and a wait cancelled by
-                // Stop — halts here with the Issue left `failed` for a manual Retry.
                 guard await awaitSessionLimitReset(for: next.number) else { return }
                 try? database.resetIssue(workflowID: workflowID, number: next.number, now: now)
             }
@@ -410,11 +400,10 @@ public final class ExecuteModel {
     }
 
     /// If the Issue's fault was a session-limit halt — the failing turn is flagged `isError` **and** its
-    /// text parses into a reset `Date` — sleep until that reset plus a one-minute grace buffer, then return
-    /// `true` so the caller re-runs the Issue. Returns `false` for any other failure (unparseable text, a
-    /// non-limit error, an exit-0 no-op), and also when Stop cancels the sleep — leaving the Issue `failed`
-    /// for a manual Retry either way. The run stays `isRunning` throughout; `resumingAt` is published for
-    /// the wait's duration and cleared the instant it ends, whether it elapses or is cancelled.
+    /// text parses into a reset `Date` — sleep until that reset plus a one-minute grace buffer, then
+    /// return `true` so the caller re-runs the Issue. Returns `false` for any other failure (unparseable
+    /// text, a non-limit error, an exit-0 no-op), and when Stop cancels the sleep. The run stays
+    /// `isRunning` throughout.
     private func awaitSessionLimitReset(for number: Int) async -> Bool {
         let message = (try? database.latestExecuteErrorMessage(forIssue: number, workflowID: workflowID)) ?? nil
         guard let message, let resetAt = SessionLimitReset.parse(message, now: now) else { return false }
@@ -447,10 +436,9 @@ public final class ExecuteModel {
     }
 
     /// The completed PRD and Design summary Artifacts as one input bundle — PRD first, then summary — so
-    /// the `implement-issue` Skill's "read the design and PRD" step is satisfiable. Best-effort and
-    /// mode-independent (ADR): attaches whichever Artifacts exist and skips any that are absent, so a
-    /// missing one (e.g. Small Job mode produces no design summary) never fails, blocks, or warns. Returns
-    /// `nil` when none exist, leaving the run identical to before any bundle was attached.
+    /// the `implement-issue` Skill's "read the design and PRD" step is satisfiable. Best-effort:
+    /// attaches whichever Artifacts exist and skips any that are absent, so a missing one never fails,
+    /// blocks, or warns. Returns `nil` when none exist.
     private func inputArtifacts() -> InputBundle? {
         let paths = [PhaseKind.prd, .design].compactMap { kind in
             try? database.completedArtifactPath(workflowID: workflowID, kind: kind)
@@ -475,11 +463,9 @@ public final class ExecuteModel {
 
 #if DEBUG
 extension ExecuteModel {
-    /// Preview/debug only: drops the model into the paused session-limit presentation without a live run,
-    /// so a screenshot can verify the resume banner and the next-up (not failed) node treatment. Sets the
-    /// same published `resumingAt` and paused-Issue state the run loop holds while it waits out a reset.
-    /// The banner and the recoloured node both resolve `issueNumber` through `resumingIssue`, so they agree
-    /// by construction whatever Issue it points at.
+    /// Preview/debug only: drops the model into the paused session-limit presentation without a live
+    /// run, so a screenshot can verify the resume banner and the next-up (not failed) node treatment.
+    /// Sets the same published `resumingAt` and paused-Issue state the run loop holds while it waits.
     public func enterResumingStateForPreview(issueNumber: Int, resumingAt: Date) {
         self.resumingAt = resumingAt
         self.resumingIssueNumber = issueNumber

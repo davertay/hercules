@@ -5,8 +5,8 @@ import Foundation
 /// When the executor hits the account's session/credit limit, the failing turn carries a stable
 /// final-answer string of the form
 /// `You've hit your session limit · resets 7:10pm (America/Los_Angeles)` — a wall-clock time (minutes
-/// optional) in a named IANA timezone. Auto-resume (#160) needs the absolute `Date` that time next
-/// occurs so it can sleep until then.
+/// optional) in a named IANA timezone. Auto-resume needs the absolute `Date` that time next occurs so
+/// it can sleep until then.
 ///
 /// This is deliberately strict and fail-safe: it never guesses. Anything it can't confidently parse —
 /// non session-limit text, an unrecognized timezone, a malformed time — yields `nil`, so callers fall

@@ -5,10 +5,10 @@ import Observation
 import SQLiteData
 import Store
 
-/// Drives a user/assistant chat over a single Session. The first `send` starts the Session; follow-ups
-/// resume it. Nothing is held in memory for display — the chat is rendered purely by observing the
-/// Workflow database, so the assistant's text streams in live as the Agent projects it (ADR 0003). A
-/// host (e.g. `Design`) embeds the engine and layers its own behavior on top.
+/// Drives a user/assistant chat over a single Session. The first `send` starts it; follow-ups resume.
+/// Nothing is held in memory for display — the chat renders purely by observing the Workflow database,
+/// so the assistant's text streams in live as the Agent projects it (ADR 0003). Hosts (e.g. `Design`)
+/// embed the engine and layer their own behavior on top.
 @MainActor
 @Observable
 public final class ChatEngine {
@@ -51,8 +51,8 @@ public final class ChatEngine {
 
     /// The existing Session row for this `(workflowID, kind)`, *observed* so a Session created after this
     /// engine was constructed is picked up reactively (ADR 0005). Seeded synchronously at construction so
-    /// ``session`` is available immediately, then kept live by the observation — the fix for an engine
-    /// (e.g. Allocate's design-resuming engines) built before its Session existed.
+    /// ``session`` is available immediately — Allocate's design-resuming engines are built before their
+    /// Session exists.
     @ObservationIgnored
     @Fetch var existingSessionRow: SessionRow?
 
@@ -60,10 +60,9 @@ public final class ChatEngine {
     /// ``existingSessionRow`` lookup so follow-ups resume the exact Session this engine drove.
     private var startedSession: Session?
 
-    /// The Session this engine drives, or `nil` if none exists yet. It's the Turn-pinned Session once this
-    /// engine has started one; until then it resolves live from ``existingSessionRow`` (seeded at init,
-    /// refreshed by observation) — so a follow-up resumes a Session a sibling engine created after this one
-    /// was built, rather than spuriously starting a second.
+    /// The Session this engine drives, or `nil` if none exists yet: the Turn-pinned Session once this
+    /// engine has started one, else resolved live from ``existingSessionRow`` — so a follow-up resumes a
+    /// Session a sibling engine created, rather than spuriously starting a second.
     public var session: Session? {
         if let startedSession { return startedSession }
         guard let row = existingSessionRow,
@@ -115,9 +114,6 @@ public final class ChatEngine {
             ConversationRequest(workflowID: workflowID, kind: kind),
             animation: .default
         )
-        // Rediscover an existing Session so a follow-up resumes it and reopening shows prior history. Seed
-        // it synchronously so `session` is available at once, then observe so a Session a sibling engine
-        // starts *later* (the grill, for Allocate's design engines) is picked up without reconstruction.
         // Skill files and added directories are supplied by the consumer rather than stored (ADR 0005).
         _existingSessionRow = Fetch(
             wrappedValue: try? database.existingSession(workflowID: workflowID, kind: kind),
@@ -162,10 +158,9 @@ public final class ChatEngine {
         }
     }
 
-    /// Runs one orchestration under the engine's run lifecycle — the wrapper every button-triggered
-    /// Turn shares: clears `errorText`, raises `isRunning`, lands a thrown error's description on
-    /// `errorText`, and lowers the flag once the work ends. Returns the task so the host can retain
-    /// it; storing it in ``runTask`` (as ``submit()`` does) additionally routes it through ``cancel()``.
+    /// Runs one orchestration under the engine's run lifecycle — the wrapper every button-triggered Turn
+    /// shares. Returns the task so the host can retain it; storing it in ``runTask`` (as ``submit()``
+    /// does) additionally routes it through ``cancel()``.
     @discardableResult
     public func run(_ operation: @escaping @MainActor () async throws -> Void) -> Task<Void, Never> {
         errorText = nil
@@ -180,10 +175,10 @@ public final class ChatEngine {
         }
     }
 
-    /// Cancels an in-flight Turn and clears `isRunning` so the UI reflects the stop immediately. The
-    /// submit task clears the flag in its own completion once the cancelled Turn unwinds; this clears it
-    /// up front rather than waiting for that. A no-op when idle, and the engine is ready for a fresh Turn
-    /// afterwards. Routed up through the chat-host models to the Workflow-level stop-all.
+    /// Cancels an in-flight Turn and clears `isRunning` up front, so the UI reflects the stop
+    /// immediately rather than waiting for the cancelled Turn to unwind. A no-op when idle, and the
+    /// engine is ready for a fresh Turn afterwards. Routed up through the chat-host models to the
+    /// Workflow-level stop-all.
     public func cancel() {
         runTask?.cancel()
         isRunning = false

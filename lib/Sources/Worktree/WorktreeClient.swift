@@ -32,27 +32,26 @@ public struct RemoveWorktreeRequest: Sendable, Equatable {
 public struct WorktreeClient: Sendable {
     /// Adds a worktree on a new branch cut from the repo's default-branch HEAD.
     public var create: @Sendable (_ request: CreateWorktreeRequest) throws -> Void
-    /// Pushes the worktree's current branch to `origin` with upstream tracking, forcing with a lease
-    /// (`git push -u --force-with-lease origin <branch>`) so the action is safely re-runnable after a
-    /// rebase rewrites history without clobbering unexpected remote work.
+    /// Pushes the worktree's current branch to `origin` with upstream tracking
+    /// (`git push -u --force-with-lease`), so the action is re-runnable after a rebase rewrites history
+    /// without clobbering unexpected remote work.
     public var push: @Sendable (_ worktree: URL) throws -> Void
     /// The GitHub compare URL for opening a PR from the worktree's branch against the default base,
     /// deriving owner/repo from `origin` (ssh or https).
     public var compareURL: @Sendable (_ worktree: URL) throws -> URL
-    /// Brings the worktree's branch up to date with its base by fetching `origin` and rebasing onto
-    /// `origin/<base>`. A genuine conflict throws ``WorktreeError/rebaseConflict(base:)`` and leaves
-    /// the worktree untouched (the rebase is aborted); a rebase that refuses to start rethrows the
-    /// underlying ``GitError``.
+    /// Brings the worktree's branch up to date by fetching `origin` and rebasing onto `origin/<base>`.
+    /// A genuine conflict throws ``WorktreeError/rebaseConflict(base:)`` and leaves the worktree
+    /// untouched (the rebase is aborted); a rebase that refuses to start rethrows the underlying
+    /// ``GitError``.
     public var rebaseOntoBase: @Sendable (_ worktree: URL) throws -> Void
-    /// Tears down a Workflow's worktree and its dedicated branch: `git worktree remove --force
-    /// <worktree>` (force because committed or dirty work otherwise refuses removal) followed by
-    /// `git branch -D <branch>` so no trace is left in the user's repo.
+    /// Tears down a Workflow's worktree and its dedicated branch, leaving no trace in the user's repo.
+    /// Removal is forced because committed or dirty work otherwise refuses it.
     public var remove: @Sendable (_ request: RemoveWorktreeRequest) throws -> Void
-    /// Prunes stale worktree administrative entries in the repo (`git worktree prune`), a hygiene
-    /// step run after a worktree directory is removed.
+    /// Prunes stale worktree administrative entries (`git worktree prune`), run after a worktree
+    /// directory is removed.
     public var prune: @Sendable (_ repo: URL) throws -> Void
     /// The worktree's current commit (`git rev-parse HEAD`). Execute reads it either side of an Issue's
-    /// run to confirm the agent committed — HEAD advancing is the sole evidence of work (issue #127).
+    /// run to confirm the agent committed — HEAD advancing is the sole evidence of work.
     public var headSHA: @Sendable (_ worktree: URL) throws -> String
     /// Whether the worktree has uncommitted changes (`git status --porcelain` is non-empty). Throws on a
     /// genuine git error (non-zero exit), distinct from a clean tree's empty-but-successful output.
@@ -100,8 +99,6 @@ extension WorktreeClient: DependencyKey {
             }
         },
         remove: { request in
-            // `--force` so a worktree carrying committed work on its branch (or any dirty state)
-            // is removed rather than refused.
             try LiveGit.run(["-C", request.repo.path, "worktree", "remove", "--force", request.worktree.path])
             try LiveGit.run(["-C", request.repo.path, "branch", "-D", request.branch])
         },
@@ -112,8 +109,6 @@ extension WorktreeClient: DependencyKey {
             try LiveGit.capture(["-C", worktree.path, "rev-parse", "HEAD"])
         },
         isDirty: { worktree in
-            // `capture` trims output, so a clean tree yields "" (not dirty); it throws on a non-zero exit,
-            // so a genuine git error surfaces rather than being read as "clean".
             try !LiveGit.capture(["-C", worktree.path, "status", "--porcelain"]).isEmpty
         }
     )
@@ -228,8 +223,7 @@ private enum LiveGit {
         _ = try capture(arguments)
     }
 
-    /// Runs git and reports whether it exited zero, swallowing any error. Used to classify a rebase
-    /// failure by the exit status of `git rebase --abort`.
+    /// Runs git and reports whether it exited zero, swallowing any error.
     static func succeeds(_ arguments: [String]) -> Bool {
         (try? run(arguments)) != nil
     }
