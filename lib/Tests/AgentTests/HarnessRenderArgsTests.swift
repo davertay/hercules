@@ -1,5 +1,6 @@
 import CustomDump
 import Foundation
+import SQLiteData
 import SnapshotTesting
 import SnapshotTestingCustomDump
 import Testing
@@ -14,12 +15,27 @@ struct HarnessRenderArgsTests {
     let inputsRoot = URL(fileURLWithPath: "/tmp/inputs")
     let sessionId = Session.ID(rawValue: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!)
 
+    /// The session-pinned configuration under test, over the suite's fixed worktree.
+    private func configuration(
+        mode: AgentMode,
+        skillFiles: [URL] = [],
+        addDirs: [URL] = [],
+        mcpServers: [MCPServer] = []
+    ) -> Harness.SessionConfiguration {
+        Harness.SessionConfiguration(
+            worktree: worktree,
+            mode: mode,
+            skillFiles: skillFiles,
+            addDirs: addDirs,
+            mcpServers: mcpServers
+        )
+    }
+
     @Test func startWriteNoInputs() throws {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write),
             inputs: nil,
             sessionId: sessionId
         )
@@ -52,8 +68,7 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write),
             inputs: inputs,
             sessionId: sessionId
         )
@@ -73,8 +88,7 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .resume,
-            worktree: worktree,
-            mode: .readOnly,
+            configuration: configuration(mode: .readOnly),
             inputs: inputs,
             sessionId: sessionId
         )
@@ -95,8 +109,7 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .resume,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write),
             inputs: nil,
             sessionId: sessionId
         )
@@ -113,8 +126,7 @@ struct HarnessRenderArgsTests {
         let startArgs = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write),
             inputs: nil,
             sessionId: sessionId
         )
@@ -125,8 +137,7 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .readOnly,
+            configuration: configuration(mode: .readOnly),
             inputs: nil,
             sessionId: sessionId
         )
@@ -150,8 +161,7 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .resume,
-            worktree: worktree,
-            mode: .readOnly,
+            configuration: configuration(mode: .readOnly),
             inputs: nil,
             sessionId: sessionId
         )
@@ -171,10 +181,8 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write, skillFiles: [skillA, skillB]),
             inputs: nil,
-            skillFiles: [skillA, skillB],
             sessionId: sessionId
         )
 
@@ -192,10 +200,8 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write, addDirs: [dir1, dir2]),
             inputs: inputs,
-            addDirs: [dir1, dir2],
             sessionId: sessionId
         )
 
@@ -230,10 +236,8 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .readOnly,
+            configuration: configuration(mode: .readOnly, mcpServers: [herculesServer]),
             inputs: nil,
-            mcpServers: [herculesServer],
             sessionDataDirectory: dataDir,
             sessionId: sessionId
         )
@@ -263,10 +267,8 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .resume,
-            worktree: worktree,
-            mode: .readOnly,
+            configuration: configuration(mode: .readOnly, mcpServers: [herculesServer]),
             inputs: nil,
-            mcpServers: [herculesServer],
             sessionDataDirectory: dataDir,
             sessionId: sessionId
         )
@@ -285,10 +287,8 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .resume,
-            worktree: worktree,
-            mode: .readOnly,
+            configuration: configuration(mode: .readOnly, mcpServers: [herculesServer]),
             inputs: nil,
-            mcpServers: [herculesServer],
             sessionDataDirectory: dataDir,
             sessionId: sessionId
         )
@@ -310,10 +310,8 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .resume,
-            worktree: worktree,
-            mode: .readOnly,
+            configuration: configuration(mode: .readOnly, mcpServers: []),
             inputs: nil,
-            mcpServers: [],
             sessionDataDirectory: dataDir,
             sessionId: sessionId
         )
@@ -330,10 +328,8 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write, mcpServers: [herculesServer]),
             inputs: nil,
-            mcpServers: [herculesServer],
             sessionDataDirectory: dataDir,
             sessionId: sessionId
         )
@@ -353,10 +349,8 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .readOnly,
+            configuration: configuration(mode: .readOnly, mcpServers: []),
             inputs: nil,
-            mcpServers: [],
             sessionDataDirectory: dataDir,
             sessionId: sessionId
         )
@@ -373,10 +367,8 @@ struct HarnessRenderArgsTests {
             try Harness.renderArgs(
                 binary: binary,
                 operation: .start,
-                worktree: worktree,
-                mode: .readOnly,
+                configuration: configuration(mode: .readOnly, mcpServers: [herculesServer]),
                 inputs: nil,
-                mcpServers: [herculesServer],
                 sessionDataDirectory: nil,
                 sessionId: sessionId
             )
@@ -407,11 +399,12 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(
+                mode: .write,
+                skillFiles: [skill],
+                addDirs: [URL(fileURLWithPath: "/extra")]
+            ),
             inputs: inputs,
-            skillFiles: [skill],
-            addDirs: [URL(fileURLWithPath: "/extra")],
             extraArguments: [ExtraArgument(flag: "--model", value: "opus")],
             sessionId: sessionId
         )
@@ -427,8 +420,7 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write),
             inputs: nil,
             extraArguments: [ExtraArgument(flag: "--debug")],
             sessionId: sessionId
@@ -442,8 +434,7 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write),
             inputs: nil,
             extraArguments: [ExtraArgument(flag: "--debug", value: "")],
             sessionId: sessionId
@@ -456,8 +447,7 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write),
             inputs: nil,
             extraArguments: [ExtraArgument(flag: "--model", value: "opus")],
             sessionId: sessionId
@@ -472,8 +462,7 @@ struct HarnessRenderArgsTests {
             try Harness.renderArgs(
                 binary: self.binary,
                 operation: .start,
-                worktree: self.worktree,
-                mode: .write,
+                configuration: self.configuration(mode: .write),
                 inputs: nil,
                 extraArguments: extras,
                 sessionId: self.sessionId
@@ -483,8 +472,7 @@ struct HarnessRenderArgsTests {
         let baseline = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write),
             inputs: nil,
             sessionId: sessionId
         )
@@ -495,8 +483,7 @@ struct HarnessRenderArgsTests {
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            worktree: worktree,
-            mode: .write,
+            configuration: configuration(mode: .write),
             inputs: nil,
             extraArguments: [
                 ExtraArgument(flag: "--first", value: "1"),
@@ -509,5 +496,75 @@ struct HarnessRenderArgsTests {
 
         let tail = Array(args.suffix(3))
         #expect(tail == ["--first", "1", "--last"])
+    }
+}
+
+@Suite("Harness.SessionConfiguration")
+struct HarnessSessionConfigurationTests {
+    let worktree = URL(fileURLWithPath: "/tmp/wt")
+    let skill = URL(fileURLWithPath: "/skills/grill-me.md")
+    let addDir = URL(fileURLWithPath: "/skills/grill-me")
+    let pinnedServer = MCPServer(name: "hercules", command: "/path/to/Hercules", tools: ["create_issue"])
+
+    @Test func fromSessionCarriesEveryPin() {
+        let session = Session(
+            id: Session.ID(rawValue: UUID()),
+            worktree: worktree,
+            mode: .readOnly,
+            kind: .design,
+            skillFiles: [skill],
+            addDirs: [addDir],
+            mcpServers: [pinnedServer]
+        )
+
+        let configuration = Harness.SessionConfiguration(session: session)
+
+        #expect(configuration.worktree == worktree)
+        #expect(configuration.mode == .readOnly)
+        #expect(configuration.skillFiles == [skill])
+        #expect(configuration.addDirs == [addDir])
+        #expect(configuration.mcpServers == [pinnedServer])
+    }
+
+    /// A resume Turn's override replaces the pinned servers for that Turn only (ADR 0001); the Session
+    /// itself is untouched, so the next Turn without an override sees the pins again.
+    @Test func perTurnMCPOverrideReplacesPinnedServers() {
+        let session = Session(
+            id: Session.ID(rawValue: UUID()),
+            worktree: worktree,
+            mode: .write,
+            kind: .execute,
+            mcpServers: [pinnedServer]
+        )
+        let override = MCPServer(name: "other", command: "/other", tools: ["ask_user"])
+
+        #expect(Harness.SessionConfiguration(session: session, mcpServers: [override]).mcpServers == [override])
+        #expect(Harness.SessionConfiguration(session: session, mcpServers: []).mcpServers == [])
+        #expect(Harness.SessionConfiguration(session: session, mcpServers: nil).mcpServers == [pinnedServer])
+    }
+
+    @Test func fromStartRequestCarriesEveryPin() throws {
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let request = StartRequest(
+            prompt: "hello",
+            worktree: worktree,
+            mode: .readOnly,
+            database: database,
+            workflowID: workflowID,
+            kind: .design,
+            skillFiles: [skill],
+            addDirs: [addDir],
+            mcpServers: [pinnedServer]
+        )
+
+        let configuration = Harness.SessionConfiguration(request: request)
+
+        #expect(configuration.worktree == worktree)
+        #expect(configuration.mode == .readOnly)
+        #expect(configuration.skillFiles == [skill])
+        #expect(configuration.addDirs == [addDir])
+        #expect(configuration.mcpServers == [pinnedServer])
     }
 }

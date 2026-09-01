@@ -20,12 +20,11 @@ struct HarnessRunner {
             sessionId: session.id,
             prompt: request.prompt,
             operation: .resume,
-            worktree: session.worktree,
-            mode: session.mode,
-            inputs: request.inputs,
-            skillFiles: session.skillFiles,
-            addDirs: session.addDirs,
-            mcpServers: request.mcpServers ?? session.mcpServers
+            configuration: Harness.SessionConfiguration(
+                session: session,
+                mcpServers: request.mcpServers
+            ),
+            inputs: request.inputs
         )
     }
 
@@ -50,12 +49,8 @@ struct HarnessRunner {
             sessionId: sessionId,
             prompt: request.prompt,
             operation: .start,
-            worktree: request.worktree,
-            mode: request.mode,
-            inputs: request.inputs,
-            skillFiles: request.skillFiles,
-            addDirs: request.addDirs,
-            mcpServers: request.mcpServers
+            configuration: Harness.SessionConfiguration(request: request),
+            inputs: request.inputs
         )
     }
 
@@ -66,12 +61,8 @@ struct HarnessRunner {
         sessionId: Session.ID,
         prompt: String,
         operation: Harness.Operation,
-        worktree: URL,
-        mode: AgentMode,
-        inputs: InputBundle?,
-        skillFiles: [URL],
-        addDirs: [URL],
-        mcpServers: [MCPServer]
+        configuration: Harness.SessionConfiguration,
+        inputs: InputBundle?
     ) async throws {
         let startedAt = now
         let turnID = uuid()
@@ -101,12 +92,8 @@ struct HarnessRunner {
         let args = try Harness.renderArgs(
             binary: binaryURL,
             operation: operation,
-            worktree: worktree,
-            mode: mode,
+            configuration: configuration,
             inputs: inputs,
-            skillFiles: skillFiles,
-            addDirs: addDirs,
-            mcpServers: mcpServers,
             sessionDataDirectory: sessionDataDirectory,
             extraArguments: extraArguments,
             sessionId: sessionId
@@ -115,7 +102,7 @@ struct HarnessRunner {
         let process = SubProcess(
             executable: binaryURL,
             arguments: args,
-            workingDirectory: worktree,
+            workingDirectory: configuration.worktree,
             teardownGrace: teardownGrace
         )
 

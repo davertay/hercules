@@ -7,21 +7,68 @@ public enum Harness {
         case resume
     }
 
+    /// The settings a Session pins at start and re-passes on every resume Turn. It is an unbundled
+    /// `Session` — on resume it is built from the real one, on start from the `StartRequest` that is
+    /// about to become one — so the two runner paths spell it once each instead of field by field.
+    public struct SessionConfiguration: Sendable {
+        /// The Harness's cwd. Not rendered as an argument; passed to the subprocess directly.
+        public var worktree: URL
+        public var mode: AgentMode
+        /// Rendered as one `--append-system-prompt-file` each (ADR 0004).
+        public var skillFiles: [URL]
+        /// Exposed via `--add-dir`, alongside any `InputBundle`.
+        public var addDirs: [URL]
+        public var mcpServers: [MCPServer]
+
+        public init(
+            worktree: URL,
+            mode: AgentMode,
+            skillFiles: [URL] = [],
+            addDirs: [URL] = [],
+            mcpServers: [MCPServer] = []
+        ) {
+            self.worktree = worktree
+            self.mode = mode
+            self.skillFiles = skillFiles
+            self.addDirs = addDirs
+            self.mcpServers = mcpServers
+        }
+
+        /// A resume Turn's configuration: the Session's own pins, except that a non-`nil` `mcpServers`
+        /// overrides the pinned set for this Turn only, without mutating the Session (ADR 0001).
+        public init(session: Session, mcpServers: [MCPServer]? = nil) {
+            self.init(
+                worktree: session.worktree,
+                mode: session.mode,
+                skillFiles: session.skillFiles,
+                addDirs: session.addDirs,
+                mcpServers: mcpServers ?? session.mcpServers
+            )
+        }
+
+        /// A start Turn's configuration: what the request asks to pin, before the Session exists.
+        public init(request: StartRequest) {
+            self.init(
+                worktree: request.worktree,
+                mode: request.mode,
+                skillFiles: request.skillFiles,
+                addDirs: request.addDirs,
+                mcpServers: request.mcpServers
+            )
+        }
+    }
+
     public static func renderArgs(
         binary: URL,
         operation: Operation,
-        worktree: URL,
-        mode: AgentMode,
+        configuration: SessionConfiguration,
         inputs: InputBundle?,
-        skillFiles: [URL] = [],
-        addDirs: [URL] = [],
-        mcpServers: [MCPServer] = [],
         sessionDataDirectory: URL? = nil,
         extraArguments: [ExtraArgument] = [],
         sessionId: Session.ID
     ) throws -> [String] {
         // We deliberately avoid `bypassPermissions`: enterprise-managed policy can forbid it
-        let permissionMode = mode == .readOnly ? "default" : "acceptEdits"
+        let permissionMode = configuration.mode == .readOnly ? "default" : "acceptEdits"
         var args: [String] = [
             "--print",
             "--output-format", "stream-json",
@@ -43,8 +90,8 @@ public enum Harness {
         // MCP tools are allowlisted in both modes: in readOnly they write only to the database (so the
         // read-only guarantee holds), and in write mode `acceptEdits` doesn't auto-approve them.
         // Deriving from the descriptors keeps configured-and-allowed in step.
-        let mcpTools = mcpServers.flatMap(\.qualifiedToolNames)
-        switch mode {
+        let mcpTools = configuration.mcpServers.flatMap(\.qualifiedToolNames)
+        switch configuration.mode {
         case .readOnly:
             // `gh` is allowlisted so the agent can read GitHub issues/PRs without prompting. Note this
             // also exposes gh's write subcommands; the read-only guarantee covers the local filesystem
@@ -56,13 +103,13 @@ public enum Harness {
             args += ["--allowedTools"] + ["Bash"] + mcpTools
         }
 
-        if !mcpServers.isEmpty {
+        if !configuration.mcpServers.isEmpty {
             guard let sessionDataDirectory else {
                 throw AgentError.mcpConfigDirectoryMissing
             }
             try FileManager.default.createDirectory(at: sessionDataDirectory, withIntermediateDirectories: true)
             let configURL = sessionDataDirectory.appendingPathComponent("mcp-config.json")
-            try mcpConfigJSON(servers: mcpServers).write(to: configURL)
+            try mcpConfigJSON(servers: configuration.mcpServers).write(to: configURL)
             args += ["--mcp-config", configURL.path]
         }
 
@@ -70,11 +117,11 @@ public enum Harness {
             args += ["--add-dir", inputs.root.path]
         }
 
-        for dir in addDirs {
+        for dir in configuration.addDirs {
             args += ["--add-dir", dir.path]
         }
 
-        for file in skillFiles {
+        for file in configuration.skillFiles {
             args += ["--append-system-prompt-file", file.path]
         }
 
