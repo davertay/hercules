@@ -211,6 +211,66 @@ struct HarnessRenderArgsTests {
         #expect(addDirValues == [inputsRoot.path, dir1.path, dir2.path])
     }
 
+    // MARK: - Setting sources
+
+    /// The default: only the user's own settings load, so a repository's `.claude/` hooks and permissions
+    /// stay out of an unattended run.
+    @Test func untrustedRepositoryLoadsUserSettingSourcesOnly() throws {
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            configuration: configuration(mode: .write),
+            inputs: nil,
+            sessionId: sessionId
+        )
+
+        let idx = try #require(args.firstIndex(of: "--setting-sources"))
+        #expect(args[idx + 1] == "user")
+    }
+
+    /// The Workflow's opt-in restores the repository's own setting sources alongside the user's.
+    @Test func trustedRepositoryLoadsProjectAndLocalSettingSources() throws {
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            configuration: configuration(mode: .write),
+            trustsRepositorySettings: true,
+            inputs: nil,
+            sessionId: sessionId
+        )
+
+        let idx = try #require(args.firstIndex(of: "--setting-sources"))
+        #expect(args[idx + 1] == "user,project,local")
+    }
+
+    /// Trust is a per-Turn input, not a Session pin, so it applies to a resume Turn exactly as it does to
+    /// a start Turn — and changes nothing else about the rendered arguments.
+    @Test func trustAffectsResumeTurnsAndNothingButSettingSources() throws {
+        let untrusted = try Harness.renderArgs(
+            binary: binary,
+            operation: .resume,
+            configuration: configuration(mode: .readOnly),
+            inputs: nil,
+            sessionId: sessionId
+        )
+        let trusted = try Harness.renderArgs(
+            binary: binary,
+            operation: .resume,
+            configuration: configuration(mode: .readOnly),
+            trustsRepositorySettings: true,
+            inputs: nil,
+            sessionId: sessionId
+        )
+
+        let idx = try #require(trusted.firstIndex(of: "--setting-sources"))
+        #expect(trusted[idx + 1] == "user,project,local")
+        #expect(untrusted[idx + 1] == "user")
+
+        var expected = untrusted
+        expected[idx + 1] = "user,project,local"
+        #expect(trusted == expected)
+    }
+
     // MARK: - MCP servers
 
     /// A temp directory unique to a call; auto-created by `renderArgs` when it writes the config.

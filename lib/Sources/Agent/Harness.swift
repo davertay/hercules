@@ -58,10 +58,13 @@ public enum Harness {
         }
     }
 
+    /// `trustsRepositorySettings` is *not* part of ``SessionConfiguration``: it is resolved per Turn from
+    /// the Workflow's current setting, not pinned when the Session starts.
     public static func renderArgs(
         binary: URL,
         operation: Operation,
         configuration: SessionConfiguration,
+        trustsRepositorySettings: Bool = false,
         inputs: InputBundle?,
         sessionDataDirectory: URL? = nil,
         extraArguments: [ExtraArgument] = [],
@@ -69,13 +72,19 @@ public enum Harness {
     ) throws -> [String] {
         // We deliberately avoid `bypassPermissions`: enterprise-managed policy can forbid it
         let permissionMode = configuration.mode == .readOnly ? "default" : "acceptEdits"
+        // `user` is settings the user deliberately authored for themselves (MCP servers, model
+        // preference), so it always loads. `project`/`local` are settings that arrived with whatever
+        // repository the Workflow was pointed at, and their hooks run shell commands inside a
+        // semi-autonomous run with nobody watching each one fire — so they load only on the Workflow's
+        // explicit opt-in.
+        let settingSources = trustsRepositorySettings ? "user,project,local" : "user"
         var args: [String] = [
             "--print",
             "--output-format", "stream-json",
             // Realtime input keeps stdin open so we can interrupt mid-Turn on a question (see `SubProcess`).
             "--input-format", "stream-json",
             "--permission-mode", permissionMode,
-            "--setting-sources", "user,project,local",
+            "--setting-sources", settingSources,
             "--verbose",
             "--include-partial-messages",
         ]
