@@ -195,7 +195,8 @@ public final class ValidateModel {
                             command: mcpServerCommand, workflowDirectory: workflowDirectory,
                             workflowID: workflowID, propose: true
                         )
-                    ]
+                    ],
+                    trustsRepositorySettings: database.trustsRepositorySettings(workflowID: workflowID)
                 )
             )
             // The Summary is the Turn's final answer (same mechanism as Design/PRD finalization), but the

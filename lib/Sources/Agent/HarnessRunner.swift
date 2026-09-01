@@ -24,6 +24,7 @@ struct HarnessRunner {
                 session: session,
                 mcpServers: request.mcpServers
             ),
+            trustsRepositorySettings: request.trustsRepositorySettings,
             inputs: request.inputs
         )
     }
@@ -50,6 +51,7 @@ struct HarnessRunner {
             prompt: request.prompt,
             operation: .start,
             configuration: Harness.SessionConfiguration(request: request),
+            trustsRepositorySettings: request.trustsRepositorySettings,
             inputs: request.inputs
         )
     }
@@ -62,6 +64,7 @@ struct HarnessRunner {
         prompt: String,
         operation: Harness.Operation,
         configuration: Harness.SessionConfiguration,
+        trustsRepositorySettings: Bool,
         inputs: InputBundle?
     ) async throws {
         let startedAt = now
@@ -93,6 +96,7 @@ struct HarnessRunner {
             binary: binaryURL,
             operation: operation,
             configuration: configuration,
+            trustsRepositorySettings: trustsRepositorySettings,
             inputs: inputs,
             sessionDataDirectory: sessionDataDirectory,
             extraArguments: extraArguments,

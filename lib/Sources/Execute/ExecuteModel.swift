@@ -289,7 +289,8 @@ public final class ExecuteModel {
                     kind: .execute,
                     issueNumber: issueNumber,
                     skillFiles: [skill.fileUrl],
-                    addDirs: [skill.folderUrl]
+                    addDirs: [skill.folderUrl],
+                    trustsRepositorySettings: database.trustsRepositorySettings(workflowID: workflowID)
                 )
             )
         } catch {

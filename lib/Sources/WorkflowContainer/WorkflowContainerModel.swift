@@ -173,6 +173,12 @@ public final class WorkflowContainerModel {
         workflowRow?.title ?? ""
     }
 
+    /// Whether the repo's own Claude Code settings load into this Workflow's Harnesses. Off until the
+    /// user opts in from the settings sheet.
+    var trustsRepositorySettings: Bool {
+        workflowRow?.trustsRepositorySettings ?? false
+    }
+
     func subtitle(phase: Phase?) -> String {
         workflowWindowDisplaySubtitle(repoPath: repoPath, phase: phase)
     }
@@ -188,6 +194,23 @@ public final class WorkflowContainerModel {
                 .where { $0.id.eq(workflowID) }
                 .update {
                     $0.title = trimmed
+                    $0.updatedAt = now
+                }
+                .execute(db)
+        }
+    }
+
+    /// Persists the repo-settings trust opt-in, bumping `updatedAt`. Invoked from the settings sheet's
+    /// Done; every Harness spawned afterwards reads the new value (see `trustsRepositorySettings(workflowID:)`).
+    public func updateTrustsRepositorySettings(_ trusts: Bool) {
+        @Dependency(\.date.now) var now
+        guard let database else { return }
+        let workflowID = id
+        try? database.write { db in
+            try WorkflowRow
+                .where { $0.id.eq(workflowID) }
+                .update {
+                    $0.trustsRepositorySettings = trusts
                     $0.updatedAt = now
                 }
                 .execute(db)
