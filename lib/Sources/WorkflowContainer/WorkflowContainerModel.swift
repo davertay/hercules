@@ -46,6 +46,12 @@ public final class WorkflowContainerModel {
     /// a brief non-blocking notice before closing the window.
     public var cleanupNotice: String?
 
+    /// Whether the Worktree's own Claude Code settings declare hooks. Read once at Workflow open: the
+    /// repository's settings arrive with the checkout, so re-reading them on every view update would spend
+    /// a filesystem hit per frame to catch a change the user can just as well see on reopening.
+    @ObservationIgnored
+    let repositoryDeclaresHooks: Bool
+
     /// The launcher's open-window registry, if this window was opened from the app. The model registers its
     /// id on construction and unregisters on teardown so the launcher can tell which Workflows are open.
     @ObservationIgnored
@@ -61,6 +67,7 @@ public final class WorkflowContainerModel {
         // The worktree path is a pure convention derived from the directory, so a state-restored reopen
         // recomputes it and reads the already-existing on-disk worktree without re-creating it.
         let worktree = workflowWorktree(in: data.directory)
+        repositoryDeclaresHooks = repositorySettingsDeclareHooks(worktree: worktree)
 
         let database = try? openWorkflowDatabase(at: data.directory)
         self.database = database
@@ -177,6 +184,13 @@ public final class WorkflowContainerModel {
     /// user opts in from the settings sheet.
     var trustsRepositorySettings: Bool {
         workflowRow?.trustsRepositorySettings ?? false
+    }
+
+    /// Whether to disclose that this Workflow is dropping hooks the repository actually declares — the only
+    /// case where the trust default silently changes what the repo asked for. Trust is read from the
+    /// observed row, so granting it from the settings sheet clears the notice on the spot.
+    var isSuppressingRepositoryHooks: Bool {
+        repositoryDeclaresHooks && !trustsRepositorySettings
     }
 
     func subtitle(phase: Phase?) -> String {
