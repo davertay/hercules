@@ -1,0 +1,19 @@
+[
+  [0]: "--print",
+  [1]: "--output-format",
+  [2]: "stream-json",
+  [3]: "--input-format",
+  [4]: "stream-json",
+  [5]: "--permission-mode",
+  [6]: "acceptEdits",
+  [7]: "--setting-sources",
+  [8]: "user",
+  [9]: "--verbose",
+  [10]: "--include-partial-messages",
+  [11]: "--session-id",
+  [12]: "00000000-0000-0000-0000-000000000001",
+  [13]: "--allowedTools",
+  [14]: "Bash",
+  [15]: "--settings",
+  [16]: "/tmp/HarnessRenderArgsTests-hook/00000000-0000-0000-0000-0000000000A1.settings.json"
+]

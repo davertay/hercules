@@ -14,6 +14,7 @@ struct HarnessRenderArgsTests {
     let worktree = URL(fileURLWithPath: "/tmp/wt")
     let inputsRoot = URL(fileURLWithPath: "/tmp/inputs")
     let sessionId = Session.ID(rawValue: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!)
+    let turnID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
 
     /// The session-pinned configuration under test, over the suite's fixed worktree.
     private func configuration(
@@ -271,12 +272,81 @@ struct HarnessRenderArgsTests {
         #expect(trusted == expected)
     }
 
+    // MARK: - StopFailure hook
+
+    /// Every Turn with a scratch directory registers the hook: a settings file written into that
+    /// directory and passed as `--settings`. The path is a fixed one so the snapshot of the arguments
+    /// — the file name is keyed by turn id — is stable across machines.
+    @Test func scratchRendersStopFailureHookSettingsFile() throws {
+        let scratch = Harness.TurnScratch(
+            directory: URL(fileURLWithPath: "/tmp/HarnessRenderArgsTests-hook"),
+            turnID: turnID
+        )
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            configuration: configuration(mode: .write),
+            inputs: nil,
+            scratch: scratch,
+            sessionId: sessionId
+        )
+
+        withSnapshotTesting(record: .missing) {
+            assertSnapshot(of: args, as: .customDump)
+        }
+
+        let idx = try #require(args.firstIndex(of: "--settings"))
+        #expect(args[idx + 1] == "/tmp/HarnessRenderArgsTests-hook/\(turnID.uuidString).settings.json")
+        #expect(FileManager.default.fileExists(atPath: args[idx + 1]))
+
+        // The registered command drops the payload in the file this Turn's runner reads back.
+        let written = try String(contentsOf: scratch.hookSettingsFile, encoding: .utf8)
+        let expected = try StopFailureHook.settingsJSON(dropFile: scratch.stopFailureDropFile)
+        #expect(written == String(decoding: expected, as: UTF8.self))
+        #expect(written.contains(scratch.stopFailureDropFile.path))
+    }
+
+    /// Two Turns of one Session share the directory but not the files that must not be shared: a
+    /// drop-file left behind by the first can't be read as the second's.
+    @Test func eachTurnGetsItsOwnHookSettingsAndDropFile() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HarnessRenderArgsTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let first = Harness.TurnScratch(directory: directory, turnID: UUID())
+        let second = Harness.TurnScratch(directory: directory, turnID: UUID())
+
+        #expect(first.hookSettingsFile != second.hookSettingsFile)
+        #expect(first.stopFailureDropFile != second.stopFailureDropFile)
+        #expect(first.mcpConfigFile == second.mcpConfigFile)
+    }
+
+    /// Rendering without a scratch directory leaves nowhere for the hook to drop a payload, so no hook
+    /// is registered — the arguments are the ones this Harness rendered before the hook existed.
+    @Test func noScratchRegistersNoHook() throws {
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .start,
+            configuration: configuration(mode: .write),
+            inputs: nil,
+            sessionId: sessionId
+        )
+
+        #expect(!args.contains("--settings"))
+    }
+
     // MARK: - MCP servers
 
-    /// A temp directory unique to a call; auto-created by `renderArgs` when it writes the config.
-    private func makeSessionDataDir() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("HarnessRenderArgsTests-\(UUID().uuidString)", isDirectory: true)
+    /// A Turn scratch over a temp directory unique to a call; the directory is auto-created by
+    /// `renderArgs` when it writes the Turn's config files into it.
+    private func makeScratch() -> Harness.TurnScratch {
+        Harness.TurnScratch(
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("HarnessRenderArgsTests-\(UUID().uuidString)", isDirectory: true),
+            turnID: turnID
+        )
     }
 
     private var herculesServer: MCPServer {
@@ -290,15 +360,15 @@ struct HarnessRenderArgsTests {
     }
 
     @Test func readOnlyWithMCPServerWritesConfigAndExtendsAllowlist() throws {
-        let dataDir = makeSessionDataDir()
-        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let scratch = makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
 
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
             configuration: configuration(mode: .readOnly, mcpServers: [herculesServer]),
             inputs: nil,
-            sessionDataDirectory: dataDir,
+            scratch: scratch,
             sessionId: sessionId
         )
 
@@ -306,7 +376,7 @@ struct HarnessRenderArgsTests {
         #expect(args.contains("--mcp-config"))
         let configIdx = args.firstIndex(of: "--mcp-config")!
         let configPath = args[configIdx + 1]
-        #expect(configPath == dataDir.appendingPathComponent("mcp-config.json").path)
+        #expect(configPath == scratch.directory.appendingPathComponent("mcp-config.json").path)
         #expect(FileManager.default.fileExists(atPath: configPath))
 
         // The allowlist is the readOnly base plus the derived tool name(s), in order.
@@ -321,15 +391,15 @@ struct HarnessRenderArgsTests {
     }
 
     @Test func resumeRepassesMCPConfig() throws {
-        let dataDir = makeSessionDataDir()
-        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let scratch = makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
 
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .resume,
             configuration: configuration(mode: .readOnly, mcpServers: [herculesServer]),
             inputs: nil,
-            sessionDataDirectory: dataDir,
+            scratch: scratch,
             sessionId: sessionId
         )
 
@@ -341,15 +411,15 @@ struct HarnessRenderArgsTests {
     /// A resume Turn carrying a per-Turn override (the server set the override resolves to) renders
     /// with `--mcp-config` and the derived tool in `--allowedTools`, just as a pinned set would.
     @Test func resumeWithPerTurnOverrideRendersConfigAndAllowlistedTool() throws {
-        let dataDir = makeSessionDataDir()
-        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let scratch = makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
 
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .resume,
             configuration: configuration(mode: .readOnly, mcpServers: [herculesServer]),
             inputs: nil,
-            sessionDataDirectory: dataDir,
+            scratch: scratch,
             sessionId: sessionId
         )
 
@@ -364,15 +434,15 @@ struct HarnessRenderArgsTests {
     /// The override's absence (empty server set) leaves a resume Turn without `--mcp-config` or the
     /// derived tool — the fallback path behaves exactly like a plain resume.
     @Test func resumeWithoutOverrideRendersNoConfigAndNoAllowlistedTool() throws {
-        let dataDir = makeSessionDataDir()
-        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let scratch = makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
 
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .resume,
             configuration: configuration(mode: .readOnly, mcpServers: []),
             inputs: nil,
-            sessionDataDirectory: dataDir,
+            scratch: scratch,
             sessionId: sessionId
         )
 
@@ -382,15 +452,15 @@ struct HarnessRenderArgsTests {
     }
 
     @Test func writeModeWithMCPServerAllowlistsBashAndMCPTools() throws {
-        let dataDir = makeSessionDataDir()
-        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let scratch = makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
 
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
             configuration: configuration(mode: .write, mcpServers: [herculesServer]),
             inputs: nil,
-            sessionDataDirectory: dataDir,
+            scratch: scratch,
             sessionId: sessionId
         )
 
@@ -402,24 +472,31 @@ struct HarnessRenderArgsTests {
         #expect(args[allowedIdx + 2] == "mcp__hercules__create_issue")
     }
 
+    /// No servers, no `--mcp-config` and no config file — only the hook settings every Turn writes are
+    /// left in the scratch directory.
     @Test func noMCPServerLeavesArgsUnchanged() throws {
-        let dataDir = makeSessionDataDir()
-        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let scratch = makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
 
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
             configuration: configuration(mode: .readOnly, mcpServers: []),
             inputs: nil,
-            sessionDataDirectory: dataDir,
+            scratch: scratch,
             sessionId: sessionId
         )
 
         #expect(!args.contains("--mcp-config"))
-        #expect(!FileManager.default.fileExists(atPath: dataDir.path))
+        #expect(!FileManager.default.fileExists(atPath: scratch.mcpConfigFile.path))
+        // The allowlist is the readOnly base and nothing after it — no derived tool names. Anchored to
+        // the allowlist rather than to the end of `args`, which now carries the hook's `--settings`.
         let allowedIdx = args.firstIndex(of: "--allowedTools")!
-        #expect(args[allowedIdx + 1] == "Read")
-        #expect(args.last == "Bash(gh:*)")
+        #expect(
+            Array(args[(allowedIdx + 1)...(allowedIdx + 6)])
+                == ["Read", "Grep", "Glob", "WebFetch", "WebSearch", "Bash(gh:*)"]
+        )
+        #expect(args[allowedIdx + 7] == "--settings")
     }
 
     @Test func mcpServerWithoutDataDirectoryThrows() {
@@ -429,7 +506,7 @@ struct HarnessRenderArgsTests {
                 operation: .start,
                 configuration: configuration(mode: .readOnly, mcpServers: [herculesServer]),
                 inputs: nil,
-                sessionDataDirectory: nil,
+                scratch: nil,
                 sessionId: sessionId
             )
         }

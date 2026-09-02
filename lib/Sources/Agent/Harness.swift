@@ -58,6 +58,36 @@ public enum Harness {
         }
     }
 
+    /// The files a Turn generates for its Harness to read — the `--mcp-config` servers and the
+    /// `--settings` hook registration — in the Session's data directory.
+    ///
+    /// The turn id keys whichever of them a Turn must not share with another. That is the
+    /// ``StopFailureHook`` drop-file above all: it outlives the Turn that wrote it, and one read as a
+    /// later Turn's would misreport why that Turn ended.
+    public struct TurnScratch: Sendable {
+        public var directory: URL
+        public var turnID: UUID
+
+        public init(directory: URL, turnID: UUID) {
+            self.directory = directory
+            self.turnID = turnID
+        }
+
+        /// Rewritten every Turn, so a resume re-passes the pinned servers (ADR 0001).
+        var mcpConfigFile: URL {
+            directory.appendingPathComponent("mcp-config.json")
+        }
+
+        var hookSettingsFile: URL {
+            directory.appendingPathComponent("\(turnID.uuidString).settings.json")
+        }
+
+        /// Where this Turn's `StopFailure` hook drops its payload; read back once the Harness exits.
+        var stopFailureDropFile: URL {
+            directory.appendingPathComponent("\(turnID.uuidString).stop-failure.json")
+        }
+    }
+
     /// `trustsRepositorySettings` is *not* part of ``SessionConfiguration``: it is resolved per Turn from
     /// the Workflow's current setting, not pinned when the Session starts.
     public static func renderArgs(
@@ -66,7 +96,7 @@ public enum Harness {
         configuration: SessionConfiguration,
         trustsRepositorySettings: Bool = false,
         inputs: InputBundle?,
-        sessionDataDirectory: URL? = nil,
+        scratch: TurnScratch? = nil,
         extraArguments: [ExtraArgument] = [],
         sessionId: Session.ID
     ) throws -> [String] {
@@ -112,14 +142,22 @@ public enum Harness {
             args += ["--allowedTools"] + ["Bash"] + mcpTools
         }
 
-        if !configuration.mcpServers.isEmpty {
-            guard let sessionDataDirectory else {
-                throw AgentError.mcpConfigDirectoryMissing
+        if let scratch {
+            try FileManager.default.createDirectory(at: scratch.directory, withIntermediateDirectories: true)
+
+            // Every Turn registers the StopFailure hook, so the reason it stopped arrives as a value
+            // rather than as prose to be scraped. The settings file is written rather than passed
+            // inline: `--settings` takes either, and a JSON literal on the command line is quoting hell.
+            try StopFailureHook.settingsJSON(dropFile: scratch.stopFailureDropFile)
+                .write(to: scratch.hookSettingsFile)
+            args += ["--settings", scratch.hookSettingsFile.path]
+
+            if !configuration.mcpServers.isEmpty {
+                try mcpConfigJSON(servers: configuration.mcpServers).write(to: scratch.mcpConfigFile)
+                args += ["--mcp-config", scratch.mcpConfigFile.path]
             }
-            try FileManager.default.createDirectory(at: sessionDataDirectory, withIntermediateDirectories: true)
-            let configURL = sessionDataDirectory.appendingPathComponent("mcp-config.json")
-            try mcpConfigJSON(servers: configuration.mcpServers).write(to: configURL)
-            args += ["--mcp-config", configURL.path]
+        } else if !configuration.mcpServers.isEmpty {
+            throw AgentError.mcpConfigDirectoryMissing
         }
 
         if let inputs {

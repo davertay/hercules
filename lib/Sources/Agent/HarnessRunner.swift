@@ -86,11 +86,14 @@ struct HarnessRunner {
             initialState: LineSink(projector: StreamProjector(database: database, turnID: turnID))
         )
 
-        // Scratch dir for the `--mcp-config` JSON; re-written each Turn so a resume re-passes the
-        // pinned servers (ADR 0001).
-        let sessionDataDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("hercules-sessions", isDirectory: true)
-            .appendingPathComponent(sessionId.rawValue.uuidString, isDirectory: true)
+        // Scratch dir for the config files this Turn generates for the Harness to read back: the
+        // `--mcp-config` servers and the `--settings` hook registration.
+        let scratch = Harness.TurnScratch(
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("hercules-sessions", isDirectory: true)
+                .appendingPathComponent(sessionId.rawValue.uuidString, isDirectory: true),
+            turnID: turnID
+        )
 
         let args = try Harness.renderArgs(
             binary: binaryURL,
@@ -98,7 +101,7 @@ struct HarnessRunner {
             configuration: configuration,
             trustsRepositorySettings: trustsRepositorySettings,
             inputs: inputs,
-            sessionDataDirectory: sessionDataDirectory,
+            scratch: scratch,
             extraArguments: extraArguments,
             sessionId: sessionId
         )
