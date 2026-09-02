@@ -286,6 +286,51 @@ struct ExecuteSessionLimitResumeTests {
         #expect(model.failureReason(for: issue) != unreadable)
     }
 
+    @Test("The unreadable-reset account outlives the model that recorded it")
+    func unreadableResetAccountSurvivesRelaunch() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, dependencies: [])
+
+        let unreadable = "You've hit your session limit · resets 11pm (Mars/Olympus)"
+        let context = WorkflowContext(
+            workflowID: workflowID, database: database,
+            worktree: FileManager.default.temporaryDirectory,
+            workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+        )
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.uuid = .incrementing
+            $0.continuousClock = TestClock()
+            $0.agentClient.start = { @Sendable request in
+                try await Self.recordSession(for: request, id: UUID(201), finalAnswer: unreadable, isError: true)
+                throw AgentError.harnessFailed(exitCode: 1, stderrTail: "limit", reason: "rate_limit")
+            }
+            $0.agentClient.send = { @Sendable _ in throw CancellationError() }
+            $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
+        } operation: {
+            ExecuteModel(context: context)
+        }
+
+        await model.run()
+
+        // A quit and relaunch: a second model over the same store, holding none of the first's in-memory
+        // state. It reads the halt back off the Issue, so the account still beats the transcript
+        // projection — which holds the very message no reset time could be read out of.
+        let relaunched = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            ExecuteModel(context: context)
+        }
+        await relaunched.refresh()
+
+        #expect(relaunched.transcriptFailureReasons[1] == unreadable)
+        let issue = try #require(relaunched.issues.first { $0.number == 1 })
+        #expect(relaunched.failureReason(for: issue) == issue.failureReason)
+        #expect(relaunched.failureReason(for: issue) != unreadable)
+    }
+
     @Test("A reported non-rate-limit halts even when its message reads exactly like a session limit")
     func reportedNonRateLimitHaltsDespiteLimitWording() async throws {
         let database = try Self.makeDatabase()

@@ -45,12 +45,6 @@ public final class ExecuteModel {
     @ObservationIgnored
     private var resumingIssueNumber: Int?
 
-    /// The Issue a run halted on after the Harness reported a rate limit whose message carried no reset
-    /// time — the one halt Hercules can explain better than the Harness can. Observed (not
-    /// `@ObservationIgnored`) so the banner and inspector pick the explanation up as the run records it,
-    /// and cleared when that Issue runs again, since a fresh attempt supersedes the verdict.
-    private var unreadableResetHalt: Int?
-
     /// Boxed so the run can be cancelled off the MainActor — both Stop and the window's teardown
     /// (`cancelRun`) route here.
     @ObservationIgnored
@@ -145,8 +139,11 @@ public final class ExecuteModel {
     /// The Harness's own words on the failure when it left any, else the reason the run recorded — with
     /// one exception: a rate limit we couldn't time, where the Harness's words are precisely the words we
     /// couldn't read, and our account of why the run stopped instead of waiting is the more useful one.
+    /// That account is recognised by the Issue's own recorded reason, the durable record of the halt, so
+    /// it reads the same after a relaunch as the transcript projection does — and a fresh attempt clears
+    /// it with every other failure reason, since a new run supersedes the verdict.
     public func failureReason(for issue: IssueRow) -> String? {
-        if issue.number == unreadableResetHalt { return Self.unreadableResetReason }
+        if issue.failureReason == Self.unreadableResetReason { return issue.failureReason }
         return transcriptFailureReasons[issue.number] ?? issue.failureReason
     }
 
@@ -279,8 +276,6 @@ public final class ExecuteModel {
     @discardableResult
     public func runIssue(_ issue: IssueRow) async -> Bool {
         let issueNumber = issue.number
-        // A fresh attempt supersedes any earlier verdict about this Issue.
-        if unreadableResetHalt == issueNumber { unreadableResetHalt = nil }
         try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .inProgress, now: now)
 
         // HEAD before the run — the baseline a commit must move off. If we can't read it we can't verify
@@ -360,7 +355,8 @@ public final class ExecuteModel {
 
     /// What a rate limit reports when the Harness's message carried no reset time we could read. There is
     /// nothing to sleep until, so the run says so and stops, rather than reporting a generic failure or
-    /// guessing at when a limit we can't see the end of will clear.
+    /// guessing at when a limit we can't see the end of will clear. Recorded on the Issue, where it is
+    /// also what `failureReason(for:)` recognises the halt by — so it is written in exactly one place.
     private static let unreadableResetReason = """
         Hit a rate limit, but couldn't read a reset time out of the Harness's message — halted here. \
         Retry once the limit clears.
@@ -442,7 +438,6 @@ public final class ExecuteModel {
 
         let message = (try? database.latestExecuteErrorMessage(forIssue: number, workflowID: workflowID)) ?? nil
         guard let resetAt = message.flatMap({ SessionLimitReset.parse($0, now: now) }) else {
-            unreadableResetHalt = number
             failIssue(number, reason: Self.unreadableResetReason)
             return false
         }
