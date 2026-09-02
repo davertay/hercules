@@ -20,6 +20,38 @@ struct RepositoryHooksNoticeTests {
         #expect(repositorySettingsDeclareHooks(worktree: worktree))
     }
 
+    /// `settings.local.json` is the uncommitted file Claude Code writes for machine-local settings, so it is
+    /// where a developer's own hooks most often live. Trust governs it exactly as it governs `settings.json`
+    /// — the toggle moves `--setting-sources` between `user` and `user,project,local` — so a repo declaring
+    /// hooks only here is silently losing them, and gets the same notice.
+    @Test func localSettingsDeclaringHooksAreDetected() throws {
+        let worktree = try Self.makeWorktree(settings: nil, localSettings: #"{"hooks": {"Stop": []}}"#)
+        defer { Self.remove(worktree) }
+
+        #expect(repositorySettingsDeclareHooks(worktree: worktree))
+    }
+
+    @Test func hooksDeclaredInBothFilesAreDetected() throws {
+        let worktree = try Self.makeWorktree(
+            settings: #"{"hooks": {"PreToolUse": []}}"#,
+            localSettings: #"{"hooks": {"Stop": []}}"#
+        )
+        defer { Self.remove(worktree) }
+
+        #expect(repositorySettingsDeclareHooks(worktree: worktree))
+    }
+
+    /// Each file fails independently: an unparseable `settings.local.json` reads as no hooks rather than
+    /// standing in for the whole worktree, and the clean `settings.json` beside it still decides the answer.
+    @Test func malformedLocalSettingsBesideCleanSettingsAreNotDetected() throws {
+        let worktree = try Self.makeWorktree(
+            settings: #"{"model": "opus"}"#, localSettings: "{ this is not json"
+        )
+        defer { Self.remove(worktree) }
+
+        #expect(!repositorySettingsDeclareHooks(worktree: worktree))
+    }
+
     /// Plenty of repos ship settings with no hooks in them at all; those lose nothing worth mentioning.
     @Test func settingsWithoutAHooksKeyAreNotDetected() throws {
         let worktree = try Self.makeWorktree(settings: #"{"model": "opus", "permissions": {"allow": []}}"#)
@@ -146,20 +178,26 @@ struct RepositoryHooksNoticeTests {
         }
     }
 
-    /// A worktree directory, with `.claude/settings.json` written verbatim when `settings` is non-nil.
-    private static func makeWorktree(settings: String?) throws -> URL {
+    /// A worktree directory, with each of `.claude/settings.json` and `.claude/settings.local.json` written
+    /// verbatim when its argument is non-nil.
+    private static func makeWorktree(settings: String?, localSettings: String? = nil) throws -> URL {
         let worktree = makeTempDir()
         try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
         if let settings {
             try writeSettings(settings, in: worktree)
         }
+        if let localSettings {
+            try writeSettings(localSettings, in: worktree, named: "settings.local.json")
+        }
         return worktree
     }
 
-    private static func writeSettings(_ contents: String, in worktree: URL) throws {
+    private static func writeSettings(
+        _ contents: String, in worktree: URL, named name: String = "settings.json"
+    ) throws {
         let claude = worktree.appending(path: ".claude")
         try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
-        try contents.write(to: claude.appending(path: "settings.json"), atomically: true, encoding: .utf8)
+        try contents.write(to: claude.appending(path: name), atomically: true, encoding: .utf8)
     }
 
     private static func makeTempDir() -> URL {

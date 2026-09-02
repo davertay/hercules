@@ -5,15 +5,25 @@ import SwiftUI
 // own Claude Code hooks. Both halves live here — the condition that decides whether anything is actually
 // being suppressed, and the notice that says so.
 
-/// Whether the Worktree's `.claude/settings.json` declares `hooks` — shell commands that would run inside
-/// this Workflow's Harnesses if it trusted the repository's settings.
+/// Whether either of the Worktree's `.claude` settings files declares `hooks` — shell commands that would
+/// run inside this Workflow's Harnesses if it trusted the repository's settings.
 ///
-/// Every failure answers `false`: no file, an unreadable one, malformed JSON, or a root that isn't an
-/// object. This is asked only to decide whether to show a notice, so a file we can't parse is not worth
-/// warning about — and warning on the hypothetical rather than the actual is how a notice stops being
+/// Both files are asked because the trust toggle governs both: it moves `--setting-sources` between `user`
+/// and `user,project,local`, and `local` is `settings.local.json` — the uncommitted file Claude Code writes
+/// for machine-local settings, and so a very ordinary place for a developer's own hooks to live.
+///
+/// Every failure answers `false` for that file: no file, an unreadable one, malformed JSON, or a root that
+/// isn't an object. This is asked only to decide whether to show a notice, so a file we can't parse is not
+/// worth warning about — and warning on the hypothetical rather than the actual is how a notice stops being
 /// read. Never throws, so it can't get in the way of opening a Workflow.
 func repositorySettingsDeclareHooks(worktree: URL) -> Bool {
-    let settings = worktree.appending(path: ".claude/settings.json")
+    let claude = worktree.appending(path: ".claude")
+    return ["settings.json", "settings.local.json"].contains { file in
+        settingsFileDeclaresHooks(claude.appending(path: file))
+    }
+}
+
+private func settingsFileDeclaresHooks(_ settings: URL) -> Bool {
     guard
         let data = try? Data(contentsOf: settings),
         let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -37,7 +47,7 @@ struct RepositoryHooksBanner: View {
                     .font(.callout.weight(.semibold))
                 Text(
                     """
-                    Its .claude/settings.json declares hooks. Turn on “Trust this repository's Claude Code \
+                    Its .claude settings declare hooks. Turn on “Trust this repository's Claude Code \
                     settings” in Workflow Settings to let them run.
                     """
                 )
