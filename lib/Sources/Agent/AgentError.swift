@@ -17,6 +17,25 @@ public enum AgentError: Error, Sendable {
     case cancelled
 }
 
+extension AgentError {
+    /// Whether the Harness reported *for itself* that it gave the Turn up to the account's rate limit —
+    /// the one failure class worth waiting out rather than halting on.
+    ///
+    /// `false` for a failure that reported no reason at all, which is every Turn whose Harness didn't
+    /// run the hook: an unreported rate limit is indistinguishable from any other failure and is
+    /// treated as one. It is deliberately not inferred from the wording of `stderrTail` — prose that
+    /// mentions a limit is not the Harness saying it hit one.
+    public var isReportedRateLimit: Bool {
+        guard case .harnessFailed(_, _, let reason) = self else { return false }
+        return reason == Self.rateLimitReason
+    }
+
+    /// The reason the Harness reports when the account's rate limit ended the Turn. Its siblings
+    /// (`overloaded`, and whatever the taxonomy grows) get no constant here on purpose: none of them
+    /// changes what a caller does, and naming them would imply otherwise.
+    private static let rateLimitReason = "rate_limit"
+}
+
 extension AgentError: LocalizedError {
     public var errorDescription: String? {
         switch self {
