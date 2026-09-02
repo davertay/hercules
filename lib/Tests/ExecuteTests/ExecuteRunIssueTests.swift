@@ -80,6 +80,41 @@ struct ExecuteRunIssueTests {
         #expect(try Self.status(database, workflowID: workflowID, number: 2) == "done")
     }
 
+    @Test(
+        "The Workflow's trust setting reaches the run's StartRequest",
+        arguments: [true, false]
+    )
+    func runIssueCarriesTheWorkflowTrustSetting(_ trusts: Bool) async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, body: "Do it.", trusts: trusts)
+        let captured = LockIsolated<StartRequest?>(nil)
+        let head = LockIsolated(0)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                captured.setValue(request)
+                return try await Self.startSession(for: request, id: UUID(100))
+            }
+            $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
+        } operation: {
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
+        }
+
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        await model.runIssue(issue)
+
+        // A behind-the-scenes write agent inherits the Workflow's answer; omitting the argument here
+        // would silently run every Issue without the repository's settings.
+        #expect(captured.value?.trustsRepositorySettings == trusts)
+    }
+
     @Test("Standard mode attaches both the PRD and the Design summary, PRD first")
     func attachesPRDThenDesignSummary() async throws {
         let database = try Self.makeDatabase()
@@ -384,11 +419,14 @@ struct ExecuteRunIssueTests {
     }
 
     private static func seedIssue(
-        _ database: any DatabaseWriter, workflowID: UUID, number: Int, body: String
+        _ database: any DatabaseWriter, workflowID: UUID, number: Int, body: String, trusts: Bool = false
     ) throws {
         try database.write { db in
             try WorkflowRow.insert {
-                WorkflowRow(id: workflowID, repoPath: "/repo", createdAt: fixedDate, updatedAt: fixedDate)
+                WorkflowRow(
+                    id: workflowID, repoPath: "/repo", trustsRepositorySettings: trusts,
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
             }
             .execute(db)
             try IssueRow.insert {
