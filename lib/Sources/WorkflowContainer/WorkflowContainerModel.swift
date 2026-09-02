@@ -197,38 +197,46 @@ public final class WorkflowContainerModel {
         workflowWindowDisplaySubtitle(repoPath: repoPath, phase: phase)
     }
 
-    /// Persists a new user-editable title, bumping `updatedAt`. Invoked from the settings sheet's Done.
+    /// Persists everything the settings sheet edits, in one write. Invoked from the sheet's Done, so one
+    /// press is one row write and one `updatedAt` bump however many of the settings it changed. Every
+    /// Harness spawned afterwards reads the new trust value (see `trustsRepositorySettings(workflowID:)`).
+    public func updateSettings(title: String, trustsRepositorySettings trusts: Bool) {
+        updateRow {
+            $0.title = Self.storedTitle(title)
+            $0.trustsRepositorySettings = trusts
+        }
+    }
+
+    /// Persists a new user-editable title alone, bumping `updatedAt`.
     public func updateTitle(_ newTitle: String) {
+        updateRow { $0.title = Self.storedTitle(newTitle) }
+    }
+
+    /// Persists the repo-settings trust opt-in alone, bumping `updatedAt`.
+    public func updateTrustsRepositorySettings(_ trusts: Bool) {
+        updateRow { $0.trustsRepositorySettings = trusts }
+    }
+
+    /// Applies one mutation to this Workflow's row and bumps `updatedAt` with it. The only place the row
+    /// is written from, so a new setting is one more assignment rather than one more copy of this.
+    private func updateRow(_ mutation: (inout Updates<WorkflowRow>) -> Void) {
         @Dependency(\.date.now) var now
         guard let database else { return }
-        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let workflowID = id
         try? database.write { db in
             try WorkflowRow
                 .where { $0.id.eq(workflowID) }
                 .update {
-                    $0.title = trimmed
+                    mutation(&$0)
                     $0.updatedAt = now
                 }
                 .execute(db)
         }
     }
 
-    /// Persists the repo-settings trust opt-in, bumping `updatedAt`. Invoked from the settings sheet's
-    /// Done; every Harness spawned afterwards reads the new value (see `trustsRepositorySettings(workflowID:)`).
-    public func updateTrustsRepositorySettings(_ trusts: Bool) {
-        @Dependency(\.date.now) var now
-        guard let database else { return }
-        let workflowID = id
-        try? database.write { db in
-            try WorkflowRow
-                .where { $0.id.eq(workflowID) }
-                .update {
-                    $0.trustsRepositorySettings = trusts
-                    $0.updatedAt = now
-                }
-                .execute(db)
-        }
+    /// A title as entered, as it is stored: trimmed, so surrounding whitespace can't reach the row.
+    private static func storedTitle(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The app binary re-executed — it branches into the stdio server at `@main` before AppKit boots,

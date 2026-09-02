@@ -40,8 +40,7 @@ struct WorkflowSettingsView: View {
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("Done") {
-                    model.updateTitle(title)
-                    model.updateTrustsRepositorySettings(trustsRepositorySettings)
+                    model.updateSettings(title: title, trustsRepositorySettings: trustsRepositorySettings)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
