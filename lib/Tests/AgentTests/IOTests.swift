@@ -159,7 +159,7 @@ struct IOTests {
             Issue.record("Expected AgentError.harnessFailed to be thrown")
             return
         } catch let err as AgentError {
-            guard case .harnessFailed(let exitCode, let stderrTail) = err else {
+            guard case .harnessFailed(let exitCode, let stderrTail, _) = err else {
                 Issue.record("Expected .harnessFailed, got \(err)")
                 return
             }
@@ -293,12 +293,88 @@ struct IOTests {
             _ = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
             Issue.record("Expected AgentError.harnessFailed to be thrown")
         } catch let err as AgentError {
-            guard case .harnessFailed(let exitCode, let stderrTail) = err else {
+            guard case .harnessFailed(let exitCode, let stderrTail, _) = err else {
                 Issue.record("Expected .harnessFailed, got \(err)")
                 return
             }
             #expect(exitCode == 1)
             #expect(stderrTail.contains("harness failed"))
+        }
+    }
+
+    // MARK: - StopFailure hook
+
+    /// The consumption path end to end: the fixture runs the hook command out of the `--settings` file
+    /// we generated — a fake harness can't fire a real hook — and the reason it drops reaches the
+    /// failure the Turn throws, alongside the Harness's own wording.
+    @Test func stopFailureDropFileCarriesTheReasonIntoTheFailure() async throws {
+        let fixture = try fixtureURL("stop-failure.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        do {
+            _ = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
+            Issue.record("Expected AgentError.harnessFailed to be thrown")
+        } catch let err as AgentError {
+            guard case .harnessFailed(let exitCode, let stderrTail, let reason) = err else {
+                Issue.record("Expected .harnessFailed, got \(err)")
+                return
+            }
+            #expect(exitCode == 1)
+            #expect(reason == "rate_limit")
+            #expect(stderrTail.contains("session limit"))
+            #expect(err.localizedDescription.contains("(rate_limit)"))
+        }
+
+        let turns = try await database.read { db in try TurnRow.fetchAll(db) }
+        #expect(turns.first?.isError == true)
+    }
+
+    /// The property the whole hook design rests on: with no drop-file — no hook fired, a Harness that
+    /// doesn't have the event, a failure it doesn't cover — the Turn fails exactly as it did before the
+    /// hook existed, down to the wording of the error.
+    @Test func absentDropFileFailsExactlyAsBefore() async throws {
+        let fixture = try fixtureURL("crash.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        do {
+            _ = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
+            Issue.record("Expected AgentError.harnessFailed to be thrown")
+        } catch let err as AgentError {
+            guard case .harnessFailed(let exitCode, let stderrTail, let reason) = err else {
+                Issue.record("Expected .harnessFailed, got \(err)")
+                return
+            }
+            #expect(reason == nil)
+            #expect(exitCode == 1)
+            #expect(stderrTail.contains("harness failed"))
+            // No reason, no clause: the message is the one this failure has always produced.
+            #expect(err.localizedDescription == "Harness failed code=1: \(stderrTail)")
+        }
+
+        let turns = try await database.read { db in try TurnRow.fetchAll(db) }
+        #expect(turns.first?.isError == true)
+    }
+
+    /// A drop-file that isn't a payload we can read is the absent one: the Turn fails on its own
+    /// evidence rather than on a half-written file.
+    @Test func malformedDropFileIsTreatedAsAbsent() async throws {
+        let fixture = try fixtureURL("stop-failure-malformed.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        do {
+            _ = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
+            Issue.record("Expected AgentError.harnessFailed to be thrown")
+        } catch let err as AgentError {
+            guard case .harnessFailed(let exitCode, let stderrTail, let reason) = err else {
+                Issue.record("Expected .harnessFailed, got \(err)")
+                return
+            }
+            #expect(reason == nil)
+            #expect(exitCode == 1)
+            #expect(err.localizedDescription == "Harness failed code=1: \(stderrTail)")
         }
     }
 }

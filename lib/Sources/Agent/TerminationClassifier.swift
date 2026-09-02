@@ -5,11 +5,15 @@ import Subprocess
 /// Maps a Harness termination status to an `AgentError`, flagging the Turn via `recordFailure` when it
 /// fails before projecting a `result`. A clean exit is a no-op (the projector already finalized it).
 struct TerminationClassifier {
+    /// `stopFailureReason` is what the Harness itself reported through the ``StopFailureHook`` —
+    /// `rate_limit` and the like. It rides on the non-zero-exit failure, which is how the Harness ends
+    /// a Turn it has given up on, and is `nil` whenever the hook didn't fire.
     func classify(
         status: TerminationStatus,
         sessionId: Session.ID,
         lastMalformedLine: (raw: String, error: any Error)? = nil,
         errorResultText: String? = nil,
+        stopFailureReason: String? = nil,
         stderrTail: String,
         durationMs: Int,
         recordFailure: (Int) -> Void
@@ -29,7 +33,7 @@ struct TerminationClassifier {
             if stderrTail.contains("No conversation found with session ID:") {
                 throw AgentError.sessionNotFound(id: sessionId)
             }
-            throw AgentError.harnessFailed(exitCode: code, stderrTail: detail)
+            throw AgentError.harnessFailed(exitCode: code, stderrTail: detail, reason: stopFailureReason)
         case .signaled(let signal):
             recordFailure(durationMs)
             throw AgentError.harnessCrashed(signal: signal, stderrTail: detail)

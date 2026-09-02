@@ -3,7 +3,9 @@ import Store
 
 public enum AgentError: Error, Sendable {
     case harnessNotFound(triedPath: URL)
-    case harnessFailed(exitCode: Int32, stderrTail: String)
+    /// `reason` is the failure class the Harness reported for itself (`rate_limit`, `overloaded`, …),
+    /// or `nil` when it reported none — the case for every Turn whose Harness didn't run the hook.
+    case harnessFailed(exitCode: Int32, stderrTail: String, reason: String?)
     case harnessCrashed(signal: Int32, stderrTail: String)
     case harnessIOFailed(underlying: any Error)
     case sessionNotFound(id: Session.ID)
@@ -20,8 +22,10 @@ extension AgentError: LocalizedError {
         switch self {
         case .harnessNotFound(triedPath: let triedPath):
             "Harness not found at \(triedPath.relativePath)"
-        case .harnessFailed(exitCode: let exitCode, stderrTail: let stderrTail):
-            "Harness failed code=\(exitCode): \(stderrTail)"
+        case .harnessFailed(exitCode: let exitCode, stderrTail: let stderrTail, reason: let reason):
+            // The reason is parenthesised in rather than replacing anything: it names the class of
+            // failure, while the detail carries the Harness's own wording, and a reader wants both.
+            "Harness failed code=\(exitCode)\(reason.map { " (\($0))" } ?? ""): \(stderrTail)"
         case .harnessCrashed(signal: let signal, stderrTail: let stderrTail):
             "Harness crashed signal=\(signal): \(stderrTail)"
         case .harnessIOFailed(underlying: let underlying):

@@ -143,11 +143,17 @@ struct HarnessRunner {
 
         let durationMs = Int(now.timeIntervalSince(startedAt) * 1000)
 
+        // The Harness's own account of why it stopped, left by the hook we registered for this Turn.
+        // Absent for every Turn the hook didn't fire on, which classification then handles exactly as
+        // it did before the hook existed.
+        let stopFailureReason = StopFailureHook.reportedReason(dropFile: scratch.stopFailureDropFile)
+
         try TerminationClassifier().classify(
             status: outcome.terminationStatus,
             sessionId: sessionId,
             lastMalformedLine: sink.withLock { $0.lastMalformedLine },
             errorResultText: sink.withLock { $0.lastErrorResult },
+            stopFailureReason: stopFailureReason,
             stderrTail: outcome.stderrTail,
             durationMs: durationMs,
             recordFailure: { ms in sink.withLock { $0.recordFailure(durationMs: ms) } }

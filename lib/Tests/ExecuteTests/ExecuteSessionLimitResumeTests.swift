@@ -49,7 +49,7 @@ struct ExecuteSessionLimitResumeTests {
                 // Harness does, then throw as the live client does on a non-zero exit.
                 if request.issueNumber == 1, issue1Attempts.withValue({ $0 += 1; return $0 }) == 1 {
                     try await Self.recordSession(for: request, id: id, finalAnswer: limitMessage, isError: true)
-                    throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage)
+                    throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage, reason: nil)
                 }
                 return try await Self.recordSession(for: request, id: id)
             }
@@ -125,7 +125,7 @@ struct ExecuteSessionLimitResumeTests {
                 // The only ready Issue (#5) hits the session limit: record the errored turn, then throw.
                 let id = UUID(sessionSeq.withValue { $0 += 1; return $0 })
                 try await Self.recordSession(for: request, id: id, finalAnswer: limitMessage, isError: true)
-                throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage)
+                throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage, reason: nil)
             }
             $0.agentClient.send = { @Sendable _ in throw CancellationError() }
             $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
@@ -176,7 +176,7 @@ struct ExecuteSessionLimitResumeTests {
             $0.agentClient.start = { @Sendable request in
                 let id = UUID(sessionSeq.withValue { $0 += 1; return $0 })
                 try await Self.recordSession(for: request, id: id, finalAnswer: limitMessage, isError: true)
-                throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage)
+                throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage, reason: nil)
             }
             $0.agentClient.send = { @Sendable _ in throw CancellationError() }
             $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
@@ -257,7 +257,7 @@ struct ExecuteSessionLimitResumeTests {
                     for: request, id: UUID(201),
                     finalAnswer: "You've hit your session limit · resets 11pm (Mars/Olympus)", isError: true
                 )
-                throw AgentError.harnessFailed(exitCode: 1, stderrTail: "limit")
+                throw AgentError.harnessFailed(exitCode: 1, stderrTail: "limit", reason: nil)
             }
             $0.agentClient.send = { @Sendable _ in throw CancellationError() }
             $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
