@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UISupport
 
 // The disclosure for the one thing an untrusting Workflow silently stops doing: running the repository's
 // own Claude Code hooks. Both halves live here — the condition that decides whether anything is actually
@@ -31,36 +32,26 @@ private func settingsFileDeclaresHooks(_ settings: URL) -> Bool {
     return object["hooks"] != nil
 }
 
-/// A notice above the Phase content when the repository declares hooks this Workflow isn't loading. Shaped
-/// like the Execute Phase's banners — icon, headline, detail, an action on the right — and neither red nor
-/// dismissible-looking: nothing has failed, the user just can't otherwise tell that something they wrote
-/// into the repo is being ignored. The button goes to the toggle that changes it.
+/// A notice above the Phase content when the repository declares hooks this Workflow isn't loading. A
+/// `PhaseBanner`, like the Execute Phase's own banners, and neither red nor dismissible-looking: nothing
+/// has failed, the user just can't otherwise tell that something they wrote into the repo is being
+/// ignored. Its detail is left untruncated — a fixed two-line sentence that has to be read in full — and
+/// the button goes to the toggle that changes it.
 struct RepositoryHooksBanner: View {
     let onOpenSettings: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "bolt.slash.fill")
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("This repository's Claude Code hooks aren't running")
-                    .font(.callout.weight(.semibold))
-                Text(
-                    """
-                    Its .claude settings declare hooks. Turn on “Trust this repository's Claude Code \
-                    settings” in Workflow Settings to let them run.
-                    """
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
+        PhaseBanner(
+            systemImage: "bolt.slash.fill",
+            tint: .orange,
+            headline: "This repository's Claude Code hooks aren't running",
+            detail: """
+                Its .claude settings declare hooks. Turn on “Trust this repository's Claude Code \
+                settings” in Workflow Settings to let them run.
+                """
+        ) {
             Button("Workflow Settings…", action: onOpenSettings)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.12))
     }
 }
 
