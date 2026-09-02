@@ -94,6 +94,11 @@ struct HarnessRunner {
                 .appendingPathComponent(sessionId.rawValue.uuidString, isDirectory: true),
             turnID: turnID
         )
+        // Both of this Turn's files are spent the moment the classification below has run: the Harness
+        // read `--settings` at startup, and the drop-file has one reader. Deferred from here so every
+        // exit — the paused return, a cancellation, an I/O failure, a throw out of classification —
+        // leaves the directory as it found it.
+        defer { scratch.removeTurnFiles() }
 
         let args = try Harness.renderArgs(
             binary: binaryURL,

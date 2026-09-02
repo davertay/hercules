@@ -62,8 +62,9 @@ public enum Harness {
     /// `--settings` hook registration — in the Session's data directory.
     ///
     /// The turn id keys whichever of them a Turn must not share with another. That is the
-    /// ``StopFailureHook`` drop-file above all: it outlives the Turn that wrote it, and one read as a
-    /// later Turn's would misreport why that Turn ended.
+    /// ``StopFailureHook`` drop-file above all: one read as a later Turn's would misreport why that
+    /// Turn ended. ``removeTurnFiles()`` clears them once the Turn is over, but that is best effort —
+    /// the keying, not the removal, is what makes a stale read impossible.
     public struct TurnScratch: Sendable {
         public var directory: URL
         public var turnID: UUID
@@ -85,6 +86,19 @@ public enum Harness {
         /// Where this Turn's `StopFailure` hook drops its payload; read back once the Harness exits.
         var stopFailureDropFile: URL {
             directory.appendingPathComponent("\(turnID.uuidString).stop-failure.json")
+        }
+
+        /// Removes the files keyed by this turn id, once the Turn has read everything it needs from
+        /// them. Without this the Session's directory accumulates two files per Turn for the life of
+        /// the temp directory. `mcp-config.json` and the directory itself stay: they are the Session's,
+        /// not the Turn's.
+        ///
+        /// Best effort by construction — a temp file that won't delete is not a reason to change what a
+        /// Turn reports.
+        func removeTurnFiles() {
+            for file in [hookSettingsFile, stopFailureDropFile] {
+                try? FileManager.default.removeItem(at: file)
+            }
         }
     }
 

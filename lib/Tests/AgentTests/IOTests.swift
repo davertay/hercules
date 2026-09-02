@@ -357,6 +357,50 @@ struct IOTests {
         #expect(turns.first?.isError == true)
     }
 
+    /// The Turn's own files don't outlive it. `stop-failure.sh` drops a payload the way the hook does,
+    /// and the reason still reaches the thrown failure — so the removal ran after the read, not
+    /// instead of it. What's left in the Session's directory is the Session's: `mcp-config.json`, and
+    /// the directory itself.
+    @Test func turnFilesAreRemovedOnceTheTurnHasReadThem() async throws {
+        let fixture = try fixtureURL("stop-failure.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // Pinned so the test knows which Session directory to inspect once the Turn has thrown.
+        let sessionID = UUID()
+        let scratchDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hercules-sessions", isDirectory: true)
+            .appendingPathComponent(sessionID.uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: scratchDirectory) }
+
+        let request = StartRequest(
+            prompt: "hello",
+            worktree: FileManager.default.temporaryDirectory,
+            mode: .write,
+            database: database,
+            workflowID: workflowID,
+            kind: .design,
+            sessionID: sessionID,
+            mcpServers: [MCPServer(name: "hercules", command: "/bin/true", tools: ["create_issue"])]
+        )
+
+        do {
+            _ = try await client(fixture).start(request)
+            Issue.record("Expected AgentError.harnessFailed to be thrown")
+        } catch let err as AgentError {
+            guard case .harnessFailed(_, _, let reason) = err else {
+                Issue.record("Expected .harnessFailed, got \(err)")
+                return
+            }
+            #expect(reason == "rate_limit")
+        }
+
+        // Throws if the directory went with them.
+        let left = try FileManager.default.contentsOfDirectory(atPath: scratchDirectory.path)
+        #expect(!left.contains { $0.hasSuffix(".stop-failure.json") || $0.hasSuffix(".settings.json") })
+        #expect(left.contains("mcp-config.json"))
+    }
+
     /// A drop-file that isn't a payload we can read is the absent one: the Turn fails on its own
     /// evidence rather than on a half-written file.
     @Test func malformedDropFileIsTreatedAsAbsent() async throws {
