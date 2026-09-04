@@ -1,9 +1,8 @@
 import Foundation
 
-// The completion gate shared by the writer Phases (Design, PRD): a transactional check that a directed
-// Turn actually produced its Artifact via `write_artifact` before the Phase is recorded complete. Snapshot
-// the destination file first, run the Turn, then confirm the file now exists, is non-empty, and — over an
-// existing file — advanced its modification time.
+// The completion gate shared by the writer Phases (Design, PRD): snapshot the destination file with
+// `artifactSnapshot` before running the writer Turn, then pass it to `artifactWasWritten` afterward to
+// confirm the Phase can be recorded complete.
 
 /// A verifiable footprint of the Artifact file captured before the writer Turn: `nil` when it is absent.
 public struct ArtifactSnapshot {

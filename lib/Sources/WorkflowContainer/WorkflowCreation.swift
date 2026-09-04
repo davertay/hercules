@@ -85,7 +85,6 @@ public func deleteWorkflow(data: WorkflowWindowData, root: URL = defaultWorkflow
 
     var gitCleanupError: (any Error)?
 
-    // 1. Remove the git worktree and force-delete its dedicated branch.
     do {
         try worktreeClient.remove(
             RemoveWorktreeRequest(
@@ -98,10 +97,8 @@ public func deleteWorkflow(data: WorkflowWindowData, root: URL = defaultWorkflow
         gitCleanupError = error
     }
 
-    // 2. The operation of record: wipe the Workflow folder regardless of any git failure above.
     try? FileManager.default.removeItem(at: directory)
 
-    // 3. Best-effort hygiene: prune any stale worktree entries left in the repo.
     do {
         try worktreeClient.prune(repo)
     } catch {

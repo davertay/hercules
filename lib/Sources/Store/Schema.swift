@@ -11,6 +11,10 @@ public struct WorkflowRow: Identifiable, Equatable, Sendable {
     public var repoPath: String
     /// The user-editable title. Empty means unnamed; the UI falls back to the bare repo name.
     public var title: String
+    /// Whether the Harness loads the repository's own `.claude/` settings alongside the user's. Off by
+    /// default: a repo's settings can run shell commands through hooks, and a Workflow's agents run with
+    /// nobody watching each one fire.
+    public var trustsRepositorySettings: Bool
     public var createdAt: Date
     public var updatedAt: Date
     public var isDeleted: Bool
@@ -19,6 +23,7 @@ public struct WorkflowRow: Identifiable, Equatable, Sendable {
         id: UUID,
         repoPath: String = "",
         title: String = "",
+        trustsRepositorySettings: Bool = false,
         createdAt: Date,
         updatedAt: Date,
         isDeleted: Bool = false
@@ -26,6 +31,7 @@ public struct WorkflowRow: Identifiable, Equatable, Sendable {
         self.id = id
         self.repoPath = repoPath
         self.title = title
+        self.trustsRepositorySettings = trustsRepositorySettings
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDeleted = isDeleted
@@ -155,6 +161,10 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
     /// Why the last Execute run of this Issue failed; `nil` unless `status` is `failed`. Captured even
     /// when the agent throws before any `turn` row exists (e.g. the harness binary can't be found).
     public var failureReason: String?
+    /// The worktree HEAD this Issue's work must move off, captured when its **first** Execute attempt
+    /// starts and held across every re-run — an attempt interrupted after committing leaves work the
+    /// next attempt must still be credited for. `nil` before the first attempt and once `done`.
+    public var baselineSHA: String?
     public var createdAt: Date
     public var updatedAt: Date
     public var isDeleted: Bool
@@ -168,6 +178,7 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
         dependencies: [Int] = [],
         status: String = Status.new.rawValue,
         failureReason: String? = nil,
+        baselineSHA: String? = nil,
         createdAt: Date,
         updatedAt: Date,
         isDeleted: Bool = false
@@ -180,6 +191,7 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
         self.dependencies = dependencies
         self.status = status
         self.failureReason = failureReason
+        self.baselineSHA = baselineSHA
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDeleted = isDeleted

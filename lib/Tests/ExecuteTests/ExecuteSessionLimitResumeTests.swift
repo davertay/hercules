@@ -14,17 +14,18 @@ import Worktree
 private let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
 /// A real, parseable session-limit final answer (the Harness's stable wording) whose reset time
-/// `SessionLimitReset` can turn into a `Date` — the trigger for auto-resume.
+/// `SessionLimitReset` can turn into a `Date` — the timing half of auto-resume.
 private let limitMessage = "You've hit your session limit · resets 11pm (UTC)"
 
-/// Exercises the auto-resume-after-session-limit behaviour on `ExecuteModel.run`: a fault whose errored
-/// turn is a parseable session-limit message pauses the run on a cancellable clock, then re-runs the
-/// Issue and carries on; every other fault halts the run.
+/// Exercises the auto-resume-after-rate-limit behaviour on `ExecuteModel.run`: a failure the Harness
+/// itself reported as `rate_limit`, whose message also yields a reset time, pauses the run on a
+/// cancellable clock, then re-runs the Issue and carries on. Every other failure halts the run — the
+/// classification is the reported reason, never the wording of the message.
 @MainActor
 @Suite("ExecuteModel session-limit auto-resume")
 struct ExecuteSessionLimitResumeTests {
 
-    @Test("A session-limit fault pauses the run, then resumes and finishes once the reset elapses")
+    @Test("A reported rate limit pauses the run, then resumes and finishes once the reset elapses")
     func pausesOnSessionLimitThenResumesToDone() async throws {
         let database = try Self.makeDatabase()
         let workflowID = UUID(0)
@@ -45,11 +46,12 @@ struct ExecuteSessionLimitResumeTests {
             $0.agentClient.start = { @Sendable request in
                 prompts.withValue { $0.append(request.prompt) }
                 let id = UUID(sessionSeq.withValue { $0 += 1; return $0 })
-                // Issue #1's first attempt hits the session limit: record the errored turn the way the
-                // Harness does, then throw as the live client does on a non-zero exit.
+                // Issue #1's first attempt hits the rate limit: record the errored turn the way the
+                // Harness does, then throw as the live client does on a non-zero exit whose Harness
+                // reported why it stopped.
                 if request.issueNumber == 1, issue1Attempts.withValue({ $0 += 1; return $0 }) == 1 {
                     try await Self.recordSession(for: request, id: id, finalAnswer: limitMessage, isError: true)
-                    throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage)
+                    throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage, reason: "rate_limit")
                 }
                 return try await Self.recordSession(for: request, id: id)
             }
@@ -122,10 +124,10 @@ struct ExecuteSessionLimitResumeTests {
             $0.uuid = .incrementing
             $0.continuousClock = clock
             $0.agentClient.start = { @Sendable request in
-                // The only ready Issue (#5) hits the session limit: record the errored turn, then throw.
+                // The only ready Issue (#5) hits the rate limit: record the errored turn, then throw.
                 let id = UUID(sessionSeq.withValue { $0 += 1; return $0 })
                 try await Self.recordSession(for: request, id: id, finalAnswer: limitMessage, isError: true)
-                throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage)
+                throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage, reason: "rate_limit")
             }
             $0.agentClient.send = { @Sendable _ in throw CancellationError() }
             $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
@@ -176,7 +178,7 @@ struct ExecuteSessionLimitResumeTests {
             $0.agentClient.start = { @Sendable request in
                 let id = UUID(sessionSeq.withValue { $0 += 1; return $0 })
                 try await Self.recordSession(for: request, id: id, finalAnswer: limitMessage, isError: true)
-                throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage)
+                throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage, reason: "rate_limit")
             }
             $0.agentClient.send = { @Sendable _ in throw CancellationError() }
             $0.worktreeClient.headSHA = { @Sendable _ in head.withValue { $0 += 1; return "sha-\($0)" } }
@@ -240,11 +242,101 @@ struct ExecuteSessionLimitResumeTests {
         #expect(try Self.executeCompleted(database, workflowID: workflowID) == false)
     }
 
-    @Test("A session-limit message whose time won't parse halts (fail safe to manual), no wait")
-    func unparseableSessionLimitHaltsWithoutArmingWait() async throws {
+    @Test("A reported rate limit whose reset time won't parse reports that, and halts for manual Retry")
+    func rateLimitWithUnreadableResetHaltsAndSaysSo() async throws {
         let database = try Self.makeDatabase()
         let workflowID = UUID(0)
         try Self.seedIssue(database, workflowID: workflowID, number: 1, dependencies: [])
+
+        let unreadable = "You've hit your session limit · resets 11pm (Mars/Olympus)"
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.uuid = .incrementing
+            $0.continuousClock = TestClock()
+            $0.agentClient.start = { @Sendable request in
+                // A genuine rate limit, but the reset zone is unknown so `SessionLimitReset` yields no
+                // `Date` — there is nothing to sleep until.
+                try await Self.recordSession(for: request, id: UUID(201), finalAnswer: unreadable, isError: true)
+                throw AgentError.harnessFailed(exitCode: 1, stderrTail: "limit", reason: "rate_limit")
+            }
+            $0.agentClient.send = { @Sendable _ in throw CancellationError() }
+            $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
+        } operation: {
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
+        }
+
+        await model.run()
+
+        // No wait armed, and the Issue is left `failed` for a manual Retry — no invented backoff.
+        #expect(model.resumingAt == nil)
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(issue.status == "failed")
+
+        // The halt names what actually happened, both on the Issue and in what the banner and inspector
+        // read — which otherwise prefer the Harness's own words, here the very words we couldn't read.
+        let recorded = try #require(issue.failureReason)
+        #expect(recorded.contains("rate limit"))
+        #expect(recorded.contains("couldn't read a reset time"))
+        #expect(model.failureReason(for: issue) == recorded)
+        #expect(model.failureReason(for: issue) != unreadable)
+    }
+
+    @Test("The unreadable-reset account outlives the model that recorded it")
+    func unreadableResetAccountSurvivesRelaunch() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, dependencies: [])
+
+        let unreadable = "You've hit your session limit · resets 11pm (Mars/Olympus)"
+        let context = WorkflowContext(
+            workflowID: workflowID, database: database,
+            worktree: FileManager.default.temporaryDirectory,
+            workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+        )
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.uuid = .incrementing
+            $0.continuousClock = TestClock()
+            $0.agentClient.start = { @Sendable request in
+                try await Self.recordSession(for: request, id: UUID(201), finalAnswer: unreadable, isError: true)
+                throw AgentError.harnessFailed(exitCode: 1, stderrTail: "limit", reason: "rate_limit")
+            }
+            $0.agentClient.send = { @Sendable _ in throw CancellationError() }
+            $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
+        } operation: {
+            ExecuteModel(context: context)
+        }
+
+        await model.run()
+
+        // A quit and relaunch: a second model over the same store, holding none of the first's in-memory
+        // state. It reads the halt back off the Issue, so the account still beats the transcript
+        // projection — which holds the very message no reset time could be read out of.
+        let relaunched = withDependencies {
+            $0.defaultDatabase = database
+        } operation: {
+            ExecuteModel(context: context)
+        }
+        await relaunched.refresh()
+
+        #expect(relaunched.transcriptFailureReasons[1] == unreadable)
+        let issue = try #require(relaunched.issues.first { $0.number == 1 })
+        #expect(relaunched.failureReason(for: issue) == issue.failureReason)
+        #expect(relaunched.failureReason(for: issue) != unreadable)
+    }
+
+    @Test("A reported non-rate-limit halts even when its message reads exactly like a session limit")
+    func reportedNonRateLimitHaltsDespiteLimitWording() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, dependencies: [])
+        try Self.seedIssue(database, workflowID: workflowID, number: 2, dependencies: [1])
 
         let model = withDependencies {
             $0.defaultDatabase = database
@@ -252,12 +344,51 @@ struct ExecuteSessionLimitResumeTests {
             $0.uuid = .incrementing
             $0.continuousClock = TestClock()
             $0.agentClient.start = { @Sendable request in
-                // Mentions the limit but the reset zone is unknown, so `SessionLimitReset` returns nil.
-                try await Self.recordSession(
-                    for: request, id: UUID(201),
-                    finalAnswer: "You've hit your session limit · resets 11pm (Mars/Olympus)", isError: true
-                )
-                throw AgentError.harnessFailed(exitCode: 1, stderrTail: "limit")
+                // The message parses perfectly as a session limit; the Harness says it stopped for
+                // another reason entirely. The reported reason decides, so this must not park the run.
+                try await Self.recordSession(for: request, id: UUID(201), finalAnswer: limitMessage, isError: true)
+                throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage, reason: "overloaded")
+            }
+            $0.agentClient.send = { @Sendable _ in throw CancellationError() }
+            $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
+        } operation: {
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
+        }
+
+        await model.run()
+
+        // Halted, not waiting — and with no retry policy of its own: `overloaded` gets the same treatment
+        // every other non-rate-limit failure gets.
+        #expect(model.resumingAt == nil)
+        #expect(try Self.status(database, workflowID: workflowID, number: 1) == "failed")
+        #expect(try Self.status(database, workflowID: workflowID, number: 2) == "new")
+        // The recorded reason is the untouched one from the throw, not the rate-limit account.
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(issue.failureReason == AgentError
+            .harnessFailed(exitCode: 1, stderrTail: limitMessage, reason: "overloaded").localizedDescription)
+    }
+
+    @Test("No reported reason (no drop-file) takes the ordinary failure path, whatever the message says")
+    func noReportedReasonHaltsWithoutArmingWait() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, dependencies: [])
+        try Self.seedIssue(database, workflowID: workflowID, number: 2, dependencies: [1])
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.uuid = .incrementing
+            $0.continuousClock = TestClock()
+            $0.agentClient.start = { @Sendable request in
+                // The hook didn't fire — no drop-file, so no reason. A failure that reported nothing about
+                // itself is an ordinary failure, and the run halts on it exactly as on any other.
+                try await Self.recordSession(for: request, id: UUID(201), finalAnswer: limitMessage, isError: true)
+                throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage, reason: nil)
             }
             $0.agentClient.send = { @Sendable _ in throw CancellationError() }
             $0.worktreeClient.headSHA = { @Sendable _ in "same-sha" }
@@ -273,6 +404,13 @@ struct ExecuteSessionLimitResumeTests {
 
         #expect(model.resumingAt == nil)
         #expect(try Self.status(database, workflowID: workflowID, number: 1) == "failed")
+        #expect(try Self.status(database, workflowID: workflowID, number: 2) == "new")
+        #expect(try Self.executeCompleted(database, workflowID: workflowID) == false)
+        // Recorded byte for byte as this failure has always been recorded: nothing about the missing
+        // drop-file changes the reason, and nothing rewrote it on the way out.
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(issue.failureReason == AgentError
+            .harnessFailed(exitCode: 1, stderrTail: limitMessage, reason: nil).localizedDescription)
     }
 
     @Test("An exit-0 no-op (a clean turn, no errored turn) halts without arming a wait")

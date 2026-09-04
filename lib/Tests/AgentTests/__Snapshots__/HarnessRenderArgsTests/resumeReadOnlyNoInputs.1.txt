@@ -7,7 +7,7 @@
   [5]: "--permission-mode",
   [6]: "default",
   [7]: "--setting-sources",
-  [8]: "user,project,local",
+  [8]: "user",
   [9]: "--verbose",
   [10]: "--include-partial-messages",
   [11]: "--resume",

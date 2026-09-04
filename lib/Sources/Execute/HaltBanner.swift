@@ -1,5 +1,6 @@
 import Store
 import SwiftUI
+import UISupport
 
 /// A halt banner above the graph when a run stopped on a failed Issue: names the Issue, lets the user
 /// jump to it, and offers a one-tap retry that resumes the run from there.
@@ -10,28 +11,17 @@ struct HaltBanner: View {
     let onRetry: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.octagon.fill")
-                .foregroundStyle(.red)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Run halted at Issue #\(issue.number) — \(issue.title)")
-                    .font(.callout.weight(.semibold))
-                if let reason {
-                    Text(reason)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-            }
-            Spacer(minLength: 8)
+        PhaseBanner(
+            systemImage: "exclamationmark.octagon.fill",
+            tint: .red,
+            headline: "Run halted at Issue #\(issue.number) — \(issue.title)",
+            detail: reason,
+            detailLineLimit: 2
+        ) {
             Button("Show", action: onSelect)
             Button("Retry", action: onRetry)
                 .buttonStyle(.borderedProminent)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.red.opacity(0.12))
     }
 }
 
@@ -45,24 +35,15 @@ struct ResumeBanner: View {
     let onSelect: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "clock.badge.exclamationmark")
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Session limit reached — resuming automatically at \(resumingAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.callout.weight(.semibold))
-                Text("Issue #\(issue.number) — \(issue.title)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 8)
+        PhaseBanner(
+            systemImage: "clock.badge.exclamationmark",
+            tint: .orange,
+            headline: "Session limit reached — resuming automatically at \(resumingAt.formatted(date: .omitted, time: .shortened))",
+            detail: "Issue #\(issue.number) — \(issue.title)",
+            detailLineLimit: 1
+        ) {
             Button("Show", action: onSelect)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.12))
     }
 }
 

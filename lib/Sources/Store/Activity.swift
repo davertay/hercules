@@ -1,10 +1,9 @@
 import Foundation
 import SQLiteData
 
-// Per-node activity counters surfaced on the Execute/Validate DAG cards: how many tools the run has
-// invoked, how much non-tool content (text + thinking) it has produced, when it started, and — once
-// finalized — its wall-clock and cost. Derived live from the `content_block`/`turn` rows the
-// `StreamProjector` writes as the Harness streams, so an in-progress card ticks up without polling.
+// Per-node activity counters surfaced on the Execute/Validate DAG cards, derived live from the
+// `content_block`/`turn` rows the `StreamProjector` writes as the Harness streams, so an
+// in-progress card ticks up without polling.
 
 /// The raw activity tallies for one run, before the feature model turns them into a render-ready
 /// `NodeActivity` (which resolves live-vs-frozen elapsed and hides cost while running).
@@ -35,7 +34,7 @@ public struct ActivityCounts: Equatable, Sendable {
         self.costUSD = costUSD
     }
 
-    /// Buckets one content block into the tallies; `toolResult` and unrecognised kinds don't count.
+    /// Buckets one content block into the tallies.
     mutating func tally(_ block: ContentBlockRow) {
         switch block.kindValue {
         case .toolUse: tools += 1

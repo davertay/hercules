@@ -100,7 +100,6 @@ public final class StreamProjector {
                 reconciledCount += 1
                 upsert(position: position, block: block)
             }
-            // Interrupt only on the first question, so a later message can't re-trigger it.
             if !interruptedForQuestion,
                decoded.contains(where: { $0.kind == BlockKind.toolUse.rawValue && $0.toolName == "AskUserQuestion" }) {
                 interruptedForQuestion = true

@@ -351,6 +351,61 @@ struct ChatEngineTests {
         #expect(request.session.id == startedSession.id)
     }
 
+    // MARK: - Repository-settings trust
+
+    /// The Workflow's trust setting is read from the store and threaded into the first Turn's
+    /// `StartRequest`. Without this the flag silently defaults off and the toggle does nothing.
+    @Test(arguments: [true, false])
+    func firstSubmitCarriesTheWorkflowTrustSettingIntoStartRequest(_ trusts: Bool) async throws {
+        let database = try Self.makeDatabase()
+        try Self.seedWorkflow(database, trusts: trusts)
+        let captured = LockIsolated<StartRequest?>(nil)
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.start = { @Sendable request in
+                captured.setValue(request)
+                return Session(
+                    id: Session.ID(rawValue: UUID(100)),
+                    worktree: request.worktree, mode: request.mode, kind: request.kind
+                )
+            }
+        } operation: {
+            Self.makeEngine(database: database)
+        }
+
+        engine.draftText = "What are we building?"
+        engine.submit()
+        await engine.runTask?.value
+
+        #expect(captured.value?.trustsRepositorySettings == trusts)
+    }
+
+    /// Trust rides every resume Turn too, and is re-read each time rather than pinned on the Session —
+    /// so revoking it mid-conversation takes effect on the very next send, not only on a new Session.
+    @Test
+    func resumeCarriesTrustAndRereadsItEveryTurn() async throws {
+        let database = try Self.makeDatabase()
+        try Self.seedSession(database, sessionID: UUID(-2), kind: .design, trusts: true)
+        let captured = LockIsolated<[Bool]>([])
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.send = { @Sendable request in
+                captured.withValue { $0.append(request.trustsRepositorySettings) }
+                return request.session
+            }
+        } operation: {
+            Self.makeEngine(database: database, kind: .design)
+        }
+
+        try await engine.send("first")
+        try await Self.setTrust(database, to: false)
+        try await engine.send("second")
+
+        #expect(captured.value == [true, false])
+    }
+
     @Test
     func startFailureSurfacesAsErrorText() async throws {
         let database = try Self.makeDatabase()
@@ -654,20 +709,45 @@ struct ChatEngineTests {
         return try openWorkflowDatabase(at: dir)
     }
 
+    private static func seedWorkflow(
+        _ database: any DatabaseWriter,
+        workflowID: UUID = UUID(-1),
+        trusts: Bool = false
+    ) throws {
+        try database.write { db in
+            try WorkflowRow.insert {
+                WorkflowRow(
+                    id: workflowID, repoPath: "/repo", trustsRepositorySettings: trusts,
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
+            }
+            .execute(db)
+        }
+    }
+
+    private static func setTrust(
+        _ database: any DatabaseWriter, to trusts: Bool, workflowID: UUID = UUID(-1)
+    ) async throws {
+        try await database.write { db in
+            try WorkflowRow
+                .where { $0.id.eq(workflowID) }
+                .update { $0.trustsRepositorySettings = trusts }
+                .execute(db)
+        }
+    }
+
     private static func seedSession(
         _ database: any DatabaseWriter,
         sessionID: UUID,
         workflowID: UUID = UUID(-1),
         kind: SessionKind = .design,
-        seedWorkflow: Bool = true
+        seedWorkflow: Bool = true,
+        trusts: Bool = false
     ) throws {
+        if seedWorkflow {
+            try Self.seedWorkflow(database, workflowID: workflowID, trusts: trusts)
+        }
         try database.write { db in
-            if seedWorkflow {
-                try WorkflowRow.insert {
-                    WorkflowRow(id: workflowID, repoPath: "/repo", createdAt: fixedDate, updatedAt: fixedDate)
-                }
-                .execute(db)
-            }
             try SessionRow.insert {
                 SessionRow(
                     id: sessionID, workflowID: workflowID, worktreePath: "/repo", mode: "readOnly",

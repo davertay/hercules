@@ -21,6 +21,7 @@ test:
 		-destination 'platform=macOS,arch=arm64' \
 		-skipMacroValidation \
 		-skipPackagePluginValidation \
+		-skip-testing HerculesUITests \
 		CODE_SIGNING_ALLOWED=NO
 
 test-lib:

@@ -96,7 +96,6 @@ public struct AllocateView: View {
                     model.carve()
                 }
             } else {
-                // The shared `.design` conversation filtered to the carve turns, so the grill is hidden.
                 ChatTranscript(engine: model.smallEngine, messages: model.carveMessages)
             }
         }

@@ -84,7 +84,6 @@ extension AllocateModel {
             }
             .execute(db)
 
-            // The committed Issue set.
             let issues: [IssueRow] = [
                 IssueRow(
                     id: UUID(), workflowID: workflowID, number: 1,

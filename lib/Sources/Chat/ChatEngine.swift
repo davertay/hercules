@@ -114,7 +114,7 @@ public final class ChatEngine {
             ConversationRequest(workflowID: workflowID, kind: kind),
             animation: .default
         )
-        // Skill files and added directories are supplied by the consumer rather than stored (ADR 0005).
+        // Skill files and added directories are supplied by the consumer rather than stored (ADR 0004).
         _existingSessionRow = Fetch(
             wrappedValue: try? database.existingSession(workflowID: workflowID, kind: kind),
             ExistingSessionRequest(workflowID: workflowID, kind: kind),
@@ -191,6 +191,9 @@ public final class ChatEngine {
     /// `nil` falls back to `session.mcpServers` (ADR 0001). Ignored on the first call, which starts
     /// the Session with its configured (pinned) servers.
     public func send(_ prompt: String, inputs: InputBundle? = nil, overrideMCPServers: [MCPServer]? = nil) async throws {
+        // Read per Turn, so revoking trust applies to this Workflow's long-lived chat Session at its very
+        // next Turn rather than only to a Session started afterwards.
+        let trustsRepositorySettings = database.trustsRepositorySettings(workflowID: workflowID)
         if let existing = session {
             startedSession = try await agentClient.send(
                 SendRequest(
@@ -198,7 +201,8 @@ public final class ChatEngine {
                     session: existing,
                     inputs: inputs,
                     database: database,
-                    mcpServers: overrideMCPServers
+                    mcpServers: overrideMCPServers,
+                    trustsRepositorySettings: trustsRepositorySettings
                 )
             )
         } else {
@@ -213,7 +217,8 @@ public final class ChatEngine {
                     kind: kind,
                     skillFiles: skillFiles,
                     addDirs: addDirs,
-                    mcpServers: mcpServers
+                    mcpServers: mcpServers,
+                    trustsRepositorySettings: trustsRepositorySettings
                 )
             )
         }

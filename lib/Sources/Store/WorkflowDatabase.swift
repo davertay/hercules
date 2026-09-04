@@ -235,4 +235,29 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         )
         .execute(db)
     }
+
+    // The per-Workflow opt-in to loading the repository's own `.claude/` settings into the Harness.
+    // Existing Workflows default off along with new ones: an unattended run is precisely where a
+    // repo-supplied hook is least watched, so grandfathering would preserve the risk exactly where it is
+    // already running unattended.
+    migrator.registerMigration("Add trustsRepositorySettings to workflow") { db in
+        try #sql(
+            """
+            ALTER TABLE "workflow" ADD COLUMN "trustsRepositorySettings" INTEGER NOT NULL DEFAULT 0
+            """
+        )
+        .execute(db)
+    }
+
+    // The HEAD an Issue's work must move off, captured at its first Execute attempt and kept across
+    // re-runs. Without it the run could only ask "did HEAD advance during *this* attempt?", which reads an
+    // attempt that correctly finds its predecessor's work already committed as a failure.
+    migrator.registerMigration("Add baselineSHA to issue") { db in
+        try #sql(
+            """
+            ALTER TABLE "issue" ADD COLUMN "baselineSHA" TEXT
+            """
+        )
+        .execute(db)
+    }
 }

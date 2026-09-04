@@ -12,16 +12,11 @@ import Store
 /// recommendation and overridable by the user.
 ///
 /// - **Big path:** a context-reset checkpoint, so a long, messy grill's context doesn't pollute the
-///   carve. `bridgeAndPropose()` chains a PRD Turn and an auto-propose but *not* the commit;
-///   `regeneratePRD()` rebuilds the PRD, a bare `propose()` re-slices when only the breakdown is wrong.
-///   The PRD stays a hidden file behind a "View PRD" disclosure — not a Phase.
-/// - **Small path:** `carve()` resumes the live grill and carves in place, no documents fed. The view
-///   filters that shared conversation to Turns after the Design cutover boundary, hiding the grill
-///   turns so it reads as a clean new Phase.
+///   carve.
+/// - **Small path:** carves straight from the live grill in place, no documents fed.
 ///
-/// Only `acceptAndWrite()` carries the create-issue writer, and it runs on whichever fork is active —
-/// on the small path that resumes the `.design` Session yet still completes the `allocate` Phase
-/// (`SessionKind` and `Phase` are independent).
+/// `acceptAndWrite()` runs on whichever fork is active — on the small path that resumes the `.design`
+/// Session yet still completes the `allocate` Phase (`SessionKind` and `Phase` are independent).
 @MainActor
 @Observable
 public final class AllocateModel {

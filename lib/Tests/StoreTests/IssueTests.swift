@@ -295,6 +295,133 @@ struct IssueTests {
         #expect(reasons.isEmpty)
     }
 
+    @Test("A re-run's clean Session retires the previous attempt's error")
+    func failureReasonsIgnoreAnEarlierSessionOnceAReRunFinishesCleanly() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        // The interrupted attempt: a session limit, recorded as an errored Turn.
+        try Self.seedSession(database, id: UUID(20), workflowID: workflowID, issueNumber: 1)
+        try Self.seedTurn(
+            database, id: UUID(30), sessionID: UUID(20), isError: true,
+            finalAnswer: "You've hit your session limit · resets 10am (America/Los_Angeles)",
+            at: Self.fixedDate
+        )
+        // The auto-resumed re-run: its own Session, finishing cleanly hours later. The limit notice is
+        // spent — it describes a run that has already been superseded.
+        try Self.seedSession(
+            database, id: UUID(21), workflowID: workflowID, issueNumber: 1,
+            at: Self.fixedDate.addingTimeInterval(3600)
+        )
+        try Self.seedTurn(
+            database, id: UUID(31), sessionID: UUID(21), isError: false,
+            finalAnswer: "Everything checks out.", at: Self.fixedDate.addingTimeInterval(3600)
+        )
+
+        let reasons = try database.read { db in
+            try IssueFailureReasonsRequest(workflowID: workflowID).fetch(db)
+        }
+
+        #expect(reasons.isEmpty)
+    }
+
+    @Test("A re-run that fails reports its own error, not the attempt before it")
+    func failureReasonsReadTheLatestSessionsOwnError() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedSession(database, id: UUID(20), workflowID: workflowID, issueNumber: 1)
+        try Self.seedTurn(
+            database, id: UUID(30), sessionID: UUID(20), isError: true,
+            finalAnswer: "You've hit your session limit", at: Self.fixedDate
+        )
+        try Self.seedSession(
+            database, id: UUID(21), workflowID: workflowID, issueNumber: 1,
+            at: Self.fixedDate.addingTimeInterval(3600)
+        )
+        try Self.seedTurn(
+            database, id: UUID(31), sessionID: UUID(21), isError: true,
+            finalAnswer: "API Error: 529 Overloaded", at: Self.fixedDate.addingTimeInterval(3600)
+        )
+
+        let reasons = try database.read { db in
+            try IssueFailureReasonsRequest(workflowID: workflowID).fetch(db)
+        }
+
+        #expect(reasons == [1: "API Error: 529 Overloaded"])
+    }
+
+    // MARK: - captureIssueBaseline
+
+    @Test("The baseline is captured once and every later attempt reads the first one back")
+    func captureIssueBaselineHoldsTheFirstAttemptsSHA() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 1)
+
+        let first = try database.captureIssueBaseline(
+            workflowID: workflowID, number: 1, sha: "base", now: Self.fixedDate
+        )
+        // The attempt after an interruption sees the predecessor's commit as HEAD — and must still be
+        // measured against where the work started.
+        let second = try database.captureIssueBaseline(
+            workflowID: workflowID, number: 1, sha: "committed", now: Self.fixedDate
+        )
+
+        #expect(first == "base")
+        #expect(second == "base")
+        #expect(try Self.baseline(database, workflowID: workflowID, number: 1) == "base")
+    }
+
+    @Test("A retry keeps the baseline so the work an interrupted attempt committed still counts")
+    func resetIssueKeepsTheBaseline() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 1)
+        _ = try database.captureIssueBaseline(
+            workflowID: workflowID, number: 1, sha: "base", now: Self.fixedDate
+        )
+        try database.setIssueStatus(
+            workflowID: workflowID, number: 1, to: .failed, failureReason: "cut off", now: Self.fixedDate
+        )
+
+        try database.resetIssue(workflowID: workflowID, number: 1, now: Self.fixedDate)
+
+        #expect(try Self.baseline(database, workflowID: workflowID, number: 1) == "base")
+    }
+
+    @Test("Reaching done retires the baseline, which has nothing left to verify")
+    func doneRetiresTheBaseline() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 1)
+        _ = try database.captureIssueBaseline(
+            workflowID: workflowID, number: 1, sha: "base", now: Self.fixedDate
+        )
+
+        try database.setIssueStatus(workflowID: workflowID, number: 1, to: .done, now: Self.fixedDate)
+
+        #expect(try Self.baseline(database, workflowID: workflowID, number: 1) == nil)
+    }
+
+    @Test("An in-progress transition leaves the baseline alone — it is written before the capture")
+    func inProgressKeepsTheBaseline() throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(1)
+        try Self.seedWorkflow(database, workflowID: workflowID)
+        try Self.seedIssue(database, id: UUID(10), workflowID: workflowID, number: 1)
+        _ = try database.captureIssueBaseline(
+            workflowID: workflowID, number: 1, sha: "base", now: Self.fixedDate
+        )
+
+        try database.setIssueStatus(workflowID: workflowID, number: 1, to: .inProgress, now: Self.fixedDate)
+
+        #expect(try Self.baseline(database, workflowID: workflowID, number: 1) == "base")
+    }
+
     // MARK: - approveIssue / denyIssue
 
     @Test("Approve flips a proposed Issue to new so the run loop picks it up")
@@ -394,15 +521,26 @@ struct IssueTests {
         }
     }
 
+    private static func baseline(
+        _ database: any DatabaseWriter, workflowID: UUID, number: Int
+    ) throws -> String? {
+        try database.read { db in
+            try IssueRow
+                .where { $0.workflowID.eq(workflowID) && $0.number.eq(number) }
+                .fetchOne(db)?
+                .baselineSHA
+        }
+    }
+
     private static func seedSession(
         _ database: any DatabaseWriter, id: UUID, workflowID: UUID, issueNumber: Int?,
-        kind: SessionKind = .execute
+        kind: SessionKind = .execute, at createdAt: Date = fixedDate
     ) throws {
         try database.write { db in
             try SessionRow.insert {
                 SessionRow(
                     id: id, workflowID: workflowID, worktreePath: "/worktree", mode: "write",
-                    kind: kind.rawValue, issueNumber: issueNumber, createdAt: fixedDate, updatedAt: fixedDate
+                    kind: kind.rawValue, issueNumber: issueNumber, createdAt: createdAt, updatedAt: createdAt
                 )
             }
             .execute(db)
