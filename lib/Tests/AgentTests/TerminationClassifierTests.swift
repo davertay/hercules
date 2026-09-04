@@ -33,7 +33,7 @@ struct TerminationClassifierTests {
             )
             Issue.record("Expected throw")
         } catch let err as AgentError {
-            guard case .harnessFailed(let exitCode, let tail) = err else {
+            guard case .harnessFailed(let exitCode, let tail, _) = err else {
                 Issue.record("Expected .harnessFailed, got \(err)")
                 return
             }
@@ -55,7 +55,7 @@ struct TerminationClassifierTests {
             )
             Issue.record("Expected throw")
         } catch let err as AgentError {
-            guard case .harnessFailed(_, let tail) = err else {
+            guard case .harnessFailed(_, let tail, _) = err else {
                 Issue.record("Expected .harnessFailed, got \(err)")
                 return
             }
@@ -75,7 +75,7 @@ struct TerminationClassifierTests {
             )
             Issue.record("Expected throw")
         } catch let err as AgentError {
-            guard case .harnessFailed(_, let tail) = err else {
+            guard case .harnessFailed(_, let tail, _) = err else {
                 Issue.record("Expected .harnessFailed, got \(err)")
                 return
             }
@@ -142,6 +142,81 @@ struct TerminationClassifierTests {
                 return
             }
             #expect(id == sessionId)
+        }
+    }
+
+    /// The reported reason rides on the failure as a value, and shows in the message alongside the
+    /// Harness's own wording rather than in place of it.
+    @Test func nonZeroExitCarriesTheReportedStopFailureReason() throws {
+        do {
+            try TerminationClassifier().classify(
+                status: .exited(1),
+                sessionId: sessionId,
+                errorResultText: "You've hit your session limit · resets 12:40am",
+                stopFailureReason: "rate_limit",
+                stderrTail: "",
+                durationMs: 0,
+                recordFailure: { _ in }
+            )
+            Issue.record("Expected throw")
+        } catch let err as AgentError {
+            guard case .harnessFailed(_, let tail, let reason) = err else {
+                Issue.record("Expected .harnessFailed, got \(err)")
+                return
+            }
+            #expect(reason == "rate_limit")
+            #expect(tail == "You've hit your session limit · resets 12:40am")
+            #expect(err.localizedDescription
+                == "Harness failed code=1 (rate_limit): You've hit your session limit · resets 12:40am")
+        }
+    }
+
+    /// No reason reported — the hook didn't fire, or this build's Harness has no such event — and the
+    /// failure is byte for byte the one classification produced before the hook existed.
+    @Test func noReportedReasonLeavesTheFailureUnchanged() throws {
+        do {
+            try TerminationClassifier().classify(
+                status: .exited(1),
+                sessionId: sessionId,
+                stopFailureReason: nil,
+                stderrTail: "boom",
+                durationMs: 0,
+                recordFailure: { _ in }
+            )
+            Issue.record("Expected throw")
+        } catch let err as AgentError {
+            guard case .harnessFailed(let exitCode, let tail, let reason) = err else {
+                Issue.record("Expected .harnessFailed, got \(err)")
+                return
+            }
+            #expect(reason == nil)
+            #expect(exitCode == 1)
+            #expect(tail == "boom")
+            #expect(err.localizedDescription == "Harness failed code=1: boom")
+        }
+    }
+
+    /// A reason can't rescue a stream we couldn't parse: the malformed line is still the failure worth
+    /// reporting, since it points at the bug rather than at the API.
+    @Test func malformedLineWinsOverTheReportedReason() throws {
+        struct Dummy: Error {}
+        do {
+            try TerminationClassifier().classify(
+                status: .exited(1),
+                sessionId: sessionId,
+                lastMalformedLine: (raw: "not json", error: Dummy()),
+                stopFailureReason: "rate_limit",
+                stderrTail: "",
+                durationMs: 0,
+                recordFailure: { _ in }
+            )
+            Issue.record("Expected throw")
+        } catch let err as AgentError {
+            guard case .malformedStream(let line, _) = err else {
+                Issue.record("Expected .malformedStream, got \(err)")
+                return
+            }
+            #expect(line == "not json")
         }
     }
 

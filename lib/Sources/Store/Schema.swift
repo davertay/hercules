@@ -11,6 +11,10 @@ public struct WorkflowRow: Identifiable, Equatable, Sendable {
     public var repoPath: String
     /// The user-editable title. Empty means unnamed; the UI falls back to the bare repo name.
     public var title: String
+    /// Whether the Harness loads the repository's own `.claude/` settings alongside the user's. Off by
+    /// default: a repo's settings can run shell commands through hooks, and a Workflow's agents run with
+    /// nobody watching each one fire.
+    public var trustsRepositorySettings: Bool
     public var createdAt: Date
     public var updatedAt: Date
     public var isDeleted: Bool
@@ -19,6 +23,7 @@ public struct WorkflowRow: Identifiable, Equatable, Sendable {
         id: UUID,
         repoPath: String = "",
         title: String = "",
+        trustsRepositorySettings: Bool = false,
         createdAt: Date,
         updatedAt: Date,
         isDeleted: Bool = false
@@ -26,6 +31,7 @@ public struct WorkflowRow: Identifiable, Equatable, Sendable {
         self.id = id
         self.repoPath = repoPath
         self.title = title
+        self.trustsRepositorySettings = trustsRepositorySettings
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDeleted = isDeleted

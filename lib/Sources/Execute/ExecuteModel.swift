@@ -136,8 +136,15 @@ public final class ExecuteModel {
         return NodeActivity(counts: counts, running: node.status == .inProgress, clock: clock)
     }
 
+    /// The Harness's own words on the failure when it left any, else the reason the run recorded — with
+    /// one exception: a rate limit we couldn't time, where the Harness's words are precisely the words we
+    /// couldn't read, and our account of why the run stopped instead of waiting is the more useful one.
+    /// That account is recognised by the Issue's own recorded reason, the durable record of the halt, so
+    /// it reads the same after a relaunch as the transcript projection does — and a fresh attempt clears
+    /// it with every other failure reason, since a new run supersedes the verdict.
     public func failureReason(for issue: IssueRow) -> String? {
-        transcriptFailureReasons[issue.number] ?? issue.failureReason
+        if issue.failureReason == Self.unreadableResetReason { return issue.failureReason }
+        return transcriptFailureReasons[issue.number] ?? issue.failureReason
     }
 
     /// The Issue the run is waiting to auto-resume after a session-limit halt; `nil` when no wait is in
@@ -262,7 +269,12 @@ public final class ExecuteModel {
     /// (no MCP, no presented chat). `done` is contingent on the agent committing: HEAD must advance over
     /// the run. A no-op, a blocked agent, or one that ended on a question all leave HEAD where it was
     /// and are recorded `failed`, never `done`.
-    public func runIssue(_ issue: IssueRow) async {
+    ///
+    /// Returns whether the run failed on a rate limit the Harness reported for itself — the run loop's
+    /// only evidence for a failure worth waiting out. `false` for every other outcome, including a
+    /// failure whose Harness reported no reason at all.
+    @discardableResult
+    public func runIssue(_ issue: IssueRow) async -> Bool {
         let issueNumber = issue.number
         try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .inProgress, now: now)
 
@@ -273,7 +285,7 @@ public final class ExecuteModel {
             before = try worktreeClient.headSHA(worktree)
         } catch {
             failIssue(issueNumber, reason: verifyFailedReason(error))
-            return
+            return false
         }
 
         let session: Session
@@ -289,14 +301,15 @@ public final class ExecuteModel {
                     kind: .execute,
                     issueNumber: issueNumber,
                     skillFiles: [skill.fileUrl],
-                    addDirs: [skill.folderUrl]
+                    addDirs: [skill.folderUrl],
+                    trustsRepositorySettings: database.trustsRepositorySettings(workflowID: workflowID)
                 )
             )
         } catch {
             // The agent can throw before any `turn` row exists (e.g. a missing harness binary), so record
             // the reason on the Issue itself rather than relying on the transcript.
             failIssue(issueNumber, reason: error.localizedDescription)
-            return
+            return (error as? AgentError)?.isReportedRateLimit ?? false
         }
 
         let after: String
@@ -304,13 +317,14 @@ public final class ExecuteModel {
             after = try worktreeClient.headSHA(worktree)
         } catch {
             failIssue(issueNumber, reason: verifyFailedReason(error))
-            return
+            return false
         }
         if after != before {
             try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .done, now: now)
         } else {
             failIssue(issueNumber, reason: noCommitReason(session: session))
         }
+        return false
     }
 
     /// The prompt for one run of an Issue. The **first** run sends the Issue body unchanged; any
@@ -338,6 +352,15 @@ public final class ExecuteModel {
     private func verifyFailedReason(_ error: any Error) -> String {
         "Couldn't verify the worktree advanced — reading HEAD failed: \(error.localizedDescription)"
     }
+
+    /// What a rate limit reports when the Harness's message carried no reset time we could read. There is
+    /// nothing to sleep until, so the run says so and stops, rather than reporting a generic failure or
+    /// guessing at when a limit we can't see the end of will clear. Recorded on the Issue, where it is
+    /// also what `failureReason(for:)` recognises the halt by — so it is written in exactly one place.
+    private static let unreadableResetReason = """
+        Hit a rate limit, but couldn't read a reset time out of the Harness's message — halted here. \
+        Retry once the limit clears.
+        """
 
     /// Why an Issue produced no commit: the agent's own parting words (the last Turn's final answer) when
     /// it left any — usually the clearest signal ("I'm blocked …") — else a default keyed to whether the
@@ -378,17 +401,18 @@ public final class ExecuteModel {
 
     /// Runs every ready Issue sequentially in dependency order. Reconciles stale `in_progress` Issues
     /// (left by a crash) back to `failed` first, and completes the Phase only once every Issue is `done`
-    /// — a blocked branch must not falsely unlock Validate. A session-limit failure is the one failure
-    /// that doesn't end the run: it waits out the reset, then re-runs the Issue and carries on
-    /// downstream. Every other failure — and a wait cancelled by Stop — halts the run with the Issue
-    /// left `failed` for a manual Retry.
+    /// — a blocked branch must not falsely unlock Validate. A rate limit the Harness reported for itself
+    /// is the one failure that doesn't end the run: it waits out the reset, then re-runs the Issue and
+    /// carries on downstream. Every other failure — and a wait cancelled by Stop — halts the run with the
+    /// Issue left `failed` for a manual Retry.
     public func run() async {
         try? database.reconcileStaleInProgressIssues(workflowID: workflowID, now: now)
 
         while let next = readyIssue() {
-            await runIssue(next)
+            let reportedRateLimit = await runIssue(next)
             if currentStatus(of: next.number) == .failed {
-                guard await awaitSessionLimitReset(for: next.number) else { return }
+                guard await awaitSessionLimitReset(for: next.number, reportedRateLimit: reportedRateLimit)
+                else { return }
                 try? database.resetIssue(workflowID: workflowID, number: next.number, now: now)
             }
         }
@@ -399,14 +423,24 @@ public final class ExecuteModel {
         }
     }
 
-    /// If the Issue's fault was a session-limit halt — the failing turn is flagged `isError` **and** its
-    /// text parses into a reset `Date` — sleep until that reset plus a one-minute grace buffer, then
-    /// return `true` so the caller re-runs the Issue. Returns `false` for any other failure (unparseable
-    /// text, a non-limit error, an exit-0 no-op), and when Stop cancels the sleep. The run stays
-    /// `isRunning` throughout.
-    private func awaitSessionLimitReset(for number: Int) async -> Bool {
+    /// Sleeps out a rate limit the Harness reported for itself, until its reset plus a one-minute grace
+    /// buffer, then returns `true` so the caller re-runs the Issue.
+    ///
+    /// The gate is `reportedRateLimit` — what the Harness said about its own failure — and never the
+    /// wording of the failure: a crash whose parting words happen to mention a session limit is a crash,
+    /// and halts rather than parking the run for hours. The message is still where the *timing* comes
+    /// from, because the reset time appears nowhere else; a limit whose time it doesn't yield is recorded
+    /// as exactly that and halts for a manual Retry, rather than being given a backoff we'd have to
+    /// invent. Returns `false` for every halt, and when Stop cancels the sleep. The run stays `isRunning`
+    /// throughout.
+    private func awaitSessionLimitReset(for number: Int, reportedRateLimit: Bool) async -> Bool {
+        guard reportedRateLimit else { return false }
+
         let message = (try? database.latestExecuteErrorMessage(forIssue: number, workflowID: workflowID)) ?? nil
-        guard let message, let resetAt = SessionLimitReset.parse(message, now: now) else { return false }
+        guard let resetAt = message.flatMap({ SessionLimitReset.parse($0, now: now) }) else {
+            failIssue(number, reason: Self.unreadableResetReason)
+            return false
+        }
 
         let resumeAt = resetAt.addingTimeInterval(60)
         resumingAt = resumeAt

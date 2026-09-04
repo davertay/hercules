@@ -21,6 +21,9 @@ public struct StartRequest: Sendable {
     /// Exposed to the Harness via `--add-dir`, alongside any `InputBundle`.
     public let addDirs: [URL]
     public let mcpServers: [MCPServer]
+    /// Widens `--setting-sources` to the worktree repository's own settings. The caller reads the
+    /// Workflow's setting per Turn (the Agent knows only Sessions), so it defaults to the safe answer.
+    public let trustsRepositorySettings: Bool
 
     public init(
         prompt: String,
@@ -34,7 +37,8 @@ public struct StartRequest: Sendable {
         issueNumber: Int? = nil,
         skillFiles: [URL] = [],
         addDirs: [URL] = [],
-        mcpServers: [MCPServer] = []
+        mcpServers: [MCPServer] = [],
+        trustsRepositorySettings: Bool = false
     ) {
         self.prompt = prompt
         self.worktree = worktree
@@ -48,6 +52,7 @@ public struct StartRequest: Sendable {
         self.skillFiles = skillFiles
         self.addDirs = addDirs
         self.mcpServers = mcpServers
+        self.trustsRepositorySettings = trustsRepositorySettings
     }
 }
 
@@ -59,19 +64,24 @@ public struct SendRequest: Sendable {
     /// Overrides the Session's pinned servers for this single resume Turn only — no Session mutation.
     /// `nil` falls back to `session.mcpServers`, so existing callers behave unchanged (ADR 0001).
     public let mcpServers: [MCPServer]?
+    /// Widens `--setting-sources` to the worktree repository's own settings, for this Turn. Re-read on
+    /// every resume rather than pinned on the Session, so revoking trust takes effect at the next Turn.
+    public let trustsRepositorySettings: Bool
 
     public init(
         prompt: String,
         session: Session,
         inputs: InputBundle? = nil,
         database: any DatabaseWriter,
-        mcpServers: [MCPServer]? = nil
+        mcpServers: [MCPServer]? = nil,
+        trustsRepositorySettings: Bool = false
     ) {
         self.prompt = prompt
         self.session = session
         self.inputs = inputs
         self.database = database
         self.mcpServers = mcpServers
+        self.trustsRepositorySettings = trustsRepositorySettings
     }
 }
 

@@ -79,6 +79,39 @@ struct ValidateModelTests {
         #expect(row.sessionID == request.sessionID)
     }
 
+    @Test(
+        "The Workflow's trust setting reaches the review Persona's StartRequest",
+        arguments: [true, false]
+    )
+    func reviewCarriesTheWorkflowTrustSetting(_ trusts: Bool) async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedWorkflow(database, workflowID: workflowID, trusts: trusts)
+        let captured = LockIsolated<StartRequest?>(nil)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.uuid = .incrementing
+            $0.agentClient.start = { @Sendable request in
+                captured.setValue(request)
+                return try await Self.startSession(for: request, id: UUID(100), finalAnswer: "Fine.")
+            }
+        } operation: {
+            ValidateModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "/path/to/Hercules"
+            ))
+        }
+
+        await Self.runScoped(model, .codeQuality)
+
+        // The review is read-only, but the repository's hooks still fire inside it — so it reads the
+        // Workflow's answer rather than defaulting.
+        #expect(captured.value?.trustsRepositorySettings == trusts)
+    }
+
     @Test("Forward-links the Session before the run starts, so activity maps to the Persona live")
     func linksSessionBeforeRunStarts() async throws {
         let database = try Self.makeDatabase()
@@ -518,10 +551,15 @@ struct ValidateModelTests {
         return try openWorkflowDatabase(at: dir)
     }
 
-    private static func seedWorkflow(_ database: any DatabaseWriter, workflowID: UUID) throws {
+    private static func seedWorkflow(
+        _ database: any DatabaseWriter, workflowID: UUID, trusts: Bool = false
+    ) throws {
         try database.write { db in
             try WorkflowRow.insert {
-                WorkflowRow(id: workflowID, repoPath: "/repo", createdAt: fixedDate, updatedAt: fixedDate)
+                WorkflowRow(
+                    id: workflowID, repoPath: "/repo", trustsRepositorySettings: trusts,
+                    createdAt: fixedDate, updatedAt: fixedDate
+                )
             }
             .execute(db)
         }
