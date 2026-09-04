@@ -357,7 +357,7 @@ struct ExecuteRunIssueTests {
     /// Stands in for the live client's `start`, recording the `execute` Session as the Agent would. The
     /// Turn's `finalAnswer` defaults empty; the no-commit tests set it to assert it surfaces as the reason.
     private static func startSession(
-        for request: StartRequest, id: UUID, finalAnswer: String = ""
+        for request: StartRequest, id: UUID, turnID: UUID = UUID(200), finalAnswer: String = ""
     ) async throws -> Session {
         try await request.database.write { db in
             try SessionRow.insert {
@@ -370,7 +370,7 @@ struct ExecuteRunIssueTests {
             .execute(db)
             try TurnRow.insert {
                 TurnRow(
-                    id: UUID(200), sessionID: id, userPrompt: request.prompt,
+                    id: turnID, sessionID: id, userPrompt: request.prompt,
                     finalAnswer: finalAnswer, createdAt: fixedDate, updatedAt: fixedDate
                 )
             }
@@ -436,6 +436,91 @@ struct ExecuteRunIssueTests {
         _ database: any DatabaseWriter, workflowID: UUID, number: Int
     ) throws -> String? {
         try issue(database, workflowID: workflowID, number: number)?.status
+    }
+
+    @Test("An attempt that finds a cut-off predecessor's commit already in place is done, not failed")
+    func marksDoneWhenAnEarlierAttemptAlreadyCommitted() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, body: "Do it.")
+        let head = LockIsolated("base")
+        let attempts = LockIsolated(0)
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                // The first attempt commits, then the session limit cuts it off a moment later — the
+                // shape that used to strand the Issue as permanently `failed`.
+                guard attempts.withValue({ $0 += 1; return $0 }) > 1 else {
+                    head.setValue("committed")
+                    throw AgentError.harnessFailed(exitCode: 1, stderrTail: "You've hit your session limit")
+                }
+                return try await Self.startSession(
+                    for: request, id: UUID(101), turnID: UUID(201),
+                    finalAnswer: "The previous attempt already committed this; nothing left to do."
+                )
+            }
+            $0.worktreeClient.headSHA = { @Sendable _ in head.value }
+        } operation: {
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
+        }
+
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        await model.runIssue(issue)
+
+        // A thrown Turn is failed whatever the branch looks like — the agent never got to say it had
+        // finished — but the baseline records where the work started.
+        let interrupted = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(interrupted.status == "failed")
+        #expect(interrupted.baselineSHA == "base")
+
+        // Auto-resume resets and re-runs. This attempt rightly commits nothing, so only the baseline can
+        // tell that the Issue's work is on the branch.
+        try database.resetIssue(workflowID: workflowID, number: 1, now: fixedDate)
+        let retried = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(retried.baselineSHA == "base")
+        await model.runIssue(retried)
+
+        let done = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(done.status == "done")
+        #expect(done.failureReason == nil)
+        #expect(done.baselineSHA == nil)
+    }
+
+    @Test("A first attempt that commits nothing still fails — the baseline is this run's own HEAD")
+    func marksFailedWhenTheFirstAttemptCommitsNothing() async throws {
+        let database = try Self.makeDatabase()
+        let workflowID = UUID(0)
+        try Self.seedIssue(database, workflowID: workflowID, number: 1, body: "Do it.")
+
+        let model = withDependencies {
+            $0.defaultDatabase = database
+            $0.date.now = fixedDate
+            $0.agentClient.start = { @Sendable request in
+                try await Self.startSession(for: request, id: UUID(101))
+            }
+            $0.worktreeClient.headSHA = { @Sendable _ in "base" }
+            $0.worktreeClient.isDirty = { @Sendable _ in false }
+        } operation: {
+            ExecuteModel(context: WorkflowContext(
+                workflowID: workflowID, database: database,
+                worktree: FileManager.default.temporaryDirectory,
+                workflowDirectory: FileManager.default.temporaryDirectory, mcpServerCommand: "hercules"
+            ))
+        }
+
+        let issue = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        await model.runIssue(issue)
+
+        let failed = try #require(try Self.issue(database, workflowID: workflowID, number: 1))
+        #expect(failed.status == "failed")
+        #expect(failed.failureReason == "The agent produced no commit and made no changes.")
+        #expect(failed.baselineSHA == "base")
     }
 
     private static func makeDatabase() throws -> any DatabaseWriter {

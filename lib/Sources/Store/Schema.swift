@@ -155,6 +155,10 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
     /// Why the last Execute run of this Issue failed; `nil` unless `status` is `failed`. Captured even
     /// when the agent throws before any `turn` row exists (e.g. the harness binary can't be found).
     public var failureReason: String?
+    /// The worktree HEAD this Issue's work must move off, captured when its **first** Execute attempt
+    /// starts and held across every re-run — an attempt interrupted after committing leaves work the
+    /// next attempt must still be credited for. `nil` before the first attempt and once `done`.
+    public var baselineSHA: String?
     public var createdAt: Date
     public var updatedAt: Date
     public var isDeleted: Bool
@@ -168,6 +172,7 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
         dependencies: [Int] = [],
         status: String = Status.new.rawValue,
         failureReason: String? = nil,
+        baselineSHA: String? = nil,
         createdAt: Date,
         updatedAt: Date,
         isDeleted: Bool = false
@@ -180,6 +185,7 @@ public struct IssueRow: Identifiable, Equatable, Sendable {
         self.dependencies = dependencies
         self.status = status
         self.failureReason = failureReason
+        self.baselineSHA = baselineSHA
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDeleted = isDeleted
