@@ -22,9 +22,17 @@ public struct WorkflowContainerView: View {
                 PhaseSidebarRow(phase: phase, isUnlocked: model.isUnlocked(phase))
             }
         } detail: {
-            phaseDetail
-                .navigationTitle(model.title)
-                .navigationSubtitle(model.subtitle(phase: selectedPhase))
+            VStack(spacing: 0) {
+                // Above every Phase, not inside one: the suppressed hooks would have run for whichever
+                // Phase's agents the user starts next.
+                if model.isSuppressingRepositoryHooks {
+                    RepositoryHooksBanner { showingSettings = true }
+                    Divider()
+                }
+                phaseDetail
+            }
+            .navigationTitle(model.title)
+            .navigationSubtitle(model.subtitle(phase: selectedPhase))
         }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {

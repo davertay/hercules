@@ -20,12 +20,12 @@ struct HarnessRunner {
             sessionId: session.id,
             prompt: request.prompt,
             operation: .resume,
-            worktree: session.worktree,
-            mode: session.mode,
-            inputs: request.inputs,
-            skillFiles: session.skillFiles,
-            addDirs: session.addDirs,
-            mcpServers: request.mcpServers ?? session.mcpServers
+            configuration: Harness.SessionConfiguration(
+                session: session,
+                mcpServers: request.mcpServers
+            ),
+            trustsRepositorySettings: request.trustsRepositorySettings,
+            inputs: request.inputs
         )
     }
 
@@ -50,12 +50,9 @@ struct HarnessRunner {
             sessionId: sessionId,
             prompt: request.prompt,
             operation: .start,
-            worktree: request.worktree,
-            mode: request.mode,
-            inputs: request.inputs,
-            skillFiles: request.skillFiles,
-            addDirs: request.addDirs,
-            mcpServers: request.mcpServers
+            configuration: Harness.SessionConfiguration(request: request),
+            trustsRepositorySettings: request.trustsRepositorySettings,
+            inputs: request.inputs
         )
     }
 
@@ -66,12 +63,9 @@ struct HarnessRunner {
         sessionId: Session.ID,
         prompt: String,
         operation: Harness.Operation,
-        worktree: URL,
-        mode: AgentMode,
-        inputs: InputBundle?,
-        skillFiles: [URL],
-        addDirs: [URL],
-        mcpServers: [MCPServer]
+        configuration: Harness.SessionConfiguration,
+        trustsRepositorySettings: Bool,
+        inputs: InputBundle?
     ) async throws {
         let startedAt = now
         let turnID = uuid()
@@ -92,22 +86,27 @@ struct HarnessRunner {
             initialState: LineSink(projector: StreamProjector(database: database, turnID: turnID))
         )
 
-        // Scratch dir for the `--mcp-config` JSON; re-written each Turn so a resume re-passes the
-        // pinned servers (ADR 0001).
-        let sessionDataDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("hercules-sessions", isDirectory: true)
-            .appendingPathComponent(sessionId.rawValue.uuidString, isDirectory: true)
+        // Scratch dir for the config files this Turn generates for the Harness to read back: the
+        // `--mcp-config` servers and the `--settings` hook registration.
+        let scratch = Harness.TurnScratch(
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("hercules-sessions", isDirectory: true)
+                .appendingPathComponent(sessionId.rawValue.uuidString, isDirectory: true),
+            turnID: turnID
+        )
+        // Both of this Turn's files are spent the moment the classification below has run: the Harness
+        // read `--settings` at startup, and the drop-file has one reader. Deferred from here so every
+        // exit — the paused return, a cancellation, an I/O failure, a throw out of classification —
+        // leaves the directory as it found it.
+        defer { scratch.removeTurnFiles() }
 
         let args = try Harness.renderArgs(
             binary: binaryURL,
             operation: operation,
-            worktree: worktree,
-            mode: mode,
+            configuration: configuration,
+            trustsRepositorySettings: trustsRepositorySettings,
             inputs: inputs,
-            skillFiles: skillFiles,
-            addDirs: addDirs,
-            mcpServers: mcpServers,
-            sessionDataDirectory: sessionDataDirectory,
+            scratch: scratch,
             extraArguments: extraArguments,
             sessionId: sessionId
         )
@@ -115,7 +114,7 @@ struct HarnessRunner {
         let process = SubProcess(
             executable: binaryURL,
             arguments: args,
-            workingDirectory: worktree,
+            workingDirectory: configuration.worktree,
             teardownGrace: teardownGrace
         )
 
@@ -149,11 +148,17 @@ struct HarnessRunner {
 
         let durationMs = Int(now.timeIntervalSince(startedAt) * 1000)
 
+        // The Harness's own account of why it stopped, left by the hook we registered for this Turn.
+        // Absent for every Turn the hook didn't fire on, which classification then handles exactly as
+        // it did before the hook existed.
+        let stopFailureReason = StopFailureHook.reportedReason(dropFile: scratch.stopFailureDropFile)
+
         try TerminationClassifier().classify(
             status: outcome.terminationStatus,
             sessionId: sessionId,
             lastMalformedLine: sink.withLock { $0.lastMalformedLine },
             errorResultText: sink.withLock { $0.lastErrorResult },
+            stopFailureReason: stopFailureReason,
             stderrTail: outcome.stderrTail,
             durationMs: durationMs,
             recordFailure: { ms in sink.withLock { $0.recordFailure(durationMs: ms) } }
