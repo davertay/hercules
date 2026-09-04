@@ -248,4 +248,16 @@ func registerWorkflowMigrations(_ migrator: inout DatabaseMigrator) {
         )
         .execute(db)
     }
+
+    // The HEAD an Issue's work must move off, captured at its first Execute attempt and kept across
+    // re-runs. Without it the run could only ask "did HEAD advance during *this* attempt?", which reads an
+    // attempt that correctly finds its predecessor's work already committed as a failure.
+    migrator.registerMigration("Add baselineSHA to issue") { db in
+        try #sql(
+            """
+            ALTER TABLE "issue" ADD COLUMN "baselineSHA" TEXT
+            """
+        )
+        .execute(db)
+    }
 }

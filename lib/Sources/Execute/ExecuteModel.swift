@@ -266,9 +266,17 @@ public final class ExecuteModel {
     }
 
     /// Runs one Issue as a behind-the-scenes write agent and writes its status directly via the Store
-    /// (no MCP, no presented chat). `done` is contingent on the agent committing: HEAD must advance over
-    /// the run. A no-op, a blocked agent, or one that ended on a question all leave HEAD where it was
-    /// and are recorded `failed`, never `done`.
+    /// (no MCP, no presented chat). `done` needs both halves: the Turn ended cleanly *and* the branch
+    /// carries a commit for the Issue. The clean ending is the completion signal — a thrown Turn is
+    /// `failed` whatever the branch looks like, since the agent never got to say it was finished — and
+    /// the commit is what stops a no-op, a blocked agent, or one that ended on a question from passing
+    /// as done.
+    ///
+    /// The commit is measured against the Issue's `baselineSHA` — where its **first** attempt started —
+    /// not against HEAD as this attempt found it. An attempt cut off after committing leaves work behind,
+    /// and the attempt that follows correctly commits nothing; against a re-read HEAD that reads as a
+    /// no-op, which is how a finished Issue used to end up `failed` with the agent's success message
+    /// filed as its failure reason.
     ///
     /// Returns whether the run failed on a rate limit the Harness reported for itself — the run loop's
     /// only evidence for a failure worth waiting out. `false` for every other outcome, including a
@@ -278,11 +286,15 @@ public final class ExecuteModel {
         let issueNumber = issue.number
         try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .inProgress, now: now)
 
-        // HEAD before the run — the baseline a commit must move off. If we can't read it we can't verify
-        // the work, so fail closed rather than fall through to `done`.
-        let before: String
+        // The baseline this Issue's work must move off, established on the first attempt and read back on
+        // every later one. If we can't establish it we can't verify the work, so fail closed rather than
+        // fall through to `done`.
+        let baseline: String
         do {
-            before = try worktreeClient.headSHA(worktree)
+            let head = try worktreeClient.headSHA(worktree)
+            baseline = try database.captureIssueBaseline(
+                workflowID: workflowID, number: issueNumber, sha: head, now: now
+            )
         } catch {
             failIssue(issueNumber, reason: verifyFailedReason(error))
             return false
@@ -319,7 +331,7 @@ public final class ExecuteModel {
             failIssue(issueNumber, reason: verifyFailedReason(error))
             return false
         }
-        if after != before {
+        if after != baseline {
             try? database.setIssueStatus(workflowID: workflowID, number: issueNumber, to: .done, now: now)
         } else {
             failIssue(issueNumber, reason: noCommitReason(session: session))
