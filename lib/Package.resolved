@@ -1,5 +1,5 @@
 {
-  "originHash" : "5302b9cdcdf3f05567e7db09b312f53234e9f40d0a8921fd8241460ee559db26",
+  "originHash" : "4957fe79af52ed96170cf57b82e365a66cbfd5bd8d57f7f130be992538dc6335",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -168,8 +168,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftlang/swift-subprocess",
       "state" : {
-        "revision" : "11633673a41f509f8945f23c96c7acd4adafd679",
-        "version" : "0.5.0"
+        "revision" : "b3937ab85dd32f6e9435914599c1519074769c1a",
+        "version" : "1.0.0"
       }
     },
     {

@@ -15,7 +15,7 @@ let package = Package(
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.14.1"),
         .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.4"),
         .package(url: "https://github.com/pointfreeco/swift-structured-queries", exact: "0.33.2"),
-        .package(url: "https://github.com/swiftlang/swift-subprocess", exact: "0.5.0"),
+        .package(url: "https://github.com/swiftlang/swift-subprocess", exact: "1.0.0"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk", exact: "0.12.1"),
         .package(url: "https://github.com/gonzalezreal/textual", exact: "0.5.0"),
     ],
