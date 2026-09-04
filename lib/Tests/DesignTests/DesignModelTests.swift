@@ -133,6 +133,7 @@ struct DesignModelTests {
 
         model.generateSummary()
         await model.runTask?.value
+        try await model.$designPhase.load()
 
         let summaryURL = workflowDirectory
             .appending(path: "phases/design", directoryHint: .isDirectory)
