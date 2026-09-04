@@ -57,7 +57,7 @@ struct SubProcess {
     /// ADR 0003). `onStdoutLine` is invoked serially and returns the control message to write back;
     /// callers that mutate shared state from it must guard it.
     func run(input: String, onStdoutLine: @escaping @Sendable (Data) -> HarnessInput) async throws -> Outcome {
-        // swift-subprocess 0.5's raw `write(2)` path raises SIGPIPE when the child has closed its stdin
+        // swift-subprocess's raw `write(2)` path raises SIGPIPE when the child has closed its stdin
         // read-end (e.g. a harness that exits before consuming the prompt). Ignore it so those writes
         // fail with `EPIPE` — a `SubprocessError` we handle — instead of terminating us.
         Self.ensureSIGPIPEIgnored
@@ -111,7 +111,7 @@ struct SubProcess {
         }
 
         return Outcome(
-            stderrTail: result.closureOutput,
+            stderrTail: result.closureResult,
             terminationStatus: result.terminationStatus,
             paused: paused.withLock { $0 }
         )
