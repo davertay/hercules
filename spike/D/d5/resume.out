@@ -1,0 +1,11 @@
+The Redis answer carried over — that's the backend.
+
+But the blocker from before is unchanged: `/tmp/spike` still has no app. No `package.json`, `go.mod`, `Cargo.toml`, `pyproject.toml`, or `requirements.txt` anywhere in it — just the spike harness scripts (`server.py`, `driver.py`, `run_spike.py`, `d_launch.py`, `chain.py`) and log/output files. You also told me last turn this is a session-resume test harness, not a real app.
+
+So there's nothing for me to add a Redis cache to without inventing the app itself, which is well outside what you asked for.
+
+To continue, I need one of:
+
+- **A path** to the real app, or
+- **Go ahead, scaffold it** — and I'll create a small new app here with a Redis caching layer (tell me the language/framework), or
+- **Confirmation that this is still just the harness test**, in which case Redis is recorded and I'll stop here.

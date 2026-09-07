@@ -1,0 +1,2 @@
+{"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command",
+  "command":"echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"CONTROL: Read is blocked by the test hook.\"}}'"}]}]}}

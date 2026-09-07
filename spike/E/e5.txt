@@ -1,0 +1,16 @@
+==========================================================================
+E5  session=c9332970-b326-47ce-bf90-f665a871be9e  wall=53.9s  answers_given=3
+==========================================================================
+first assistant action : tool_use ToolSearch  {"query": "select:mcp__hercules_ask__ask_user", "max_results": 1}
+tool_use sequence      : ['ToolSearch', 'Bash', 'mcp__hercules_ask__ask_user', 'mcp__hercules_ask__ask_user', 'mcp__hercules_ask__ask_user']
+used mcp__hercules_ask__ask_user : True
+VERDICT                : ASKED_VIA_TOOL
+result  subtype='success' is_error=False stop_reason='end_turn' num_turns=6
+
+--- first 6 assistant events ---
+      7.5s tool_use  ToolSearch
+      8.1s tool_use  Bash
+     18.4s text      I peeked at `/private/tmp/spike` — it's a scratch dir (spike logs, driver scripts), no not
+     20.5s tool_use  mcp__hercules_ask__ask_user
+     32.7s tool_use  mcp__hercules_ask__ask_user
+     44.4s text      Noted: conflicts rare, **never lose data — fork rather than overwrite.** I'll carry that a

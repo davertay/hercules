@@ -1,0 +1,10 @@
+Noted — Redis. But I can't start: there's no application in this directory to add a cache to.
+
+`/tmp/spike` (same as `/private/tmp/spike`) contains only a test harness for driving Claude Code sessions — `server.py`/`driver.py`/`run_spike.py`, an `mcp.json`, and a pile of session logs, transcripts, and `session-id.txt` files in `b4/`, `c1`–`c4-5`, `d1`, `d4`. No `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, or README anywhere, and it's not a git repo.
+
+To get moving, I need one of:
+
+1. **The path to your actual app** — point me at it and I'll read the code and wire Redis in where it fits.
+2. **Language + framework**, if you'd rather I write it fresh (e.g. Python/FastAPI with `redis-py`, Node/Express with `ioredis`) — I'll build a standalone cache module here with get/set/TTL, key namespacing, and graceful degradation when Redis is down.
+
+Which one?

@@ -1,0 +1,2 @@
+{"hooks":{"PreToolUse":[{"matcher":"AskUserQuestion","hooks":[{"type":"command",
+  "command":"echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"AskUserQuestion is unavailable here. Ask via mcp__spike__ask_user instead.\"}}'"}]}]}}

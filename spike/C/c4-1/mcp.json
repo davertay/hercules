@@ -1,0 +1,1 @@
+{"mcpServers": {"spike": {"command": "python3", "args": ["/tmp/spike/server.py"], "env": {"SPIKE_LOG": "/tmp/spike/c4-1/server.log", "SPIKE_ANSWER_FILE": "/tmp/spike/c4-1/answer.txt"}}}}
