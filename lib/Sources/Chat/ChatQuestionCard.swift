@@ -16,6 +16,9 @@ import SwiftUI
 /// answer as prose. There is no composer to fall back to: the Turn is still running, so it stays locked
 /// and the running indicator stays up, and a typed message could not become this call's `tool_result`
 /// anyway.
+///
+/// The way out is Cancel, alongside Submit: it declines the question and stops the Turn, which is the
+/// same outcome for the agent as the toolbar's Stop and differs only in how much else goes with it.
 struct ChatQuestionCard: View {
     @Bindable var pending: PendingQuestion
 
@@ -25,6 +28,10 @@ struct ChatQuestionCard: View {
                 questionSection(question, at: index)
             }
             HStack {
+                // Never disabled: declining is always available, and it is the only control that is —
+                // Submit refuses an empty answer, and there is no composer to escape to. No keyboard
+                // shortcut either: it ends the Turn, which is not something a stray Escape should do.
+                Button("Cancel") { pending.cancel() }
                 Spacer(minLength: 0)
                 Button("Submit") { pending.submit() }
                     .buttonStyle(.borderedProminent)

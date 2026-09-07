@@ -15,6 +15,11 @@ public final class ChatEngine {
     @ObservationIgnored
     @Dependency(\.agentClient) private var agentClient
 
+    /// Times the grace a declined question is given before its Turn is stopped. Injectable so a test can
+    /// hold every engine stopped at once against one deadline it advances itself.
+    @ObservationIgnored
+    @Dependency(\.continuousClock) private var clock
+
     @ObservationIgnored
     private let database: any DatabaseWriter
 
@@ -82,6 +87,18 @@ public final class ChatEngine {
 
     @ObservationIgnored
     public var runTask: Task<Void, Never>?
+
+    /// The stop in flight: the grace a declined question is given to reach the agent and come back,
+    /// after which the Turn is cancelled. `nil` unless a stop is unwinding, and retained so a test can
+    /// await the stop rather than the wall clock.
+    @ObservationIgnored
+    private(set) var stopTask: Task<Void, Never>?
+
+    /// Set the moment a stop begins and cleared when the next Turn starts. While it holds, a question
+    /// arriving from the Turn being stopped is declined without ever reaching the screen — the model
+    /// retries a failed call, and a question the user has just declined coming back as a second card is
+    /// exactly what Cancel promises not to do.
+    private var isStopping = false
 
     public var draftText = ""
     public var isRunning = false
@@ -177,6 +194,8 @@ public final class ChatEngine {
     public func run(_ operation: @escaping @MainActor () async throws -> Void) -> Task<Void, Never> {
         errorText = nil
         isRunning = true
+        // A fresh Turn is not the stopped one, so its questions are the user's to answer again.
+        isStopping = false
         return Task {
             do {
                 try await operation()
@@ -187,24 +206,76 @@ public final class ChatEngine {
         }
     }
 
-    /// Cancels an in-flight Turn and clears `isRunning` up front, so the UI reflects the stop
-    /// immediately rather than waiting for the cancelled Turn to unwind. A no-op when idle, and the
-    /// engine is ready for a fresh Turn afterwards. Routed up through the chat-host models to the
-    /// Workflow-level stop-all.
+    /// How long a declined question is given to reach the agent and come back before the Turn is stopped
+    /// from under it.
+    ///
+    /// The dismissal has to travel down to the blocked call, be returned as the tool's error-flagged
+    /// result, and be written into the Harness's own session record — a round trip of a poll interval and
+    /// a little I/O, not of a human, which is why this is a couple of seconds and not a couple of
+    /// minutes. Overshooting costs nothing anyone can see: the stop is already on screen and the Turn is
+    /// one nobody is waiting on. Undershooting costs only the better message — the teardown closes the
+    /// MCP transport itself and the Harness records the call as `Connection closed`, which is well-formed,
+    /// just less use to the agent on the next resume.
+    static let declinedQuestionGrace: Duration = .seconds(2)
+
+    /// Stops an in-flight Turn, declining any question of it still waiting on the user first. A no-op
+    /// when idle, and the engine is ready for a fresh Turn afterwards. Routed up through the chat-host
+    /// models to the Workflow-level stop-all, so the toolbar's Stop and the card's own Cancel are one
+    /// path with one outcome for the agent — they differ only in how much else goes down with them.
     public func cancel() {
-        runTask?.cancel()
+        stop(afterDecliningAQuestion: false)
+    }
+
+    /// The whole stop sequence, shared by the toolbar's Stop and the card's Cancel.
+    ///
+    /// `afterDecliningAQuestion` is set by the card, which has already answered its own call on the way
+    /// in; every *other* question of the Turn is declined here. Either way the order is the same and the
+    /// order is the point: the waiting calls are answered, and only after the grace that lets those
+    /// answers come back is the Turn cancelled, so the Harness records complete `tool_use`/`tool_result`
+    /// pairs rather than calls torn down mid-flight.
+    ///
+    /// ``isRunning`` is cleared ahead of all of it, so the UI reflects the stop at once rather than when
+    /// the cancelled Turn has finished unwinding. The Turn itself takes the ordinary cancellation path
+    /// and reads as a stopped Turn afterwards, which is the truth of it.
+    ///
+    /// Nothing here waits on anything, so several engines stopped in one pass — a Workflow-wide Stop with
+    /// two Sessions blocked on questions at once — decline together and share the one grace between them
+    /// rather than queueing one behind the other.
+    private func stop(afterDecliningAQuestion declined: Bool) {
+        guard !isStopping else { return }
+        isStopping = true
         isRunning = false
-        dismissPendingQuestions()
+        // Evaluated first and on its own: whatever else this Turn had waiting has just been answered too,
+        // and it needs the same grace the card's own call does.
+        let dismissedAny = dismissPendingQuestions()
+        let hadQuestion = declined || dismissedAny
+        // Captured, so a Turn the user starts during the grace is not the one the stop lands on.
+        let stopping = runTask
+        guard hadQuestion else {
+            stopping?.cancel()
+            return
+        }
+        stopTask = Task { [clock] in
+            try? await clock.sleep(for: Self.declinedQuestionGrace)
+            stopping?.cancel()
+        }
     }
 
     /// Renders `questions` as the live card and suspends the call that asked them until the user submits
     /// an answer — the Chat's half of the round trip, and the reason ``QuestionHandler`` is a callback:
     /// one invocation, one answer, no correlation to arrange.
+    ///
+    /// A call arriving after a stop has begun is declined where it stands and never reaches the screen.
     private func ask(_ questions: [Question]) async -> Answer {
-        await withCheckedContinuation { continuation in
+        guard !isStopping else { return .cancelled }
+        return await withCheckedContinuation { continuation in
             let id = UUID()
             pendingQuestions.append(
-                PendingQuestion(id: id, questions: questions) { [weak self] answer in
+                PendingQuestion(
+                    id: id,
+                    questions: questions,
+                    onCancel: { [weak self] in self?.stop(afterDecliningAQuestion: true) }
+                ) { [weak self] answer in
                     self?.pendingQuestions.removeAll { $0.id == id }
                     continuation.resume(returning: answer)
                 }
@@ -212,16 +283,19 @@ public final class ChatEngine {
         }
     }
 
-    /// Ends every question still waiting when a Turn does, dismissing its card.
+    /// Ends every question still waiting when a Turn does, dismissing its card, and reports whether there
+    /// was one.
     ///
     /// A question outlives its Turn only when the Turn ended without the call coming back for its answer
     /// — a stop, a torn-down Harness — and a card left on screen afterwards would be a live control with
     /// nobody on the other end of it. The call, if it is still there to hear it, is told what a dismissal
     /// tells it; an answer nobody is waiting on is inert.
-    private func dismissPendingQuestions() {
+    @discardableResult
+    private func dismissPendingQuestions() -> Bool {
         let outstanding = pendingQuestions
         pendingQuestions = []
         for question in outstanding { question.resolve(.cancelled) }
+        return !outstanding.isEmpty
     }
 
     /// Starts the Session on the first call and resumes it thereafter, returning once the Turn ends.

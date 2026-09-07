@@ -41,10 +41,20 @@ final class PendingQuestion: Identifiable {
     /// Resumes the call waiting on this question, and is cleared as it is used: a call gets one answer.
     private var complete: ((Answer) -> Void)?
 
-    init(id: UUID = UUID(), questions: [Question], complete: @escaping (Answer) -> Void) {
+    /// Stops the Turn that asked, once the call has been told the user declined — the second half of
+    /// ``cancel()``, supplied by the engine because only the engine holds the Turn.
+    private let onCancel: () -> Void
+
+    init(
+        id: UUID = UUID(),
+        questions: [Question],
+        onCancel: @escaping () -> Void = {},
+        complete: @escaping (Answer) -> Void
+    ) {
         self.id = id
         self.questions = questions
         self.drafts = Array(repeating: Draft(), count: questions.count)
+        self.onCancel = onCancel
         self.complete = complete
     }
 
@@ -92,6 +102,22 @@ final class PendingQuestion: Identifiable {
     func submit() {
         guard canSubmit else { return }
         resolve(.answered(answer))
+    }
+
+    /// Declines the question without answering it, and stops the Turn that asked it.
+    ///
+    /// It is *Cancel* rather than *Skip*, deliberately. Skip says the agent carries on without an answer,
+    /// which is the guessing this whole feature exists to prevent; Cancel says the question and the work
+    /// waiting on it both stop here.
+    ///
+    /// The two steps are in that order and the order is the point. The call is answered first — with the
+    /// dismissal, which the tool returns flagged as an error — so it comes back on its own and the
+    /// Harness records a complete call-and-result pair. Only then does the Turn go. Answering alone would
+    /// not do: a model has been observed retrying a failed call, and a question the user has just
+    /// declined bouncing straight back as a second card is what a control labelled Cancel must never do.
+    func cancel() {
+        resolve(.cancelled)
+        onCancel()
     }
 
     /// Ends the call with `answer`, once. Beyond ``submit()`` this is how the engine dismisses a card

@@ -142,6 +142,13 @@ public final class WorkflowContainerModel {
     /// everything". The two chat Phases cancel their in-flight Turn, Execute cancels its run loop (which
     /// leaves the in-flight Issue `failed`), and Validate cancels every in-flight Persona. Each cancel is
     /// a no-op when its Phase is idle, so this is safe to call at any time.
+    ///
+    /// A chat Phase blocked on a question declines it on the way down, which is the same thing the card's
+    /// own Cancel does and leaves the agent in the same place: the user should not have to work out which
+    /// of the two controls they pressed. Only the blast radius differs — Cancel touches one Session's
+    /// Turn, this also takes down the Execute run loop and every Validate Persona. The declines happen in
+    /// this one synchronous pass and none of them waits on another, so two Sessions blocked at once are
+    /// resolved together against the single grace they share rather than one after the other.
     public func stopAll() {
         designModel?.cancel()
         allocateModel?.cancel()

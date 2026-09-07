@@ -91,6 +91,7 @@ let package = Package(
                 "Chat",
                 "Agent",
                 "Store",
+                .product(name: "Clocks", package: "swift-clocks"),
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
@@ -343,6 +344,7 @@ let package = Package(
                 "Execute",
                 "Store",
                 "Validate",
+                .product(name: "Clocks", package: "swift-clocks"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
             ]

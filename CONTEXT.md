@@ -109,6 +109,18 @@ attended Turns can ask.
 _Avoid_: Interactive (a property of the surface, not of who is watching), supervised, foreground,
 headless (the negative, and it says "no UI" where this says "nobody watching").
 
+**Decline**:
+To dismiss an agent's question without answering it. A decline is not an empty answer: the blocked call
+comes back error-flagged, telling the agent the user did not answer and must not be guessed for. It is
+answer-then-stop, in that order — the call is answered first so the Harness records a complete
+`tool_use`/`tool_result` pair, and the **Turn** is stopped after a short grace, because a model that
+retries a failed call would otherwise put the same question straight back on screen. The user reaches it
+by the question card's **Cancel** (this Session's Turn) or the toolbar's Stop (that, plus the Execute run
+loop and every Validate Persona); the agent cannot tell the two apart. The declined Turn is shown as
+stopped, which is what it is.
+_Avoid_: Skip (it says the agent carries on without an answer, which is the guessing this exists to
+prevent), dismiss the card (that is the UI moving, not the agent being told), reject, refuse.
+
 **AgentMode**:
 The tool surface a Session is granted, pinned at Session start. `readOnly` strictly forbids
 worktree-mutating tools (base allowlist of Read/Grep/Glob/WebFetch/WebSearch); `write` grants
