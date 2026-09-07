@@ -143,6 +143,7 @@ let package = Package(
         .target(
             name: "IssueMCP",
             dependencies: [
+                "Agent",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "MCP", package: "swift-sdk"),
@@ -153,6 +154,7 @@ let package = Package(
             name: "IssueMCPTests",
             dependencies: [
                 "IssueMCP",
+                "Agent",
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),

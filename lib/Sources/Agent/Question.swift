@@ -23,6 +23,22 @@ public struct Question: Codable, Equatable, Sendable {
         self.options = options
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case header, question, multiSelect, options
+    }
+
+    /// `multiSelect` and `options` fall back to the memberwise defaults rather than being required.
+    /// This decodes a model's tool arguments, and a question is not worth refusing over an omitted
+    /// `false` or over having nothing on offer — an open question the user answers in their own words
+    /// is a question like any other.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        header = try container.decode(String.self, forKey: .header)
+        question = try container.decode(String.self, forKey: .question)
+        multiSelect = try container.decodeIfPresent(Bool.self, forKey: .multiSelect) ?? false
+        options = try container.decodeIfPresent([Option].self, forKey: .options) ?? []
+    }
+
     /// One answer on offer.
     ///
     /// There is no (a)/(b)/(c) here: lettering is how a picker renders to a human, never something that

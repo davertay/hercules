@@ -523,6 +523,72 @@ struct HarnessRenderArgsTests {
         #expect(hercules["env"] as? [String: String] == ["FOO": "bar"])
     }
 
+    /// The question tool is allowlisted the same way every other MCP tool is — derived from the
+    /// descriptor's own tool names — so it cannot be configured without also being permitted.
+    @Test func questionAskerIsConfiguredAndAllowlisted() throws {
+        let scratch = makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .resume,
+            configuration: configuration(
+                mode: .readOnly,
+                mcpServers: [
+                    .questionAsker(
+                        command: "/path/to/Hercules",
+                        channelDirectory: scratch.questionChannelDirectory
+                    )
+                ]
+            ),
+            inputs: nil,
+            scratch: scratch,
+            sessionId: sessionId
+        )
+
+        #expect(args.contains("--mcp-config"))
+        let allowedIdx = try #require(args.firstIndex(of: "--allowedTools"))
+        #expect(args[(allowedIdx + 1)...].contains("mcp__hercules_ask__ask_user"))
+    }
+
+    /// The reason the question tool gets a server name of its own. A finalization Turn carries the
+    /// artifact writer as a per-Turn override, which *replaces* the pinned set rather than merging into
+    /// it; the config is keyed by server name, so one shared name would silently drop one of the two.
+    /// Under two names the Turn renders both entries and both allowlist entries.
+    @Test func aTurnCarriesTheQuestionAskerAndTheArtifactWriterTogether() throws {
+        let scratch = makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+
+        let servers: [MCPServer] = [
+            .artifactWriter(
+                command: "/path/to/Hercules",
+                artifactURL: URL(fileURLWithPath: "/tmp/wf/phases/design/summary.md")
+            ),
+            .questionAsker(
+                command: "/path/to/Hercules",
+                channelDirectory: scratch.questionChannelDirectory
+            ),
+        ]
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .resume,
+            configuration: configuration(mode: .readOnly, mcpServers: servers),
+            inputs: nil,
+            scratch: scratch,
+            sessionId: sessionId
+        )
+
+        let allowed = try #require(args.firstIndex(of: "--allowedTools")).advanced(by: 1)
+        #expect(args[allowed...].contains("mcp__hercules__write_artifact"))
+        #expect(args[allowed...].contains("mcp__hercules_ask__ask_user"))
+
+        // Two entries under two keys, rather than one overwriting the other.
+        let data = try Harness.mcpConfigJSON(servers: servers)
+        let root = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let entries = root["mcpServers"] as! [String: Any]
+        #expect(entries.keys.sorted() == ["hercules", "hercules_ask"])
+    }
+
     @Test func qualifiedToolNamesAreNamespaced() {
         let server = MCPServer(name: "hercules", command: "x", tools: ["create_issue", "ask_user"])
         #expect(server.qualifiedToolNames == ["mcp__hercules__create_issue", "mcp__hercules__ask_user"])

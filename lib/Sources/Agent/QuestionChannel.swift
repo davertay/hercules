@@ -145,3 +145,27 @@ struct QuestionChannel: Sendable {
         var answer: Answer
     }
 }
+
+/// The child's half of the round trip, and the whole of what the MCP server serving `ask_user` needs
+/// from this module: hand over a call, get back the user's answer.
+///
+/// It exists so that everything under it — a directory, some JSON files, a poll — stays this module's
+/// business even though the server lives in another one. The server knows only the address the app
+/// launched it with, so replacing the transport is still a change to one module.
+public struct QuestionAsker: Sendable {
+    private let channel: QuestionChannel
+
+    /// `channelDirectory` is the Turn's question channel, handed to the server as a launch argument.
+    public init(channelDirectory: URL) {
+        channel = QuestionChannel(directory: channelDirectory)
+    }
+
+    /// Announces the call and suspends until the user answers it or dismisses it.
+    ///
+    /// `callID` is the Harness's own `tool_use.id` for the call, so what comes back is this call's
+    /// answer and no other's. There is no timeout: the wait is a human's think time, which is the
+    /// reason the Harness's idle timer is disabled for it.
+    public func ask(callID: String, questions: [Question]) async throws -> Answer {
+        try await channel.ask(QuestionChannel.Call(callID: callID, questions: questions))
+    }
+}
