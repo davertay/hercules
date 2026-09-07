@@ -88,6 +88,18 @@ public final class ChatEngine {
     /// Set only for failures that never reach the database (e.g. the Harness binary is missing).
     public var errorText: String?
 
+    /// The `ask_user` calls of the running Turn that are waiting on the user, oldest first.
+    ///
+    /// Never persisted, and never a Transcript row: a pending question is a blocked process holding an
+    /// open request, so it cannot outlive the Turn that owns it, still less a restart.
+    private(set) var pendingQuestions: [PendingQuestion] = []
+
+    /// The call the card is showing. One at a time, with any second call queued behind rather than
+    /// replacing it: the Harness abandons a call without telling anyone and the model retries, so two
+    /// calls waiting at once is a thing that happens, and the one already on screen is the one the user
+    /// is mid-answer on.
+    var pendingQuestion: PendingQuestion? { pendingQuestions.first }
+
     /// Lets hosts dismiss transient UI (e.g. a saved-confirmation banner) when fresh chat begins.
     public var onSend: (@MainActor () -> Void)?
 
@@ -182,6 +194,34 @@ public final class ChatEngine {
     public func cancel() {
         runTask?.cancel()
         isRunning = false
+        dismissPendingQuestions()
+    }
+
+    /// Renders `questions` as the live card and suspends the call that asked them until the user submits
+    /// an answer — the Chat's half of the round trip, and the reason ``QuestionHandler`` is a callback:
+    /// one invocation, one answer, no correlation to arrange.
+    private func ask(_ questions: [Question]) async -> Answer {
+        await withCheckedContinuation { continuation in
+            let id = UUID()
+            pendingQuestions.append(
+                PendingQuestion(id: id, questions: questions) { [weak self] answer in
+                    self?.pendingQuestions.removeAll { $0.id == id }
+                    continuation.resume(returning: answer)
+                }
+            )
+        }
+    }
+
+    /// Ends every question still waiting when a Turn does, dismissing its card.
+    ///
+    /// A question outlives its Turn only when the Turn ended without the call coming back for its answer
+    /// — a stop, a torn-down Harness — and a card left on screen afterwards would be a live control with
+    /// nobody on the other end of it. The call, if it is still there to hear it, is told what a dismissal
+    /// tells it; an answer nobody is waiting on is inert.
+    private func dismissPendingQuestions() {
+        let outstanding = pendingQuestions
+        pendingQuestions = []
+        for question in outstanding { question.resolve(.cancelled) }
     }
 
     /// Starts the Session on the first call and resumes it thereafter, returning once the Turn ends.
@@ -194,6 +234,15 @@ public final class ChatEngine {
         // Read per Turn, so revoking trust applies to this Workflow's long-lived chat Session at its very
         // next Turn rather than only to a Session started afterwards.
         let trustsRepositorySettings = database.trustsRepositorySettings(workflowID: workflowID)
+        // Every Turn a Chat drives is attended by definition — a human is looking at it — which is what
+        // offering to answer says, and what gives the Turn the question tool at all. Behind-the-scenes
+        // runs go through the Agent directly and offer nothing, so they cannot block on a question nobody
+        // is there to answer.
+        let onQuestion: QuestionHandler = { [weak self] questions in
+            await self?.ask(questions) ?? .cancelled
+        }
+        // Whatever the Turn's outcome, no question of it may stay on screen past it.
+        defer { dismissPendingQuestions() }
         if let existing = session {
             startedSession = try await agentClient.send(
                 SendRequest(
@@ -202,7 +251,8 @@ public final class ChatEngine {
                     inputs: inputs,
                     database: database,
                     mcpServers: overrideMCPServers,
-                    trustsRepositorySettings: trustsRepositorySettings
+                    trustsRepositorySettings: trustsRepositorySettings,
+                    onQuestion: onQuestion
                 )
             )
         } else {
@@ -218,7 +268,8 @@ public final class ChatEngine {
                     skillFiles: skillFiles,
                     addDirs: addDirs,
                     mcpServers: mcpServers,
-                    trustsRepositorySettings: trustsRepositorySettings
+                    trustsRepositorySettings: trustsRepositorySettings,
+                    onQuestion: onQuestion
                 )
             )
         }
