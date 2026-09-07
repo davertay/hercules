@@ -44,11 +44,6 @@ public final class StreamProjector {
 
     private var reconciledCount = 0
 
-    /// The Harness can't draw `AskUserQuestion`'s picker, so it auto-errors the call and barrels on. The
-    /// Agent interrupts on `.askedQuestion`; while set, the auto-error result is dropped and the Turn's
-    /// own interrupt-`is_error` result is recorded as a clean stop.
-    private var interruptedForQuestion = false
-
     /// The text of the most recent `is_error` `result`. The Harness writes its failure reason here (on
     /// stdout) and then exits non-zero with an empty stderr, so this is the only place that reason lives
     /// — the `TerminationClassifier` reads it to give `harnessFailed` a meaningful detail.
@@ -100,15 +95,8 @@ public final class StreamProjector {
                 reconciledCount += 1
                 upsert(position: position, block: block)
             }
-            if !interruptedForQuestion,
-               decoded.contains(where: { $0.kind == BlockKind.toolUse.rawValue && $0.toolName == "AskUserQuestion" }) {
-                interruptedForQuestion = true
-                return .askedQuestion
-            }
 
         case let .toolResults(decoded):
-            // After a question, the only result left is the call's auto-error; drop it.
-            guard !interruptedForQuestion else { return .none }
             // Tool results are their own blocks; they never reuse a streamed index.
             for block in decoded {
                 upsert(position: allocatePosition(), block: block)
@@ -225,8 +213,6 @@ public final class StreamProjector {
 
     private func finalize(finalAnswer: String?, isError: Bool, durationMs: Int?, costUSD: Double?) {
         let now = date.now
-        // An interrupt-to-await-a-question reads back as an errored result, but it's a clean pause.
-        let isError = isError && !interruptedForQuestion
         if isError { lastErrorResult = finalAnswer }
         withErrorReporting {
             try database.write { db in
@@ -248,8 +234,6 @@ public final class StreamProjector {
 /// What the Agent should do after the `StreamProjector` consumes a line.
 public enum StreamSignal: Equatable, Sendable {
     case none
-    /// Interrupt the Turn so the rendered card can be answered, then resume with the selection.
-    case askedQuestion
     /// The Turn's `result` landed; the Harness can be closed.
     case completed
 }

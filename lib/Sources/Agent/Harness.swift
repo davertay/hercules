@@ -125,7 +125,7 @@ public enum Harness {
         var args: [String] = [
             "--print",
             "--output-format", "stream-json",
-            // Realtime input keeps stdin open so we can interrupt mid-Turn on a question (see `SubProcess`).
+            // Realtime input keeps stdin open as the Turn's control channel (see `SubProcess`).
             "--input-format", "stream-json",
             "--permission-mode", permissionMode,
             "--setting-sources", settingSources,

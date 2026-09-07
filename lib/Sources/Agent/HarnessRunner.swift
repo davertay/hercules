@@ -96,8 +96,8 @@ struct HarnessRunner {
         )
         // Both of this Turn's files are spent the moment the classification below has run: the Harness
         // read `--settings` at startup, and the drop-file has one reader. Deferred from here so every
-        // exit — the paused return, a cancellation, an I/O failure, a throw out of classification —
-        // leaves the directory as it found it.
+        // exit — a cancellation, an I/O failure, a throw out of classification — leaves the directory
+        // as it found it.
         defer { scratch.removeTurnFiles() }
 
         let args = try Harness.renderArgs(
@@ -125,7 +125,6 @@ struct HarnessRunner {
                 // Translate the projector's signal into the realtime protocol's stdin control.
                 switch sink.withLock({ $0.ingest(line) }) {
                 case .none: return .none
-                case .askedQuestion: return .interrupt
                 case .completed: return .finishInput
                 }
             }
@@ -141,10 +140,6 @@ struct HarnessRunner {
         if Task.isCancelled {
             throw cancelled(startedAt: startedAt, sink: sink)
         }
-
-        // A paused run is a deliberate stop awaiting a question's answer — already projected, nothing
-        // to classify or flag.
-        if outcome.paused { return }
 
         let durationMs = Int(now.timeIntervalSince(startedAt) * 1000)
 

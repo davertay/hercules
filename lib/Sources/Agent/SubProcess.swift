@@ -1,12 +1,14 @@
 import Darwin
 import Foundation
-import os
 import Subprocess
 import System
 
 /// The control message the stdout drain writes back on the Harness's stdin.
 enum HarnessInput: Sendable {
     case none
+    /// Stops the Turn in flight. The cancellation path's polite alternative to a signal — it lets the
+    /// Harness unwind and write a complete transcript — and the primitive a taken-over Session will use
+    /// to inject steering mid-Turn.
     case interrupt
     case finishInput
 }
@@ -49,8 +51,6 @@ struct SubProcess {
     struct Outcome {
         let stderrTail: String
         let terminationStatus: TerminationStatus
-        /// True when the Turn was interrupted to await a question — a deliberate pause, not a failure.
-        let paused: Bool
     }
 
     /// Delivers each complete NDJSON stdout line to `onStdoutLine` as it arrives (live streaming, per
@@ -68,7 +68,6 @@ struct SubProcess {
             .gracefulShutDown(allowedDurationToNextStep: teardownGrace)
         ]
 
-        let paused = OSAllocatedUnfairLock(initialState: false)
         let result = try await Subprocess.run(
             .path(FilePath(executable.path)),
             arguments: Arguments(arguments),
@@ -85,7 +84,8 @@ struct SubProcess {
             // Drain stderr concurrently so a payload larger than the pipe buffer can't wedge us.
             async let errTail = Self.collectTail(execution.standardError)
 
-            // Keep stdin open after the prompt so we can interrupt the Turn if it asks a question.
+            // Keep stdin open after the prompt: it's the Turn's control channel, and the only way to
+            // reach a Harness that's already running.
             do {
                 _ = try await inputWriter.write(Self.userMessage(input))
             } catch let error as SubprocessError where error.isBrokenPipe {
@@ -99,7 +99,6 @@ struct SubProcess {
                 case .none:
                     break
                 case .interrupt:
-                    paused.withLock { $0 = true }
                     _ = try? await inputWriter.write(Self.interruptRequest())
                 case .finishInput:
                     // Closing stdin lets the realtime-input Harness exit instead of awaiting more input.
@@ -112,8 +111,7 @@ struct SubProcess {
 
         return Outcome(
             stderrTail: result.closureResult,
-            terminationStatus: result.terminationStatus,
-            paused: paused.withLock { $0 }
+            terminationStatus: result.terminationStatus
         )
     }
 
