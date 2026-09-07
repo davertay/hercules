@@ -102,6 +102,16 @@ public final class ChatEngine {
 
     public var draftText = ""
     public var isRunning = false
+
+    /// Whether a Turn is still under way — from the moment it starts until it has finished unwinding,
+    /// the Harness's own teardown included.
+    ///
+    /// A different question from ``isRunning``, which a stop clears eagerly so the stop shows on screen
+    /// at once while the Turn behind it is still coming down. Closing the window and quitting the app
+    /// wait on *this* one, because what they are waiting for is the Harness to actually be gone rather
+    /// than for the UI to say so.
+    public private(set) var hasTurnInFlight = false
+
     /// Set only for failures that never reach the database (e.g. the Harness binary is missing).
     public var errorText: String?
 
@@ -182,28 +192,38 @@ public final class ChatEngine {
         guard !prompt.isEmpty, !isRunning else { return }
         draftText = ""
         onSend?()
-        runTask = run { [self] in
+        run { [self] in
             try await send(prompt)
         }
     }
 
     /// Runs one orchestration under the engine's run lifecycle — the wrapper every button-triggered Turn
-    /// shares. Returns the task so the host can retain it; storing it in ``runTask`` (as ``submit()``
-    /// does) additionally routes it through ``cancel()``.
+    /// shares.
+    ///
+    /// The task is held as ``runTask`` however the Turn was started, so ``cancel()`` reaches it. A Turn a
+    /// host started — a summary, a carve — is as much of the Workflow's running work as one the user
+    /// typed, is as able to block on a question, and a window closing or the app quitting has to bring it
+    /// down too. It is returned as well, for hosts that keep their own handle on it.
     @discardableResult
     public func run(_ operation: @escaping @MainActor () async throws -> Void) -> Task<Void, Never> {
         errorText = nil
         isRunning = true
+        hasTurnInFlight = true
         // A fresh Turn is not the stopped one, so its questions are the user's to answer again.
         isStopping = false
-        return Task {
+        let task = Task {
             do {
                 try await operation()
             } catch {
                 errorText = error.localizedDescription
             }
             isRunning = false
+            // Last of all: this is the flag a shutdown waits on, and by here there is nothing left of the
+            // Turn to wait for.
+            hasTurnInFlight = false
         }
+        runTask = task
+        return task
     }
 
     /// How long a declined question is given to reach the agent and come back before the Turn is stopped

@@ -1,12 +1,6 @@
 import HerculesApp
 import SwiftUI
 
-#if DEBUG
-private let isDebugBuild = true
-#else
-private let isDebugBuild = false
-#endif
-
 @main
 enum HerculesMain {
     static func main() {
@@ -18,16 +12,12 @@ enum HerculesMain {
 }
 
 struct HerculesGUI: App {
-    @State var model: AppModel
-
-    init() {
-        bootstrapHercules()
-        self.model = AppModel(
-            testChatEnabled: isDebugBuild
-        )
-    }
+    /// The delegate bootstraps the app and owns its model, because it is also where quitting is caught:
+    /// `applicationShouldTerminate` is the only hook that can hold a quit open long enough to bring the
+    /// open Workflows' agents down, and it needs the model to do it.
+    @NSApplicationDelegateAdaptor(HerculesAppDelegate.self) private var delegate
 
     var body: some Scene {
-        AppScene(model: model)
+        AppScene(model: delegate.model)
     }
 }

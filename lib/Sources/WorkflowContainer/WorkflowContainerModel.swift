@@ -62,7 +62,6 @@ public final class WorkflowContainerModel {
         directory = data.directory
         repoPath = data.repoPath
         self.registry = registry
-        registry?.registerOnOpen(data.id)
 
         // The worktree path is a pure convention derived from the directory, so a state-restored reopen
         // recomputes it and reads the already-existing on-disk worktree without re-creating it.
@@ -115,10 +114,16 @@ public final class WorkflowContainerModel {
             _completedPhases = Fetch(wrappedValue: [])
             _workflowRow = Fetch(wrappedValue: nil)
         }
+
+        // Last, because the model hands *itself* over: the launcher wants to know this window is open, and
+        // quitting wants something it can bring down. Neither can be given half a model.
+        registry?.registerOnOpen(data.id, model: self)
     }
 
-    /// Ends any in-flight Execute run and Validate reviews when the window closes. Both cancels are
-    /// `nonisolated` and no-ops when idle, so they're safe from the deinitializer.
+    /// Unregisters the window and backstops its two behind-the-scenes Phases. A closing window runs
+    /// ``stopAll()`` first and a quit shuts every Workflow down before it goes, so by here there is
+    /// normally nothing left to cancel. Both cancels are `nonisolated` and no-ops when idle, so they're
+    /// safe from the deinitializer.
     deinit {
         executeModel?.cancelRun()
         validateModel?.cancelAll()
@@ -137,6 +142,19 @@ public final class WorkflowContainerModel {
 
     /// The whole Workflow is quiescent — none of the four Phases' agents are running.
     public var isIdle: Bool { !isRunning }
+
+    /// Whether any Phase still has an agent coming down — a Turn already stopped and unwinding included.
+    ///
+    /// ``isRunning`` cannot answer this: the chat Phases clear it the moment Stop is pressed, so the UI
+    /// reflects the stop while the Turn behind it is still ending. Closing the window and quitting the app
+    /// wait on this one instead, because waiting on ``isRunning`` would be taking the UI's word for it and
+    /// leaving the Harness to be orphaned a moment later.
+    public var hasWorkInFlight: Bool {
+        designModel?.hasWorkInFlight == true
+            || allocateModel?.hasWorkInFlight == true
+            || executeModel?.isRunning == true
+            || validateModel?.isAnyRunning == true
+    }
 
     /// Stops every running agent across all four Phases in one call — the Workflow-level "stop
     /// everything". The two chat Phases cancel their in-flight Turn, Execute cancels its run loop (which

@@ -121,6 +121,17 @@ stopped, which is what it is.
 _Avoid_: Skip (it says the agent carries on without an answer, which is the guessing this exists to
 prevent), dismiss the card (that is the UI moving, not the agent being told), reject, refuse.
 
+**In flight**:
+Said of a **Turn** from the moment it starts until its Harness has finished coming down — a Turn already
+stopped and still unwinding included. Deliberately not the same question as running: a **Decline** clears
+the running flag at once so the stop shows on screen, while the process behind it is still exiting.
+Closing a Workflow window and quitting the app stop the agents and then wait on *this*, because waiting
+on the running flag would be taking the UI's word for it and orphaning the Harness a moment later. The
+wait is a bounded drain — a few seconds of polling, after which the app goes anyway — so a Harness that
+won't come down delays a quit and can never prevent one.
+_Avoid_: Running/busy (what the UI shows, cleared eagerly), pending, active, draining (that is the
+waiting, not the state waited on).
+
 **AgentMode**:
 The tool surface a Session is granted, pinned at Session start. `readOnly` strictly forbids
 worktree-mutating tools (base allowlist of Read/Grep/Glob/WebFetch/WebSearch); `write` grants
