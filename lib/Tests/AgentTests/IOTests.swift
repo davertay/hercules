@@ -396,4 +396,82 @@ struct IOTests {
             #expect(err.localizedDescription == "Harness failed code=1: \(stderrTail)")
         }
     }
+
+    // MARK: - Attended Turns
+
+    /// The arguments the fixture was launched with, read back out of the worktree it wrote them into.
+    private func launchedArguments(worktree: URL) throws -> [String] {
+        try String(contentsOf: worktree.appendingPathComponent("harness-args.txt"), encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    /// Offering to answer is the whole of what a caller does, and the Turn it gets is one that can ask:
+    /// the `ask_user` server configured and allowlisted, pointed at a channel this Turn opened. The
+    /// caller supplied no server and no directory — those are the Agent's, which is what leaves them
+    /// free to change.
+    @Test func aCallerWhoOffersToAnswerGetsATurnThatCanAsk() async throws {
+        let fixture = try fixtureURL("dump-args.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let worktree = root.appendingPathComponent("worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+
+        let session = try await client(fixture).start(
+            StartRequest(
+                prompt: "hello",
+                worktree: worktree,
+                mode: .readOnly,
+                database: database,
+                workflowID: workflowID,
+                kind: .design,
+                onQuestion: { _ in .cancelled }
+            )
+        )
+        defer {
+            try? FileManager.default.removeItem(
+                at: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("hercules-sessions", isDirectory: true)
+                    .appendingPathComponent(session.id.rawValue.uuidString, isDirectory: true)
+            )
+        }
+
+        let args = try launchedArguments(worktree: worktree)
+        let allowed = try #require(args.firstIndex(of: "--allowedTools"))
+        #expect(args[allowed...].contains("mcp__hercules_ask__ask_user"))
+
+        let configPath = args[try #require(args.firstIndex(of: "--mcp-config")) + 1]
+        let config = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: configPath)))
+        let entry = ((config as! [String: Any])["mcpServers"] as! [String: Any])["hercules_ask"] as! [String: Any]
+        let entryArgs = entry["args"] as! [String]
+        #expect(entryArgs.first == "--mcp-ask-server")
+        // The address is the Turn's own, under the Session's scratch — not anything the caller named.
+        #expect(entryArgs.last?.hasSuffix(".questions") == true)
+        #expect(entryArgs.last?.contains(session.id.rawValue.uuidString) == true)
+    }
+
+    /// And a caller that offers nothing gets exactly the invocation it got before any of this existed:
+    /// no server, no tool, nothing to block on. This is what keeps an unattended Execute or Validate run
+    /// unable to wedge itself on a question nobody is there to answer.
+    @Test func aCallerWhoOffersNothingGetsTheInvocationItGotBefore() async throws {
+        let fixture = try fixtureURL("dump-args.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let worktree = root.appendingPathComponent("worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+
+        _ = try await client(fixture).start(
+            StartRequest(
+                prompt: "hello",
+                worktree: worktree,
+                mode: .readOnly,
+                database: database,
+                workflowID: workflowID,
+                kind: .execute
+            )
+        )
+
+        let args = try launchedArguments(worktree: worktree)
+        #expect(!args.contains("--mcp-config"))
+        #expect(!args.contains { $0.contains("ask_user") })
+    }
 }

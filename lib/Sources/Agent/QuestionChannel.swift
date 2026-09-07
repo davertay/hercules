@@ -126,6 +126,30 @@ struct QuestionChannel: Sendable {
             .write(to: answerFile(callID), options: .atomic)
     }
 
+    /// Puts every call announced on this channel to `onQuestion` and delivers what it returns to the
+    /// call that asked it — the app's whole half of the round trip, for the Turn's whole life.
+    ///
+    /// Runs until cancelled. There is nothing to return: a Turn may ask no questions, or ten, and it is
+    /// the Turn's own end that ends this, not any count of them.
+    ///
+    /// Each call is handed over in its own child task, so a second one announcing while the first is
+    /// still with the user is served alongside it rather than behind it. That is the wedge the spike
+    /// caught the model walking into — the Harness abandons a call without telling anyone, the model
+    /// retries, and serving one at a time would leave the retry waiting on a call nobody is coming back
+    /// for. Served calls are remembered so a call still on the user's screen isn't put to them twice.
+    func serve(_ onQuestion: @escaping QuestionHandler) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            var handed: Set<String> = []
+            while true {
+                for call in try pendingCalls() where !handed.contains(call.callID) {
+                    handed.insert(call.callID)
+                    group.addTask { try deliver(await onQuestion(call.questions), to: call.callID) }
+                }
+                try await Task.sleep(for: pollInterval)
+            }
+        }
+    }
+
     // MARK: - The files
 
     private static let announceSuffix = ".question.json"

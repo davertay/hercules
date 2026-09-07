@@ -25,7 +25,8 @@ struct HarnessRunner {
                 mcpServers: request.mcpServers
             ),
             trustsRepositorySettings: request.trustsRepositorySettings,
-            inputs: request.inputs
+            inputs: request.inputs,
+            onQuestion: request.onQuestion
         )
     }
 
@@ -52,7 +53,8 @@ struct HarnessRunner {
             operation: .start,
             configuration: Harness.SessionConfiguration(request: request),
             trustsRepositorySettings: request.trustsRepositorySettings,
-            inputs: request.inputs
+            inputs: request.inputs,
+            onQuestion: request.onQuestion
         )
     }
 
@@ -65,7 +67,8 @@ struct HarnessRunner {
         operation: Harness.Operation,
         configuration: Harness.SessionConfiguration,
         trustsRepositorySettings: Bool,
-        inputs: InputBundle?
+        inputs: InputBundle?,
+        onQuestion: QuestionHandler?
     ) async throws {
         let startedAt = now
         let turnID = uuid()
@@ -86,8 +89,8 @@ struct HarnessRunner {
             initialState: LineSink(projector: StreamProjector(database: database, turnID: turnID))
         )
 
-        // Scratch dir for the config files this Turn generates for the Harness to read back: the
-        // `--mcp-config` servers and the `--settings` hook registration.
+        // Scratch dir for what this Turn generates for the Harness and its children to read back: the
+        // `--mcp-config` servers, the `--settings` hook registration, and the question channel below.
         let scratch = Harness.TurnScratch(
             directory: FileManager.default.temporaryDirectory
                 .appendingPathComponent("hercules-sessions", isDirectory: true)
@@ -99,6 +102,23 @@ struct HarnessRunner {
         // exit — a cancellation, an I/O failure, a throw out of classification — leaves the directory
         // as it found it.
         defer { scratch.removeTurnFiles() }
+
+        // A caller offering to answer is what gives the Turn the question tool: the channel is opened in
+        // this Turn's scratch, the server that serves `ask_user` is launched pointed at it, and every
+        // call announced there is put to the caller. Without a caller to answer, none of it is attached —
+        // an unattended Turn that blocked on a question would wait until it was torn down.
+        var configuration = configuration
+        var questions: Task<Void, any Error>?
+        if let onQuestion {
+            let channel = QuestionChannel(directory: scratch.questionChannelDirectory)
+            configuration.mcpServers.append(
+                .questionAsker(command: HerculesMCP.serverCommand, channelDirectory: channel.directory)
+            )
+            questions = Task { try await channel.serve(onQuestion) }
+        }
+        // Cancelled rather than awaited: the Turn is over either way, and whether a caller still holding
+        // a question on screen ever returns is not something its outcome may wait on.
+        defer { questions?.cancel() }
 
         let args = try Harness.renderArgs(
             binary: binaryURL,

@@ -188,6 +188,99 @@ struct QuestionChannelTests {
         #expect(try await askingFirst.value == firstAnswer)
     }
 
+    // MARK: - Serving the callback
+
+    /// The seam from the app's side: a call announced on the channel reaches the caller's handler as the
+    /// questions it asked, and what the handler returns is the answer the waiting call receives. Nothing
+    /// about the directory, the files or the poll appears in the handler's world.
+    @Test func anAnnouncedCallReachesTheHandlerAndTakesBackWhatItReturns() async throws {
+        let channel = makeChannel()
+        defer { try? FileManager.default.removeItem(at: channel.directory) }
+        let asked = QuestionBox()
+
+        let serving = Task {
+            try await channel.serve { questions in
+                await asked.record(questions)
+                return .answered([
+                    QuestionAnswer(header: "Storage", selected: ["Use SQLite"], note: "and a migrations file")
+                ])
+            }
+        }
+        defer { serving.cancel() }
+
+        let answer = try await channel.ask(QuestionChannel.Call(callID: "toolu_01", questions: [storage]))
+
+        #expect(await asked.received == [[storage]])
+        #expect(
+            answer
+                == .answered([
+                    QuestionAnswer(header: "Storage", selected: ["Use SQLite"], note: "and a migrations file")
+                ])
+        )
+    }
+
+    /// Several calls in one Turn, with no Turn boundary between them: each reaches the handler, each
+    /// takes back its own answer, and the second is served while the first is still with the user rather
+    /// than after it.
+    @Test func severalCallsInOneTurnEachReachTheHandlerAndEachGetTheirOwnAnswer() async throws {
+        let channel = makeChannel()
+        defer { try? FileManager.default.removeItem(at: channel.directory) }
+        let asked = QuestionBox()
+
+        let serving = Task {
+            try await channel.serve { questions in
+                await asked.record(questions)
+                // Answering by header proves the handler is invoked once per call with that call's own
+                // questions, rather than once for a Turn's worth of them.
+                return .answered(questions.map { QuestionAnswer(header: $0.header, selected: [$0.header]) })
+            }
+        }
+        defer { serving.cancel() }
+
+        async let first = channel.ask(QuestionChannel.Call(callID: "toolu_first", questions: [storage]))
+        async let second = channel.ask(QuestionChannel.Call(callID: "toolu_second", questions: [sync]))
+
+        #expect(try await first == .answered([QuestionAnswer(header: "Storage", selected: ["Storage"])]))
+        #expect(try await second == .answered([QuestionAnswer(header: "Sync", selected: ["Sync"])]))
+        #expect(await asked.received.count == 2)
+        #expect(await Set(asked.received.flatMap { $0.map(\.header) }) == ["Storage", "Sync"])
+    }
+
+    /// A call the handler is still holding must not be put to it again on the next poll — the user would
+    /// see the question they are already answering appear a second time.
+    @Test func aCallStillWithTheHandlerIsNotHandedOverTwice() async throws {
+        let channel = makeChannel()
+        defer { try? FileManager.default.removeItem(at: channel.directory) }
+        let asked = QuestionBox()
+
+        let serving = Task {
+            try await channel.serve { questions in
+                await asked.record(questions)
+                try? await Task.sleep(for: .milliseconds(100))
+                return .cancelled
+            }
+        }
+        defer { serving.cancel() }
+
+        let answer = try await channel.ask(QuestionChannel.Call(callID: "toolu_01", questions: [storage]))
+
+        #expect(answer == .cancelled)
+        #expect(await asked.received.count == 1)
+    }
+
+    /// Serving ends with the Turn, answered or not. There is nothing to return — a Turn may ask no
+    /// questions at all — so the end of the Turn is the only thing that ends this.
+    @Test func servingEndsWhenTheTurnIsCancelled() async throws {
+        let channel = makeChannel()
+        defer { try? FileManager.default.removeItem(at: channel.directory) }
+
+        let serving = Task { try await channel.serve { _ in .cancelled } }
+        try await Task.sleep(for: .milliseconds(10))
+        serving.cancel()
+
+        await #expect(throws: CancellationError.self) { try await serving.value }
+    }
+
     // MARK: - Where the state lives
 
     /// The channel's state is the Turn's scratch and nothing else: it is written under the Turn's own
@@ -212,5 +305,14 @@ struct QuestionChannelTests {
 
         scratch.removeTurnFiles()
         #expect(!FileManager.default.fileExists(atPath: channel.directory.path))
+    }
+}
+
+/// What a handler was asked, collected across the concurrent invocations serving a Turn's calls.
+private actor QuestionBox {
+    private(set) var received: [[Question]] = []
+
+    func record(_ questions: [Question]) {
+        received.append(questions)
     }
 }

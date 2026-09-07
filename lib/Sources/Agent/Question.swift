@@ -65,6 +65,25 @@ public enum Answer: Codable, Equatable, Sendable {
     case cancelled
 }
 
+/// Puts one `ask_user` call's questions to the user and comes back with their reply.
+///
+/// This is the whole of the seam. A caller supplies one on a ``StartRequest`` or a ``SendRequest``, the
+/// Agent invokes it when a Turn's agent asks, and what it returns is delivered back to the call still
+/// waiting on it. Everything in between — how the question crosses into this module, how it is
+/// correlated, how the wait is held, where the state lives — is this module's business, which is what
+/// leaves all of it replaceable without touching anything above.
+///
+/// A callback rather than a stream of pending questions because a `send` already doesn't return until
+/// the Turn ends, so a blocking question *is* a mid-call callback: correlation is structural — one
+/// invocation, one answer — cancellation is returning ``Answer/cancelled``, and a test double is a
+/// closure.
+///
+/// The argument is the questions *one call* asked, not one question, because one ``Answer`` covers the
+/// whole call. A call usually carries a single question — asking one at a time is a Skill's convention —
+/// but the schema allows several, and splitting them across invocations would put back the correlation
+/// this shape removes.
+public typealias QuestionHandler = @Sendable ([Question]) async -> Answer
+
 /// The reply to a single ``Question``.
 public struct QuestionAnswer: Codable, Equatable, Sendable {
     /// The `header` of the ``Question`` this answers.

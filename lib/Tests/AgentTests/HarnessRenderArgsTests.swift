@@ -551,6 +551,50 @@ struct HarnessRenderArgsTests {
         #expect(args[(allowedIdx + 1)...].contains("mcp__hercules_ask__ask_user"))
     }
 
+    /// The whole invocation an attended Turn is launched with, snapshotted over a fixed scratch path so
+    /// the question channel's address and the allowlist entry it derives are both visible in one place.
+    @Test func attendedTurnRendersTheQuestionAskerAndItsChannel() throws {
+        let scratch = Harness.TurnScratch(
+            directory: URL(fileURLWithPath: "/tmp/HarnessRenderArgsTests-ask"),
+            turnID: turnID
+        )
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+
+        let args = try Harness.renderArgs(
+            binary: binary,
+            operation: .resume,
+            configuration: configuration(
+                mode: .readOnly,
+                mcpServers: [
+                    .questionAsker(
+                        command: "/path/to/Hercules",
+                        channelDirectory: scratch.questionChannelDirectory
+                    )
+                ]
+            ),
+            inputs: nil,
+            scratch: scratch,
+            sessionId: sessionId
+        )
+
+        withSnapshotTesting(record: .missing) {
+            assertSnapshot(of: args, as: .customDump)
+        }
+
+        // The address the spawned server is pointed at is this Turn's channel and no other's.
+        let config = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: scratch.mcpConfigFile)
+        ) as! [String: Any]
+        let entry = (config["mcpServers"] as! [String: Any])["hercules_ask"] as! [String: Any]
+        #expect(
+            entry["args"] as? [String] == [
+                "--mcp-ask-server",
+                "--question-channel",
+                "/tmp/HarnessRenderArgsTests-ask/\(turnID.uuidString).questions",
+            ]
+        )
+    }
+
     /// The reason the question tool gets a server name of its own. A finalization Turn carries the
     /// artifact writer as a per-Turn override, which *replaces* the pinned set rather than merging into
     /// it; the config is keyed by server name, so one shared name would silently drop one of the two.

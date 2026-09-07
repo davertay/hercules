@@ -48,6 +48,15 @@ public enum HerculesMCP {
     /// question needs.
     public static let askServerName = "hercules_ask"
 
+    /// The command every one of these servers is launched as: the app binary re-executed. It branches
+    /// into the stdio server at `@main` before AppKit boots, so no separate helper binary is embedded
+    /// (ADR 0006). Here rather than at each descriptor's call site because the question asker's
+    /// descriptor is completed inside the Agent, where the Turn's channel directory is known — so the
+    /// two would otherwise resolve the same binary in two places.
+    public static var serverCommand: String {
+        Bundle.main.executableURL?.path ?? CommandLine.arguments[0]
+    }
+
     /// The `@main` re-exec subcommand serving `create_issue`/`propose_issue`.
     public static let issueServerSubcommand = "--mcp-issue-server"
     /// The `@main` re-exec subcommand serving `write_artifact`.

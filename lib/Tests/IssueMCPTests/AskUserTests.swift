@@ -379,6 +379,58 @@ struct AskUserTests {
         #expect(firstResult.isError == nil)
     }
 
+    // MARK: - The whole loop, in one process
+
+    /// The one test that proves the feature end to end, and it spawns nothing: the tool handler on one
+    /// side, the Agent's own side of the channel on the other, and the caller's handler where the app's
+    /// card will be. A `tools/call` arrives; the handler is invoked with the decoded question; the
+    /// answer it returns comes back as the tool's result.
+    ///
+    /// It has to be assembled by hand because there is no seam that covers it otherwise. The Agent's I/O
+    /// tests substitute a shell script for the Harness, but the MCP child is a binary the *real* Harness
+    /// spawns — under a fixture nothing ever spawns it. Both halves are ours, so they are put in a room
+    /// together instead of each being tested against a stand-in that can agree with the wrong thing.
+    @Test func aQuestionReachesTheHandlerAndItsAnswerComesBackAsTheToolResult() async throws {
+        let directory = Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // The app's side: whatever it is asked, it answers as the user would from the card.
+        let asked = QuestionRecorder()
+        let serving = Task {
+            try await QuestionChannel(directory: directory).serve { questions in
+                await asked.record(questions)
+                return .answered([
+                    QuestionAnswer(
+                        header: questions[0].header,
+                        selected: [questions[0].options[0].label],
+                        note: "but only for new notes"
+                    )
+                ])
+            }
+        }
+        defer { serving.cancel() }
+
+        // The child's side: the tool call the Harness would make, served by the real handler.
+        let result = await askUserCall(
+            Self.parameters(callID: "toolu_01", header: "Storage", question: "SQLite or a file?"),
+            asker: QuestionAsker(channelDirectory: directory)
+        )
+
+        // The question arrived decoded, not as JSON to be picked apart.
+        let received = try #require(await asked.received.first?.first)
+        #expect(received.header == "Storage")
+        #expect(received.question == "SQLite or a file?")
+        #expect(received.options.map(\.label) == ["Yes", "No"])
+
+        // And the answer the handler returned is the tool's result, the note kept apart from the label.
+        #expect(result.isError == nil)
+        #expect(
+            try Self.text(of: result) == """
+                {"answers":[{"header":"Storage","note":"but only for new notes","selected":["Yes"]}]}
+                """
+        )
+    }
+
     // MARK: - Launch argument parsing
 
     @Test func parsesSubcommandArguments() {
@@ -463,4 +515,13 @@ struct AskUserTests {
 
 private enum AskUserTestFailure: Error {
     case notText
+}
+
+/// What the caller's handler was asked, recorded from the task serving the channel.
+private actor QuestionRecorder {
+    private(set) var received: [[Question]] = []
+
+    func record(_ questions: [Question]) {
+        received.append(questions)
+    }
 }

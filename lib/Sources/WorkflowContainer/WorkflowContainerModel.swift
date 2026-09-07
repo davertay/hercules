@@ -77,7 +77,7 @@ public final class WorkflowContainerModel {
                 database: database,
                 worktree: worktree,
                 workflowDirectory: data.directory,
-                mcpServerCommand: Self.mcpServerCommand
+                mcpServerCommand: HerculesMCP.serverCommand
             )
             // Scope `defaultDatabase` so the models' fetches observe this Workflow's Store. Every Workflow
             // runs the same four Phases (Design → Allocate → Execute → Validate), so all four models are
@@ -237,12 +237,6 @@ public final class WorkflowContainerModel {
     /// A title as entered, as it is stored: trimmed, so surrounding whitespace can't reach the row.
     private static func storedTitle(_ title: String) -> String {
         title.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// The app binary re-executed — it branches into the stdio server at `@main` before AppKit boots,
-    /// so no separate helper binary is embedded (ADR 0006).
-    private static var mcpServerCommand: String {
-        Bundle.main.executableURL?.path ?? CommandLine.arguments[0]
     }
 }
 

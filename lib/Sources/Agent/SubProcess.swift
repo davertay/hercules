@@ -48,6 +48,24 @@ struct SubProcess {
         return (prefix + existing).joined(separator: ":")
     }
 
+    /// The Harness's own idle timer on an MCP tool call. Measured on 2.1.260/261, the default aborts a
+    /// silent `tools/call` at just over thirty minutes with an explicit abort message — and a blocking
+    /// `ask_user` is silent for exactly as long as the user takes to answer. `0` disables it, which is
+    /// both necessary and sufficient.
+    ///
+    /// No Hercules-side deadline replaces it. Any value would be arbitrary, and a question left
+    /// unanswered is already visible to the user: the Turn is on screen and Stop is in the toolbar.
+    static let mcpToolIdleTimeoutVariable = "CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT"
+
+    /// What the child's inherited environment is launched with on top of it. Pure, so the invocation
+    /// can be asserted on without spawning anything.
+    static func environmentOverrides(inherited path: String?) -> [String: String] {
+        [
+            "PATH": augmentedPath(inherited: path),
+            mcpToolIdleTimeoutVariable: "0",
+        ]
+    }
+
     struct Outcome {
         let stderrTail: String
         let terminationStatus: TerminationStatus
@@ -62,6 +80,11 @@ struct SubProcess {
         // fail with `EPIPE` — a `SubprocessError` we handle — instead of terminating us.
         Self.ensureSIGPIPEIgnored
 
+        // swift-subprocess keys an environment by its own `Environment.Key`; converting here leaves the
+        // overrides themselves a plain dictionary, which is what makes them assertable without spawning.
+        let environment = Self.environmentOverrides(inherited: ProcessInfo.processInfo.environment["PATH"])
+            .reduce(into: [Environment.Key: String?]()) { $0[Environment.Key(stringLiteral: $1.key)] = $1.value }
+
         var platformOptions = PlatformOptions()
         // swift-subprocess always appends a final SIGKILL, giving SIGTERM → grace → SIGKILL.
         platformOptions.teardownSequence = [
@@ -71,9 +94,7 @@ struct SubProcess {
         let result = try await Subprocess.run(
             .path(FilePath(executable.path)),
             arguments: Arguments(arguments),
-            environment: .inherit.updating([
-                "PATH": Self.augmentedPath(inherited: ProcessInfo.processInfo.environment["PATH"])
-            ]),
+            environment: .inherit.updating(environment),
             workingDirectory: FilePath(workingDirectory.path),
             platformOptions: platformOptions,
             input: .inputWriter,
