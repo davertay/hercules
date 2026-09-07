@@ -405,6 +405,11 @@ struct IOTests {
             .split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
     }
 
+    /// Every `--append-system-prompt-file` value, in the order the Harness was given them (ADR 0004).
+    private static func appendedPromptFiles(_ args: [String]) -> [String] {
+        args.indices.filter { args[$0] == "--append-system-prompt-file" }.map { args[$0 + 1] }
+    }
+
     /// Offering to answer is the whole of what a caller does, and the Turn it gets is one that can ask:
     /// the `ask_user` server configured and allowlisted, pointed at a channel this Turn opened. The
     /// caller supplied no server and no directory — those are the Agent's, which is what leaves them
@@ -438,6 +443,11 @@ struct IOTests {
         let args = try launchedArguments(worktree: worktree)
         let allowed = try #require(args.firstIndex(of: "--allowedTools"))
         #expect(args[allowed...].contains("mcp__hercules_ask__ask_user"))
+
+        // The tool and the rules for using it arrive together: a tool nobody told the model about is one
+        // it never calls, and this caller pinned no Skill of its own, so the rules are the only appended
+        // prompt file there is.
+        #expect(Self.appendedPromptFiles(args) == [AttendedTurn.houseRules.path])
 
         let configPath = args[try #require(args.firstIndex(of: "--mcp-config")) + 1]
         let config = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: configPath)))
@@ -473,5 +483,72 @@ struct IOTests {
         let args = try launchedArguments(worktree: worktree)
         #expect(!args.contains("--mcp-config"))
         #expect(!args.contains { $0.contains("ask_user") })
+        // Neither half, not just the tool: an instruction to call a tool that isn't configured is an
+        // instruction to call nothing, and an Execute agent that wants to ask is one that is stuck — it
+        // has to fail where the run loop can see it rather than wait.
+        #expect(!args.contains("--append-system-prompt-file"))
+    }
+
+    /// The Turn a Design summary or an Allocate commit runs as. Its writer rides a per-Turn override,
+    /// which *replaces* the Session's pinned servers rather than merging into them — so the attended
+    /// bundle is added to whatever that resolved to, and the Turn ends up carrying the writer, the
+    /// question tool and the house rules at once. A last "did I capture this right?" question still has
+    /// somewhere to go.
+    @Test func aFinalizationTurnCarriesTheWriterTheQuestionToolAndTheHouseRules() async throws {
+        let fixture = try fixtureURL("dump-args.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let worktree = root.appendingPathComponent("worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        let skill = URL(fileURLWithPath: "/skills/grill-me/SKILL.md")
+
+        let client = client(fixture)
+        let session = try await client.start(
+            StartRequest(
+                prompt: "grill me",
+                worktree: worktree,
+                mode: .readOnly,
+                database: database,
+                workflowID: workflowID,
+                kind: .design,
+                skillFiles: [skill],
+                onQuestion: { _ in .cancelled }
+            )
+        )
+        defer {
+            try? FileManager.default.removeItem(
+                at: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("hercules-sessions", isDirectory: true)
+                    .appendingPathComponent(session.id.rawValue.uuidString, isDirectory: true)
+            )
+        }
+        _ = try await client.send(
+            SendRequest(
+                prompt: "write the summary",
+                session: session,
+                database: database,
+                mcpServers: [
+                    .artifactWriter(
+                        command: "/path/to/Hercules",
+                        artifactURL: root.appendingPathComponent("phases/design/summary.md")
+                    )
+                ],
+                onQuestion: { _ in .cancelled }
+            )
+        )
+
+        let args = try launchedArguments(worktree: worktree)
+        let allowed = try #require(args.firstIndex(of: "--allowedTools"))
+        #expect(args[allowed...].contains("mcp__hercules__write_artifact"))
+        #expect(args[allowed...].contains("mcp__hercules_ask__ask_user"))
+
+        let configPath = args[try #require(args.firstIndex(of: "--mcp-config")) + 1]
+        let config = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: configPath)))
+        let entries = (config as! [String: Any])["mcpServers"] as! [String: Any]
+        #expect(entries.keys.sorted() == ["hercules", "hercules_ask"])
+
+        // The Phase's Skill and the house rules, in that order. The rules attach per Session rather than
+        // per Skill, so an attended Turn reads the same ones whichever Skill is driving the Phase.
+        #expect(Self.appendedPromptFiles(args) == [skill.path, AttendedTurn.houseRules.path])
     }
 }

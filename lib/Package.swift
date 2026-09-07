@@ -28,6 +28,9 @@ let package = Package(
                 .product(name: "DependenciesMacros", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
                 .product(name: "Subprocess", package: "swift-subprocess"),
+            ],
+            resources: [
+                .copy("Resources"),
             ]
         ),
         .testTarget(

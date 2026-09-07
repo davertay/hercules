@@ -97,6 +97,18 @@ Session for the pair (so reopening shows prior history and a follow-up resumes; 
 Session: the Session is the Agent-level resumable conversation; the Chat is its on-screen surface.
 _Avoid_: Conversation (the everyday word for what a Chat shows), Session (the Agent-level concept).
 
+**Attended**:
+Said of a **Turn** that has a human watching it — someone the agent can put a question to and who will
+answer. An attended Turn is given the blocking `ask_user` tool together with the house rules that steer
+the agent to it; an unattended one is given neither, since a question that blocks with nobody there to
+answer wedges the Turn until it is torn down. The predicate is resolved per Turn rather than pinned on
+the **Session**, and answered today from the Session's kind: the **Chat**-backed kinds (Design, Allocate,
+TestChat) are attended, and the behind-the-scenes Execute and Validate runs are not. Naming it this way
+means taking over a running Session later changes what makes a Turn attended, not the rule that only
+attended Turns can ask.
+_Avoid_: Interactive (a property of the surface, not of who is watching), supervised, foreground,
+headless (the negative, and it says "no UI" where this says "nobody watching").
+
 **AgentMode**:
 The tool surface a Session is granted, pinned at Session start. `readOnly` strictly forbids
 worktree-mutating tools (base allowlist of Read/Grep/Glob/WebFetch/WebSearch); `write` grants

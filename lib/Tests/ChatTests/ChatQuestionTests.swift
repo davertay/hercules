@@ -128,6 +128,125 @@ struct ChatQuestionTests {
         #expect(delivered.value == .answered([QuestionAnswer(header: "Storage", selected: ["Use a flat file"])]))
     }
 
+    /// An interview: the Turn asks, takes the answer, and asks the next question — no Turn boundary
+    /// between the exchanges, which is the whole reason for asking through a tool rather than by ending
+    /// the turn with a question. Each question gets its own card and its own answer.
+    @Test
+    func aTurnAsksItsNextQuestionWithoutEndingTheTurn() async throws {
+        let database = try Self.makeDatabase()
+        let (first, second) = (storage, sync)
+        let answers = LockIsolated<[Answer]>([])
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.start = { @Sendable request in
+                let onQuestion = try #require(request.onQuestion)
+                for question in [first, second] {
+                    let answer = await onQuestion([question])
+                    answers.withValue { $0.append(answer) }
+                }
+                return Session(
+                    id: Session.ID(rawValue: UUID(100)),
+                    worktree: request.worktree, mode: request.mode, kind: request.kind
+                )
+            }
+        } operation: {
+            Self.makeEngine(database: database)
+        }
+
+        engine.draftText = "interview me"
+        engine.submit()
+
+        let opening = try await Self.card(of: engine)
+        #expect(opening.questions == [first])
+        opening.toggle("Use SQLite", at: 0)
+        opening.submit()
+
+        // The Turn never ended, so the follow-up arrives on the same one — a second card, not a second
+        // conversation.
+        let followUp = try await Self.card(of: engine)
+        #expect(followUp.questions == [second])
+        #expect(engine.isRunning)
+        followUp.toggle("Keep both", at: 0)
+        followUp.submit()
+        await engine.runTask?.value
+
+        #expect(
+            answers.value == [
+                .answered([QuestionAnswer(header: "Storage", selected: ["Use SQLite"])]),
+                .answered([QuestionAnswer(header: "Sync", selected: ["Keep both"])]),
+            ]
+        )
+    }
+
+    /// The Design summary and the Allocate commit run as a Turn whose writer rides a per-Turn override.
+    /// The override replaces the Session's pinned servers, but attendedness is not one of them — so the
+    /// Turn still carries the question tool, and a last "did I capture this right?" reaches the user.
+    @Test
+    func aFinalizationTurnCanStillAskItsLastQuestion() async throws {
+        let database = try Self.makeDatabase()
+        let question = storage
+        let writer = MCPServer.artifactWriter(
+            command: "/path/to/Hercules",
+            artifactURL: URL(fileURLWithPath: "/tmp/wf/phases/design/summary.md")
+        )
+        let resumed = LockIsolated<SendRequest?>(nil)
+        let delivered = LockIsolated<Answer?>(nil)
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.send = { @Sendable request in
+                resumed.setValue(request)
+                let onQuestion = try #require(request.onQuestion)
+                let answer = await onQuestion([question])
+                delivered.setValue(answer)
+                return request.session
+            }
+        } operation: {
+            Self.makeEngine(database: database)
+        }
+        try Self.seedSession(database, sessionID: UUID(-2))
+        try await engine.$existingSessionRow.load()
+
+        let task = engine.run { try await engine.send("write the summary", overrideMCPServers: [writer]) }
+        let card = try await Self.card(of: engine)
+        card.drafts[0].note = "call it 'offline notes'"
+        card.submit()
+        await task.value
+
+        #expect(resumed.value?.mcpServers == [writer])
+        #expect(delivered.value == .answered([QuestionAnswer(header: "Storage", selected: [], note: "call it 'offline notes'")]))
+    }
+
+    /// The other side of the predicate. A Chat over an unattended kind offers no answer, so the Turn is
+    /// given neither the tool nor the rules and its agent has nothing to block on — which is what keeps a
+    /// behind-the-scenes run failing visibly instead of waiting for a user who isn't there.
+    @Test
+    func aTurnOfAnUnattendedKindIsOfferedNoAnswerAtAll() async throws {
+        let database = try Self.makeDatabase()
+        let started = LockIsolated<StartRequest?>(nil)
+
+        let engine = withDependencies {
+            $0.defaultDatabase = database
+            $0.agentClient.start = { @Sendable request in
+                started.setValue(request)
+                return Session(
+                    id: Session.ID(rawValue: UUID(100)),
+                    worktree: request.worktree, mode: request.mode, kind: request.kind
+                )
+            }
+        } operation: {
+            Self.makeEngine(database: database, kind: .execute)
+        }
+
+        engine.draftText = "do the work"
+        engine.submit()
+        await engine.runTask?.value
+
+        #expect(started.value?.onQuestion == nil)
+        #expect(engine.pendingQuestion == nil)
+    }
+
     // MARK: - What the card sends
 
     /// Every row of the table, on the model the card binds to. The note field is always there and its
@@ -389,13 +508,16 @@ struct ChatQuestionTests {
         Issue.record("Condition never held", sourceLocation: sourceLocation)
     }
 
-    private static func makeEngine(database: any DatabaseWriter) -> ChatEngine {
+    private static func makeEngine(
+        database: any DatabaseWriter,
+        kind: SessionKind = .design
+    ) -> ChatEngine {
         withDependencies {
             $0.defaultDatabase = database
         } operation: {
             ChatEngine(
                 worktree: URL(fileURLWithPath: "/repo"), mode: .readOnly, workflowID: UUID(-1),
-                kind: .design, database: database
+                kind: kind, database: database
             )
         }
     }

@@ -103,17 +103,16 @@ struct HarnessRunner {
         // as it found it.
         defer { scratch.removeTurnFiles() }
 
-        // A caller offering to answer is what gives the Turn the question tool: the channel is opened in
-        // this Turn's scratch, the server that serves `ask_user` is launched pointed at it, and every
-        // call announced there is put to the caller. Without a caller to answer, none of it is attached —
-        // an unattended Turn that blocked on a question would wait until it was torn down.
+        // A caller offering to answer is what makes the Turn attended, and an attended Turn is one that
+        // can ask: the channel is opened in this Turn's scratch, the ``AttendedTurn`` bundle pointed at it
+        // gives the Turn both the tool and the rules for using it, and every call announced there is put
+        // to the caller. Without a caller to answer, none of it is attached — an unattended Turn that
+        // blocked on a question would wait until it was torn down.
         var configuration = configuration
         var questions: Task<Void, any Error>?
         if let onQuestion {
             let channel = QuestionChannel(directory: scratch.questionChannelDirectory)
-            configuration.mcpServers.append(
-                .questionAsker(command: HerculesMCP.serverCommand, channelDirectory: channel.directory)
-            )
+            AttendedTurn(channelDirectory: channel.directory).attach(to: &configuration)
             questions = Task { try await channel.serve(onQuestion) }
         }
         // Cancelled rather than awaited: the Turn is over either way, and whether a caller still holding

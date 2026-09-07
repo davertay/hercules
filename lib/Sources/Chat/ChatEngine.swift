@@ -234,13 +234,15 @@ public final class ChatEngine {
         // Read per Turn, so revoking trust applies to this Workflow's long-lived chat Session at its very
         // next Turn rather than only to a Session started afterwards.
         let trustsRepositorySettings = database.trustsRepositorySettings(workflowID: workflowID)
-        // Every Turn a Chat drives is attended by definition — a human is looking at it — which is what
-        // offering to answer says, and what gives the Turn the question tool at all. Behind-the-scenes
-        // runs go through the Agent directly and offer nothing, so they cannot block on a question nobody
-        // is there to answer.
-        let onQuestion: QuestionHandler = { [weak self] questions in
-            await self?.ask(questions) ?? .cancelled
-        }
+        // Whether a human is watching this Turn — whether it is *attended* — is asked per Turn, like the
+        // trust setting above, and answered today from the kind of Session it belongs to: the Chat-backed
+        // kinds are the ones with a card to render a question on. Offering to answer is what gives the
+        // Turn the question tool and the rules for using it, so an unattended kind driven through a Chat
+        // offers nothing and its agent has nothing to block on. Behind-the-scenes runs never reach here
+        // at all — they go through the Agent directly.
+        let onQuestion: QuestionHandler? = kind.isAttended
+            ? { @Sendable [weak self] questions in await self?.ask(questions) ?? .cancelled }
+            : nil
         // Whatever the Turn's outcome, no question of it may stay on screen past it.
         defer { dismissPendingQuestions() }
         if let existing = session {
