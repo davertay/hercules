@@ -13,8 +13,8 @@ import Worktree
 
 private let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
-/// A real, parseable session-limit final answer (the Harness's stable wording) whose reset time
-/// `SessionLimitReset` can turn into a `Date` — the timing half of auto-resume.
+/// A real, parseable rate-limit final answer (the Harness's stable wording) whose reset time
+/// `RateLimitReset` can turn into a `Date` — the timing half of auto-resume.
 private let limitMessage = "You've hit your session limit · resets 11pm (UTC)"
 
 /// Exercises the auto-resume-after-rate-limit behaviour on `ExecuteModel.run`: a failure the Harness
@@ -22,11 +22,11 @@ private let limitMessage = "You've hit your session limit · resets 11pm (UTC)"
 /// cancellable clock, then re-runs the Issue and carries on. Every other failure halts the run — the
 /// classification is the reported reason, never the wording of the message.
 @MainActor
-@Suite("ExecuteModel session-limit auto-resume")
-struct ExecuteSessionLimitResumeTests {
+@Suite("ExecuteModel rate-limit auto-resume")
+struct ExecuteRateLimitResumeTests {
 
     @Test("A reported rate limit pauses the run, then resumes and finishes once the reset elapses")
-    func pausesOnSessionLimitThenResumesToDone() async throws {
+    func pausesOnRateLimitThenResumesToDone() async throws {
         let database = try Self.makeDatabase()
         let workflowID = UUID(0)
         try Self.seedIssue(database, workflowID: workflowID, number: 1, dependencies: [])
@@ -73,7 +73,7 @@ struct ExecuteSessionLimitResumeTests {
         // The run parks in the wait: `resumingAt` is published, the run is still `isRunning`, and the Issue
         // sits `failed` in the store (not `.inProgress`, so its elapsed can't clock the wait).
         await Self.waitUntil { model.resumingAt != nil }
-        let expectedResumeAt = try #require(SessionLimitReset.parse(limitMessage, now: fixedDate))
+        let expectedResumeAt = try #require(RateLimitReset.parse(limitMessage, now: fixedDate))
             .addingTimeInterval(60)
         #expect(model.resumingAt == expectedResumeAt)
         #expect(model.isRunning == true)
@@ -111,7 +111,7 @@ struct ExecuteSessionLimitResumeTests {
             database, workflowID: workflowID, number: 2, dependencies: [],
             status: "failed", failureReason: "An earlier, unrelated failure."
         )
-        // An independent, ready Issue the run does pick up — and pauses on a session limit.
+        // An independent, ready Issue the run does pick up — and pauses on a rate limit.
         try Self.seedIssue(database, workflowID: workflowID, number: 5, dependencies: [])
 
         let clock = TestClock()
@@ -218,7 +218,7 @@ struct ExecuteSessionLimitResumeTests {
             $0.uuid = .incrementing
             $0.continuousClock = clock
             $0.agentClient.start = { @Sendable request in
-                // A genuine crash: an errored turn whose text is not a session-limit message.
+                // A genuine crash: an errored turn whose text is not a rate-limit message.
                 try await Self.recordSession(
                     for: request, id: UUID(201), finalAnswer: "The harness crashed unexpectedly.", isError: true
                 )
@@ -255,7 +255,7 @@ struct ExecuteSessionLimitResumeTests {
             $0.uuid = .incrementing
             $0.continuousClock = TestClock()
             $0.agentClient.start = { @Sendable request in
-                // A genuine rate limit, but the reset zone is unknown so `SessionLimitReset` yields no
+                // A genuine rate limit, but the reset zone is unknown so `RateLimitReset` yields no
                 // `Date` — there is nothing to sleep until.
                 try await Self.recordSession(for: request, id: UUID(201), finalAnswer: unreadable, isError: true)
                 throw AgentError.harnessFailed(exitCode: 1, stderrTail: "limit", reason: "rate_limit")
@@ -331,7 +331,7 @@ struct ExecuteSessionLimitResumeTests {
         #expect(relaunched.failureReason(for: issue) != unreadable)
     }
 
-    @Test("A reported non-rate-limit halts even when its message reads exactly like a session limit")
+    @Test("A reported non-rate-limit halts even when its message reads exactly like a rate limit")
     func reportedNonRateLimitHaltsDespiteLimitWording() async throws {
         let database = try Self.makeDatabase()
         let workflowID = UUID(0)
@@ -344,7 +344,7 @@ struct ExecuteSessionLimitResumeTests {
             $0.uuid = .incrementing
             $0.continuousClock = TestClock()
             $0.agentClient.start = { @Sendable request in
-                // The message parses perfectly as a session limit; the Harness says it stopped for
+                // The message parses perfectly as a rate limit; the Harness says it stopped for
                 // another reason entirely. The reported reason decides, so this must not park the run.
                 try await Self.recordSession(for: request, id: UUID(201), finalAnswer: limitMessage, isError: true)
                 throw AgentError.harnessFailed(exitCode: 1, stderrTail: limitMessage, reason: "overloaded")
@@ -495,7 +495,7 @@ struct ExecuteSessionLimitResumeTests {
     }
 
     /// Records the `execute` Session as the Agent would, plus (when a `finalAnswer` is given) one Turn —
-    /// `isError` set to stand in for the session-limit/crash errored turn the Harness streams.
+    /// `isError` set to stand in for the rate-limit/crash errored turn the Harness streams.
     @discardableResult
     private static func recordSession(
         for request: StartRequest, id: UUID, finalAnswer: String? = nil, isError: Bool = false
@@ -592,7 +592,7 @@ struct ExecuteSessionLimitResumeTests {
 
     private static func makeDatabase() throws -> any DatabaseWriter {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ExecuteSessionLimitResumeTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("ExecuteRateLimitResumeTests-\(UUID().uuidString)", isDirectory: true)
         return try openWorkflowDatabase(at: dir)
     }
 }

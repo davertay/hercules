@@ -77,7 +77,7 @@ public struct PhaseBanner<Actions: View>: View {
     PhaseBanner(
         systemImage: "clock.badge.exclamationmark",
         tint: .orange,
-        headline: "Session limit reached — resuming automatically at 7:11 PM"
+        headline: "Rate limit reached — resuming automatically at 7:11 PM"
     ) {
         Button("Show") {}
     }

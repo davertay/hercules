@@ -25,10 +25,10 @@ struct HaltBanner: View {
     }
 }
 
-/// Occupies the same slot as `HaltBanner`, but for a run that hit the account's session limit and is
-/// waiting it out rather than giving up: names the Issue it will re-run, shows the absolute resume time,
-/// and lets the user jump to the paused node. There's no button — Stop (the toolbar control) is the
-/// escape hatch — and no red, because we haven't failed, just paused.
+/// Occupies the same slot as `HaltBanner`, but for a run that hit one of the account's rate limits and
+/// is waiting it out rather than giving up: names the Issue it will re-run, shows the absolute resume
+/// time, and lets the user jump to the paused node. There's no button — Stop (the toolbar control) is
+/// the escape hatch — and no red, because we haven't failed, just paused.
 struct ResumeBanner: View {
     let issue: IssueRow
     let resumingAt: Date
@@ -38,12 +38,20 @@ struct ResumeBanner: View {
         PhaseBanner(
             systemImage: "clock.badge.exclamationmark",
             tint: .orange,
-            headline: "Session limit reached — resuming automatically at \(resumingAt.formatted(date: .omitted, time: .shortened))",
+            headline: "Rate limit reached — resuming automatically \(resumingAtText)",
             detail: "Issue #\(issue.number) — \(issue.title)",
             detailLineLimit: 1
         ) {
             Button("Show", action: onSelect)
         }
+    }
+
+    /// The resume instant, carrying its date whenever that isn't today's. A weekly limit resets days
+    /// out, where a bare "3:01 PM" reads as this afternoon — the one reading that is certainly wrong.
+    private var resumingAtText: String {
+        let time = resumingAt.formatted(date: .omitted, time: .shortened)
+        guard !Calendar.current.isDateInToday(resumingAt) else { return "at \(time)" }
+        return "on \(resumingAt.formatted(date: .abbreviated, time: .omitted)) at \(time)"
     }
 }
 
@@ -63,7 +71,7 @@ private func previewIssue(_ number: Int, _ title: String) -> IssueRow {
     .padding()
 }
 
-#Preview("Resuming (session limit)") {
+#Preview("Resuming (rate limit)") {
     ResumeBanner(
         issue: previewIssue(6, "Wire end-to-end"),
         resumingAt: Calendar.current.date(bySettingHour: 19, minute: 11, second: 0, of: .now) ?? .now,

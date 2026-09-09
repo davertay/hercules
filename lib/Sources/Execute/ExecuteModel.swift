@@ -34,7 +34,7 @@ public final class ExecuteModel {
 
     public private(set) var isRunning = false
 
-    /// When a run is paused waiting out a session-limit reset, the instant it will auto-resume (the
+    /// When a run is paused waiting out a rate-limit reset, the instant it will auto-resume (the
     /// parsed reset time plus a one-minute grace buffer); `nil` otherwise. Drives the resume banner and
     /// keeps the paused Issue out of `.inProgress` while the run stays `isRunning`. Cleared the moment
     /// the wait ends, whether it elapses or Stop cancels it.
@@ -147,7 +147,7 @@ public final class ExecuteModel {
         return transcriptFailureReasons[issue.number] ?? issue.failureReason
     }
 
-    /// The Issue the run is waiting to auto-resume after a session-limit halt; `nil` when no wait is in
+    /// The Issue the run is waiting to auto-resume after a rate-limit halt; `nil` when no wait is in
     /// flight. The single source of truth for the paused Issue, so the resume banner and the paused-node
     /// recolouring name the same one. Deliberately *not* `haltingFailure` (the lowest-numbered `failed`
     /// Issue), which can name a different, pre-existing failure.
@@ -158,7 +158,7 @@ public final class ExecuteModel {
 
     public var nodes: [DAGNode] {
         let nodes = dagNodes(from: issues)
-        // While waiting out a session-limit reset the Issue is still `failed` in the store (so Stop
+        // While waiting out a rate-limit reset the Issue is still `failed` in the store (so Stop
         // leaves it a normal failure with its Retry) — present it as the pending/next-up node, never a
         // red failed one, and never `.inProgress`, which would clock the multi-hour wait into its
         // NodeActivity elapsed.
@@ -423,7 +423,7 @@ public final class ExecuteModel {
         while let next = readyIssue() {
             let reportedRateLimit = await runIssue(next)
             if currentStatus(of: next.number) == .failed {
-                guard await awaitSessionLimitReset(for: next.number, reportedRateLimit: reportedRateLimit)
+                guard await awaitRateLimitReset(for: next.number, reportedRateLimit: reportedRateLimit)
                 else { return }
                 try? database.resetIssue(workflowID: workflowID, number: next.number, now: now)
             }
@@ -445,11 +445,11 @@ public final class ExecuteModel {
     /// as exactly that and halts for a manual Retry, rather than being given a backoff we'd have to
     /// invent. Returns `false` for every halt, and when Stop cancels the sleep. The run stays `isRunning`
     /// throughout.
-    private func awaitSessionLimitReset(for number: Int, reportedRateLimit: Bool) async -> Bool {
+    private func awaitRateLimitReset(for number: Int, reportedRateLimit: Bool) async -> Bool {
         guard reportedRateLimit else { return false }
 
         let message = (try? database.latestExecuteErrorMessage(forIssue: number, workflowID: workflowID)) ?? nil
-        guard let resetAt = message.flatMap({ SessionLimitReset.parse($0, now: now) }) else {
+        guard let resetAt = message.flatMap({ RateLimitReset.parse($0, now: now) }) else {
             failIssue(number, reason: Self.unreadableResetReason)
             return false
         }
