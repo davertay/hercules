@@ -20,7 +20,7 @@ is involved.
 The findings this rests on were measured against `claude` 2.1.260/2.1.261 on macOS 26.6.2 on
 2026-09-04, and several of them **contradict what [ADR 0006](0006-mcp-write-tools-via-stdio-store-bridge.md)
 and the originating issue (#71) expected**. They are recorded in full below, with the version each was
-measured against and the log it came from, precisely so the next person does not rediscover them.
+measured against, precisely so the next person does not rediscover them.
 
 ## The premise changed: this is a feature, not a bug fix
 
@@ -131,32 +131,31 @@ Hercules, and not invariants.** They are recorded here so the reasoning above ca
 `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT=0`, that the server is named `hercules_ask`), because that stays
 true whatever the Harness does with it.
 
-Measured on macOS 26.6.2, 2026-09-04. Raw logs are preserved under `spike/` at the repository root;
-`spike/README.md` indexes the runs. Note the version column: the CLI **auto-updated mid-spike**, so A
-and B ran on 2.1.260 and C, D and E on 2.1.261.
+Measured on macOS 26.6.2, 2026-09-04. Note the version column: the CLI **auto-updated mid-spike**, from
+2.1.260 to 2.1.261.
 
-| Finding | Version | Log |
-|---|---|---|
-| A blocking MCP tool suspends a `--print` Turn and the model continues in the **same Turn** when it returns: 204.1 s blocked, `is_error: false`, `num_turns: 3` | 2.1.260 | `spike/A/stdout.final.log`, `spike/A/server.final.log` |
-| **Human think time is wall time, not API time** — `duration_ms: 214715` against `duration_api_ms: 11369`. Blocking costs no open API connection and no tokens | 2.1.260 | `spike/A/stdout.final.log` |
-| **No auto-backgrounding** at the two-minute mark: no task id, no notice, nothing distinguishing the boundary | 2.1.260 | `spike/A/stdout.final.log` |
-| Liveness is a `tool_progress` heartbeat **every 30 s**, carrying `parent_tool_use_id` — 6 of them over the block, at 39.8 s through 189.8 s | 2.1.260 | `spike/A/stdout.final.log` |
-| The call carries the Harness's **own tool-use id**: `_meta["claudecode/toolUseId"]`, matching the streamed `tool_use.id` exactly, plus a `progressToken` | 2.1.260 | `spike/A/server.final.log` |
-| **No MCP pings** during a 204 s call — the server received 4 messages in total across the whole run | 2.1.260 | `spike/A/server.final.log` |
-| The idle timeout fires at **1800.102 s** (call at 19:53:07.214Z, abort at 20:23:07.316Z) with an explicit message naming both the per-server `"timeout"` and `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` | 2.1.260 | `spike/B/b4/` |
-| `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT=0` disables it — a call blocked 264.7 s and returned cleanly | 2.1.260 | `spike/B/b3-server.log.keep`, `spike/B/b3-stdout.log.keep` |
-| **Sub-30 s idle values quantise to the heartbeat tick**: with a smaller value configured the abort still fired at 30.009 s, and the message still said "30s" | 2.1.260 | `spike/B/b1-stdout.log.keep` |
-| **An abandoned call is never reported to the server** — no `notifications/cancelled`, nothing. In b1 the model *retried*, and the retry never reached the handler at all: the server logged one `tools/call` and stayed blocked in it, and the second call aborted after its own silent 30 s | 2.1.260 | `spike/B/b1-server.log.keep`, `spike/B/b1-stdout.log.keep` |
-| The background-task env vars have **no observable effect** — b2 and b3 differ only in those variables and behaved identically | 2.1.260 | `spike/B/b2-*`, `spike/B/b3-*` |
-| **`AskUserQuestion` is absent from `--print`** — a 28-tool init list without our MCP server, 29 with it, and absent from the deferred set in both | 2.1.261 | `spike/C/c1/` |
-| `--disallowedTools AskUserQuestion` is **accepted without error and changes nothing** — c2 (with the flag) and c1 (without) produce the identical 28-tool list, there being no such tool to disallow | 2.1.261 | `spike/C/c2/`, `spike/C/c1/` |
-| `--settings` **hooks do work** in `--print` — a control matcher on `Read` fired, so the `AskUserQuestion` matcher's silence is "no target", not "broken". (The control run's own transcript was not preserved; c3 holds the `AskUserQuestion`-matcher run, and both settings files sit beside it) | 2.1.261 | `spike/C/c3/`, `spike/C/settings.json`, `spike/C/settings-control.json` |
-| MCP tools are **deferred, not listed**, and are reached by `ToolSearch` with the `select:` form and the **exact** qualified name (`total_deferred_tools: 17`) | 2.1.260/261 | `spike/B/b4/stdout.log`, `spike/C/`, `spike/E/` |
-| Adoption, engineered conditions (prompt demanding a multiple-choice question, "MUST" steer): **5/5** routed to the MCP tool | 2.1.261 | `spike/C/c4-1/` … `spike/C/c4-5/` |
-| Adoption, deliberately weak conditions (one-line steer, a tool name the model had never seen, a brief that never mentions tools): **5/5 routed to the tool, 0/5 asked in prose**, 3 `tools/call` per run, all blocked and unblocked | 2.1.261 | `spike/E/e1/` … `spike/E/e5/`, summaries in `spike/E/e1.txt` … `e5.txt` |
-| `SIGTERM` mid-call leaves **no dangling call**: claude's own shutdown closes the MCP transport and writes `"Connection closed"` / `is_error: true` as the `tool_result` (exit 143); resume is clean. Isolated in d4b, where the server was left alive and still blocked — so it is claude's shutdown path, not the server dying | 2.1.261 | `spike/D/d4/`, `spike/D/d4b/` |
-| `kill -9` mid-call leaves a **dangling `tool_use`** with no result, but `--resume` still works (exit 0): the CLI orphans the incomplete assistant turn by parent-pointer rewiring rather than erroring. Quietly destructive — the question is dropped from what the model is replayed — but not a failure | 2.1.261 | `spike/D/d1/` |
-| Side-finding, **carved separately**: under `--setting-sources user`, `Bash` calls succeeded although `Bash` was absent from `--allowedTools` — the user's own permission allowlist is loaded. Security-adjacent and unrelated to this decision, but it bounds what `AgentMode.readOnly` currently guarantees | 2.1.261 | `spike/C/c4-1/`, `spike/C/c4-3/` … `c4-5/` |
+| Finding | Version |
+|---|---|
+| A blocking MCP tool suspends a `--print` Turn and the model continues in the **same Turn** when it returns: 204.1 s blocked, `is_error: false`, `num_turns: 3` | 2.1.260 |
+| **Human think time is wall time, not API time** — `duration_ms: 214715` against `duration_api_ms: 11369`. Blocking costs no open API connection and no tokens | 2.1.260 |
+| **No auto-backgrounding** at the two-minute mark: no task id, no notice, nothing distinguishing the boundary | 2.1.260 |
+| Liveness is a `tool_progress` heartbeat **every 30 s**, carrying `parent_tool_use_id` — 6 of them over the block, at 39.8 s through 189.8 s | 2.1.260 |
+| The call carries the Harness's **own tool-use id**: `_meta["claudecode/toolUseId"]`, matching the streamed `tool_use.id` exactly, plus a `progressToken` | 2.1.260 |
+| **No MCP pings** during a 204 s call — the server received 4 messages in total across the whole run | 2.1.260 |
+| The idle timeout fires at **1800.102 s** (call at 19:53:07.214Z, abort at 20:23:07.316Z) with an explicit message naming both the per-server `"timeout"` and `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` | 2.1.260 |
+| `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT=0` disables it — a call blocked 264.7 s and returned cleanly | 2.1.260 |
+| **Sub-30 s idle values quantise to the heartbeat tick**: with a smaller value configured the abort still fired at 30.009 s, and the message still said "30s" | 2.1.260 |
+| **An abandoned call is never reported to the server** — no `notifications/cancelled`, nothing. After one such silent abort the model *retried*, and the retry never reached the handler at all: the server logged one `tools/call` and stayed blocked in it, and the second call aborted after its own silent 30 s | 2.1.260 |
+| The background-task env vars have **no observable effect** — two otherwise-identical runs, differing only in those variables, behaved identically | 2.1.260 |
+| **`AskUserQuestion` is absent from `--print`** — a 28-tool init list without our MCP server, 29 with it, and absent from the deferred set in both | 2.1.261 |
+| `--disallowedTools AskUserQuestion` is **accepted without error and changes nothing** — a run with the flag and a run without it produce the identical 28-tool list, there being no such tool to disallow | 2.1.261 |
+| `--settings` **hooks do work** in `--print` — a control matcher on `Read` fired, so the `AskUserQuestion` matcher's silence is "no target", not "broken". (The control run's own transcript was not preserved.) | 2.1.261 |
+| MCP tools are **deferred, not listed**, and are reached by `ToolSearch` with the `select:` form and the **exact** qualified name (`total_deferred_tools: 17`) | 2.1.260/261 |
+| Adoption, engineered conditions (prompt demanding a multiple-choice question, "MUST" steer): **5/5** routed to the MCP tool | 2.1.261 |
+| Adoption, deliberately weak conditions (one-line steer, a tool name the model had never seen, a brief that never mentions tools): **5/5 routed to the tool, 0/5 asked in prose**, 3 `tools/call` per run, all blocked and unblocked | 2.1.261 |
+| `SIGTERM` mid-call leaves **no dangling call**: claude's own shutdown closes the MCP transport and writes `"Connection closed"` / `is_error: true` as the `tool_result` (exit 143); resume is clean. Isolated in a follow-up run where the server was left alive and still blocked — so it is claude's shutdown path, not the server dying | 2.1.261 |
+| `kill -9` mid-call leaves a **dangling `tool_use`** with no result, but `--resume` still works (exit 0): the CLI orphans the incomplete assistant turn by parent-pointer rewiring rather than erroring. Quietly destructive — the question is dropped from what the model is replayed — but not a failure | 2.1.261 |
+| Side-finding, **carved separately**: under `--setting-sources user`, `Bash` calls succeeded although `Bash` was absent from `--allowedTools` — the user's own permission allowlist is loaded. Security-adjacent and unrelated to this decision, but it bounds what `AgentMode.readOnly` currently guarantees | 2.1.261 |
 
 ## Residual risks
 
