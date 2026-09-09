@@ -59,17 +59,34 @@ struct StopFailureHookTests {
 
     // MARK: - Reading the payload
 
-    @Test func reportedReasonReadsTheReasonFromThePayload() throws {
-        let url = try makeDropFile(#"{"hook_event_name":"StopFailure","reason":"rate_limit"}"#)
+    /// A whole `StopFailure` payload as the Harness emits it, rather than the `error` field alone: the
+    /// failure class rides on `error`, and a reader that goes looking for any other key finds nothing
+    /// on every real Turn while every test using a payload of its own invention still passes.
+    @Test func reportedReasonReadsTheErrorFromThePayload() throws {
+        let url = try makeDropFile(
+            #"{"session_id":"0","transcript_path":"/tmp/t.jsonl","cwd":"/tmp","#
+                + #""hook_event_name":"StopFailure","error":"rate_limit","#
+                + #""last_assistant_message":"You've hit your session limit"}"#
+        )
         defer { try? FileManager.default.removeItem(at: url) }
 
         #expect(StopFailureHook.reportedReason(dropFile: url) == "rate_limit")
     }
 
+    /// The neighbouring keys are not the one: `error_details` is prose about the same failure, and
+    /// `reason` is what this payload does *not* call its failure class.
+    @Test(arguments: ["error_details", "reason"])
+    func reportedReasonReadsNoOtherKey(key: String) throws {
+        let url = try makeDropFile(#"{"hook_event_name":"StopFailure","\#(key)":"rate_limit"}"#)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(StopFailureHook.reportedReason(dropFile: url) == nil)
+    }
+
     /// Unknown reasons pass through verbatim. The wildcard matcher exists to capture reasons this build
     /// has never heard of, so the reader must not filter them back out.
     @Test func reportedReasonCarriesAnUnknownReasonThrough() throws {
-        let url = try makeDropFile(#"{"reason":"something_invented_later"}"#)
+        let url = try makeDropFile(#"{"error":"something_invented_later"}"#)
         defer { try? FileManager.default.removeItem(at: url) }
 
         #expect(StopFailureHook.reportedReason(dropFile: url) == "something_invented_later")
@@ -84,15 +101,15 @@ struct StopFailureHookTests {
     }
 
     /// Every way a present file can fail to say anything reads as the absent file above: truncated
-    /// JSON, a payload that isn't an object, no `reason` key, an empty one.
+    /// JSON, a payload that isn't an object, no `error` key, an empty one.
     @Test(arguments: [
         "",
         "not json at all",
-        #"{"hook_event_name":"StopFailure","reas"#,
+        #"{"hook_event_name":"StopFailure","err"#,
         #"["rate_limit"]"#,
         #"{"hook_event_name":"StopFailure"}"#,
-        #"{"reason":""}"#,
-        #"{"reason":42}"#,
+        #"{"error":""}"#,
+        #"{"error":42}"#,
     ])
     func reportedReasonIsNilForAnUnusablePayload(contents: String) throws {
         let url = try makeDropFile(contents)

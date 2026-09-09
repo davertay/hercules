@@ -39,17 +39,25 @@ enum StopFailureHook {
         return try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys, .withoutEscapingSlashes])
     }
 
-    /// The reason the Harness reported for stopping this Turn — the payload's `reason` — or `nil` when
-    /// it reported nothing, which is every Turn that ends without the hook firing.
+    /// The reason the Harness reported for stopping this Turn, or `nil` when it reported nothing —
+    /// which is every Turn that ends without the hook firing.
+    ///
+    /// The payload spells it `error` (`rate_limit`, `overloaded`, …) — the same field the event's
+    /// matcher matches on. It is named a *reason* on this side of the boundary, where it travels as
+    /// `AgentError.harnessFailed(reason:)`; the key below is the wire's word, and reading any other one
+    /// is silent — every Turn simply reports nothing, exactly as it did before the hook existed.
     static func reportedReason(dropFile: URL) -> String? {
         guard
             let data = try? Data(contentsOf: dropFile),
             let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let reason = payload["reason"] as? String,
+            let reason = payload[reasonKey] as? String,
             !reason.isEmpty
         else { return nil }
         return reason
     }
+
+    /// The `StopFailure` payload field carrying the failure class.
+    private static let reasonKey = "error"
 
     /// Wraps `path` in single quotes for the hook command's shell body. The Session's data directory
     /// can't hold a quote today, but a path interpolated into a shell command is one character away

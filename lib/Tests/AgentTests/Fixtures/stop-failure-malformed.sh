@@ -9,7 +9,7 @@ for arg in "$@"; do
 done
 
 hook=$(sed -n 's/.*"command":"\([^"]*\)".*/\1/p' "$settings")
-echo '{"hook_event_name":"StopFailure","reas' | eval "$hook"
+echo '{"hook_event_name":"StopFailure","err' | eval "$hook"
 
 echo '{"type":"result","subtype":"error_during_execution","is_error":true,"duration_ms":1,"result":"You'"'"'ve hit your session limit · resets 11pm (UTC)"}'
 exit 1
