@@ -27,10 +27,6 @@ public struct Question: Codable, Equatable, Sendable {
         case header, question, multiSelect, options
     }
 
-    /// `multiSelect` and `options` fall back to the memberwise defaults rather than being required.
-    /// This decodes a model's tool arguments, and a question is not worth refusing over an omitted
-    /// `false` or over having nothing on offer — an open question the user answers in their own words
-    /// is a question like any other.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         header = try container.decode(String.self, forKey: .header)
@@ -39,11 +35,6 @@ public struct Question: Codable, Equatable, Sendable {
         options = try container.decodeIfPresent([Option].self, forKey: .options) ?? []
     }
 
-    /// One answer on offer.
-    ///
-    /// There is no (a)/(b)/(c) here: lettering is how a picker renders to a human, never something that
-    /// crosses the seam. An option's identity is its `label` — a string the model wrote itself moments
-    /// earlier and gets back verbatim, so it can match exactly rather than fuzzily.
     public struct Option: Codable, Equatable, Sendable {
         public var label: String
         public var description: String
@@ -59,9 +50,7 @@ public struct Question: Codable, Equatable, Sendable {
 public enum Answer: Codable, Equatable, Sendable {
     /// One entry per question the call asked.
     case answered([QuestionAnswer])
-    /// The user dismissed the call without answering. Its own case rather than an empty `answered`,
-    /// which a well-behaved model would read as permission to guess — the failure this whole feature
-    /// exists to eliminate, reintroduced at the cancel path.
+    /// The user dismissed the call without answering.
     case cancelled
 }
 
@@ -69,9 +58,7 @@ public enum Answer: Codable, Equatable, Sendable {
 ///
 /// This is the whole of the seam. A caller supplies one on a ``StartRequest`` or a ``SendRequest``, the
 /// Agent invokes it when a Turn's agent asks, and what it returns is delivered back to the call still
-/// waiting on it. Everything in between — how the question crosses into this module, how it is
-/// correlated, how the wait is held, where the state lives — is this module's business, which is what
-/// leaves all of it replaceable without touching anything above.
+/// waiting on it.
 ///
 /// A callback rather than a stream of pending questions because a `send` already doesn't return until
 /// the Turn ends, so a blocking question *is* a mid-call callback: correlation is structural — one

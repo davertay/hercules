@@ -10,7 +10,6 @@ struct HarnessRunner {
     @Dependency(\.uuid) var uuid
     @Dependency(\.harnessTeardownGrace) var teardownGrace
     let binaryURL: URL
-    /// Extra CLI arguments from the fresh `AppConfig`, appended after every generated argument.
     var extraArguments: [ExtraArgument] = []
 
     func run(request: SendRequest) async throws {
@@ -89,25 +88,14 @@ struct HarnessRunner {
             initialState: LineSink(projector: StreamProjector(database: database, turnID: turnID))
         )
 
-        // Scratch dir for what this Turn generates for the Harness and its children to read back: the
-        // `--mcp-config` servers, the `--settings` hook registration, and the question channel below.
         let scratch = Harness.TurnScratch(
             directory: FileManager.default.temporaryDirectory
                 .appendingPathComponent("hercules-sessions", isDirectory: true)
                 .appendingPathComponent(sessionId.rawValue.uuidString, isDirectory: true),
             turnID: turnID
         )
-        // Both of this Turn's files are spent the moment the classification below has run: the Harness
-        // read `--settings` at startup, and the drop-file has one reader. Deferred from here so every
-        // exit — a cancellation, an I/O failure, a throw out of classification — leaves the directory
-        // as it found it.
         defer { scratch.removeTurnFiles() }
 
-        // A caller offering to answer is what makes the Turn attended, and an attended Turn is one that
-        // can ask: the channel is opened in this Turn's scratch, the ``AttendedTurn`` bundle pointed at it
-        // gives the Turn both the tool and the rules for using it, and every call announced there is put
-        // to the caller. Without a caller to answer, none of it is attached — an unattended Turn that
-        // blocked on a question would wait until it was torn down.
         var configuration = configuration
         var questions: Task<Void, any Error>?
         if let onQuestion {
@@ -115,8 +103,6 @@ struct HarnessRunner {
             AttendedTurn(channelDirectory: channel.directory).attach(to: &configuration)
             questions = Task { try await channel.serve(onQuestion) }
         }
-        // Cancelled rather than awaited: the Turn is over either way, and whether a caller still holding
-        // a question on screen ever returns is not something its outcome may wait on.
         defer { questions?.cancel() }
 
         let args = try Harness.renderArgs(
@@ -162,9 +148,6 @@ struct HarnessRunner {
 
         let durationMs = Int(now.timeIntervalSince(startedAt) * 1000)
 
-        // The Harness's own account of why it stopped, left by the hook we registered for this Turn.
-        // Absent for every Turn the hook didn't fire on, which classification then handles exactly as
-        // it did before the hook existed.
         let stopFailureReason = StopFailureHook.reportedReason(dropFile: scratch.stopFailureDropFile)
 
         try TerminationClassifier().classify(

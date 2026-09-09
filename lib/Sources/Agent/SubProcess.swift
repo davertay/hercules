@@ -6,9 +6,6 @@ import System
 /// The control message the stdout drain writes back on the Harness's stdin.
 enum HarnessInput: Sendable {
     case none
-    /// Stops the Turn in flight. The cancellation path's polite alternative to a signal — it lets the
-    /// Harness unwind and write a complete transcript — and the primitive a taken-over Session will use
-    /// to inject steering mid-Turn.
     case interrupt
     case finishInput
 }
