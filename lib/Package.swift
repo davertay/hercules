@@ -28,6 +28,9 @@ let package = Package(
                 .product(name: "DependenciesMacros", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
                 .product(name: "Subprocess", package: "swift-subprocess"),
+            ],
+            resources: [
+                .copy("Resources"),
             ]
         ),
         .testTarget(
@@ -88,6 +91,7 @@ let package = Package(
                 "Chat",
                 "Agent",
                 "Store",
+                .product(name: "Clocks", package: "swift-clocks"),
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
@@ -143,6 +147,7 @@ let package = Package(
         .target(
             name: "IssueMCP",
             dependencies: [
+                "Agent",
                 "Store",
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "MCP", package: "swift-sdk"),
@@ -153,6 +158,7 @@ let package = Package(
             name: "IssueMCPTests",
             dependencies: [
                 "IssueMCP",
+                "Agent",
                 "Store",
                 .product(name: "CustomDump", package: "swift-custom-dump"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
@@ -338,6 +344,7 @@ let package = Package(
                 "Execute",
                 "Store",
                 "Validate",
+                .product(name: "Clocks", package: "swift-clocks"),
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
             ]

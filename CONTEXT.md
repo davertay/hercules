@@ -97,6 +97,41 @@ Session for the pair (so reopening shows prior history and a follow-up resumes; 
 Session: the Session is the Agent-level resumable conversation; the Chat is its on-screen surface.
 _Avoid_: Conversation (the everyday word for what a Chat shows), Session (the Agent-level concept).
 
+**Attended**:
+Said of a **Turn** that has a human watching it — someone the agent can put a question to and who will
+answer. An attended Turn is given the blocking `ask_user` tool together with the house rules that steer
+the agent to it; an unattended one is given neither, since a question that blocks with nobody there to
+answer wedges the Turn until it is torn down. The predicate is resolved per Turn rather than pinned on
+the **Session**, and answered today from the Session's kind: the **Chat**-backed kinds (Design, Allocate,
+TestChat) are attended, and the behind-the-scenes Execute and Validate runs are not. Naming it this way
+means taking over a running Session later changes what makes a Turn attended, not the rule that only
+attended Turns can ask.
+_Avoid_: Interactive (a property of the surface, not of who is watching), supervised, foreground,
+headless (the negative, and it says "no UI" where this says "nobody watching").
+
+**Decline**:
+To dismiss an agent's question without answering it. A decline is not an empty answer: the blocked call
+comes back error-flagged, telling the agent the user did not answer and must not be guessed for. It is
+answer-then-stop, in that order — the call is answered first so the Harness records a complete
+`tool_use`/`tool_result` pair, and the **Turn** is stopped after a short grace, because a model that
+retries a failed call would otherwise put the same question straight back on screen. The user reaches it
+by the question card's **Cancel** (this Session's Turn) or the toolbar's Stop (that, plus the Execute run
+loop and every Validate Persona); the agent cannot tell the two apart. The declined Turn is shown as
+stopped, which is what it is.
+_Avoid_: Skip (it says the agent carries on without an answer, which is the guessing this exists to
+prevent), dismiss the card (that is the UI moving, not the agent being told), reject, refuse.
+
+**In flight**:
+Said of a **Turn** from the moment it starts until its Harness has finished coming down — a Turn already
+stopped and still unwinding included. Deliberately not the same question as running: a **Decline** clears
+the running flag at once so the stop shows on screen, while the process behind it is still exiting.
+Closing a Workflow window and quitting the app stop the agents and then wait on *this*, because waiting
+on the running flag would be taking the UI's word for it and orphaning the Harness a moment later. The
+wait is a bounded drain — a few seconds of polling, after which the app goes anyway — so a Harness that
+won't come down delays a quit and can never prevent one.
+_Avoid_: Running/busy (what the UI shows, cleared eagerly), pending, active, draining (that is the
+waiting, not the state waited on).
+
 **AgentMode**:
 The tool surface a Session is granted, pinned at Session start. `readOnly` strictly forbids
 worktree-mutating tools (base allowlist of Read/Grep/Glob/WebFetch/WebSearch); `write` grants

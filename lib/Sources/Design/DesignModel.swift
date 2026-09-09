@@ -80,8 +80,14 @@ public final class DesignModel {
     /// running state. A thin reflection of the engine's run flag.
     public var isBusy: Bool { engine.isRunning }
 
-    /// Cancels an in-flight chat Turn — the Design contribution to the Workflow-level stop-all. No-op
-    /// when idle.
+    /// Whether this Phase still has a Turn coming down, a stopped one included — the Design contribution
+    /// to what a window close or an app quit waits for. ``isBusy`` stops reporting a Turn the moment it
+    /// is stopped, which is what the UI wants and the opposite of what a shutdown does.
+    public var hasWorkInFlight: Bool { engine.hasTurnInFlight }
+
+    /// Cancels an in-flight chat Turn, declining any question waiting on the user with it — the Design
+    /// contribution to the Workflow-level stop-all. No-op when idle, and it reaches this Phase's engine
+    /// and nothing else, so declining a Design question leaves the other Phases' agents running.
     public func cancel() {
         engine.cancel()
     }

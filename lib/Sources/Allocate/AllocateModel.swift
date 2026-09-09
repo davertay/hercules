@@ -193,6 +193,13 @@ public final class AllocateModel {
     /// running state. All engines are polled, so a fork switched mid-run still reports busy.
     public var isBusy: Bool { engine.isRunning || smallEngine.isRunning || prdEngine.isRunning }
 
+    /// Whether any fork still has a Turn coming down, a stopped one included — Allocate's contribution to
+    /// what a window close or an app quit waits for. ``isBusy`` stops reporting a Turn the moment it is
+    /// stopped, which is what the UI wants and the opposite of what a shutdown does.
+    public var hasWorkInFlight: Bool {
+        engine.hasTurnInFlight || smallEngine.hasTurnInFlight || prdEngine.hasTurnInFlight
+    }
+
     /// Whether the big path is mid-PRD-Turn, so the surface can show a prominent "generating the PRD"
     /// state ahead of the auto-propose.
     public var isGeneratingPRD: Bool { prdEngine.isRunning }

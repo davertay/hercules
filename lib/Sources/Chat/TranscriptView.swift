@@ -4,8 +4,9 @@ import SwiftUI
 
 /// A read-only view of one run's transcript, scoped to a single Session. It renders the same shared
 /// bubbles as the live `ChatTranscript`, but bare: no composer, no send, no running spinner, no
-/// auto-scroll — those are chat-driver niceties tied to `ChatEngine.isRunning`, which this view does
-/// not have. Because it observes the Workflow database through a reactive `@Fetch`, content appends
+/// question card, no auto-scroll — those belong to a running Turn's driver, which this view does not
+/// have. A question shows here as the tool rows it left behind, which is all it ever was once
+/// answered. Because it observes the Workflow database through a reactive `@Fetch`, content appends
 /// live when opened on a still-running run, and tool results are shown in full (no line cap) since
 /// this is a diagnostic surface.
 public struct TranscriptView: View {

@@ -11,6 +11,8 @@ public enum HerculesEntryPoint {
             runToCompletion(label: "mcp-issue-server") { try await IssueMCPLaunch.run(configuration) }
         } else if let configuration = ArtifactMCPLaunch.parse(arguments) {
             runToCompletion(label: "mcp-artifact-server") { try await ArtifactMCPLaunch.run(configuration) }
+        } else if let configuration = AskUserMCPLaunch.parse(arguments) {
+            runToCompletion(label: "mcp-ask-server") { try await AskUserMCPLaunch.run(configuration) }
         }
     }
 

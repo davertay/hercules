@@ -58,8 +58,9 @@ public enum Harness {
         }
     }
 
-    /// The files a Turn generates for its Harness to read — the `--mcp-config` servers and the
-    /// `--settings` hook registration — in the Session's data directory.
+    /// The scratch a Turn generates for its Harness and the children the Harness spawns — the
+    /// `--mcp-config` servers, the `--settings` hook registration, and the channel a blocking
+    /// `ask_user` call waits on — in the Session's data directory.
     ///
     /// The turn id keys whichever of them a Turn must not share with another. That is the
     /// ``StopFailureHook`` drop-file above all: one read as a later Turn's would misreport why that
@@ -88,15 +89,27 @@ public enum Harness {
             directory.appendingPathComponent("\(turnID.uuidString).stop-failure.json")
         }
 
-        /// Removes the files keyed by this turn id, once the Turn has read everything it needs from
-        /// them. Without this the Session's directory accumulates two files per Turn for the life of
-        /// the temp directory. `mcp-config.json` and the directory itself stay: they are the Session's,
+        /// Where this Turn's blocking `ask_user` calls announce themselves and their answers come back
+        /// (``QuestionChannel``). Keyed by the turn id like the drop-file above, and for a sharper
+        /// version of the same reason: an answer read as another Turn's is a wrong answer attributed to
+        /// the user.
+        ///
+        /// A pending question is a live process holding an open request, so a Turn's scratch is the
+        /// whole of its home: it cannot survive a restart, and persisting it would leave records that
+        /// render as answerable and are not.
+        var questionChannelDirectory: URL {
+            directory.appendingPathComponent("\(turnID.uuidString).questions", isDirectory: true)
+        }
+
+        /// Removes the scratch keyed by this turn id, once the Turn has read everything it needs from
+        /// it. Without this the Session's directory accumulates a Turn's leavings for the life of the
+        /// temp directory. `mcp-config.json` and the directory itself stay: they are the Session's,
         /// not the Turn's.
         ///
         /// Best effort by construction — a temp file that won't delete is not a reason to change what a
         /// Turn reports.
         func removeTurnFiles() {
-            for file in [hookSettingsFile, stopFailureDropFile] {
+            for file in [hookSettingsFile, stopFailureDropFile, questionChannelDirectory] {
                 try? FileManager.default.removeItem(at: file)
             }
         }
@@ -125,7 +138,7 @@ public enum Harness {
         var args: [String] = [
             "--print",
             "--output-format", "stream-json",
-            // Realtime input keeps stdin open so we can interrupt mid-Turn on a question (see `SubProcess`).
+            // Realtime input keeps stdin open as the Turn's control channel (see `SubProcess`).
             "--input-format", "stream-json",
             "--permission-mode", permissionMode,
             "--setting-sources", settingSources,

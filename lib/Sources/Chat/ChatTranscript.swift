@@ -35,6 +35,13 @@ public struct ChatTranscript: View {
                     if engine.isRunning {
                         ChatRunningIndicator()
                     }
+                    // Pinned below the conversation as a sibling of the running indicator rather than
+                    // rendered as a row of it: the Transcript records the tool call and its result
+                    // through the generic path like any other tool, and this is the live control, which
+                    // is why it can simply vanish when it is answered.
+                    if let pendingQuestion = engine.pendingQuestion {
+                        ChatQuestionCard(pending: pendingQuestion)
+                    }
                     Spacer()
                         .frame(height: 6)
                         .id("bottom")
@@ -43,6 +50,7 @@ public struct ChatTranscript: View {
             }
             .onChange(of: displayedMessages.count) { _, _ in scrollToBottom(proxy: proxy) }
             .onChange(of: engine.isRunning) { _, _ in scrollToBottom(proxy: proxy) }
+            .onChange(of: engine.pendingQuestion?.id) { _, _ in scrollToBottom(proxy: proxy) }
         }
     }
 

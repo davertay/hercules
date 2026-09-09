@@ -31,5 +31,11 @@ private struct WorkflowContainerHost: View {
 
     var body: some View {
         WorkflowContainerView(model: model)
+            // The window's own Stop, pressed for it on the way out. Agents left running behind a closed
+            // window are work nobody can see, and a Turn suspended in a question is worse than that: the
+            // card that was the only way to answer it has just gone with the window, so nothing left on
+            // screen will ever end that Turn. Closing is the user saying they're done with this Workflow,
+            // and this is that, applied to its agents.
+            .onDisappear { model.stopAll() }
     }
 }

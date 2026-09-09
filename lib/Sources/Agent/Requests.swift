@@ -24,6 +24,13 @@ public struct StartRequest: Sendable {
     /// Widens `--setting-sources` to the worktree repository's own settings. The caller reads the
     /// Workflow's setting per Turn (the Agent knows only Sessions), so it defaults to the safe answer.
     public let trustsRepositorySettings: Bool
+    /// Answers the questions this Turn's agent puts to the user, blocking the call that asked until it
+    /// returns (``QuestionHandler``).
+    ///
+    /// `nil` — the default — leaves the Turn without the question tool at all, which is what an
+    /// unattended run wants: a call that blocks on an answer nobody is there to give would wedge the
+    /// Turn until it is torn down. Supplying one is therefore how a caller says a human is watching.
+    public let onQuestion: QuestionHandler?
 
     public init(
         prompt: String,
@@ -38,7 +45,8 @@ public struct StartRequest: Sendable {
         skillFiles: [URL] = [],
         addDirs: [URL] = [],
         mcpServers: [MCPServer] = [],
-        trustsRepositorySettings: Bool = false
+        trustsRepositorySettings: Bool = false,
+        onQuestion: QuestionHandler? = nil
     ) {
         self.prompt = prompt
         self.worktree = worktree
@@ -53,6 +61,7 @@ public struct StartRequest: Sendable {
         self.addDirs = addDirs
         self.mcpServers = mcpServers
         self.trustsRepositorySettings = trustsRepositorySettings
+        self.onQuestion = onQuestion
     }
 }
 
@@ -67,6 +76,10 @@ public struct SendRequest: Sendable {
     /// Widens `--setting-sources` to the worktree repository's own settings, for this Turn. Re-read on
     /// every resume rather than pinned on the Session, so revoking trust takes effect at the next Turn.
     public let trustsRepositorySettings: Bool
+    /// Answers the questions this Turn's agent puts to the user (``QuestionHandler``). Per Turn like the
+    /// trust setting above, not pinned on the Session: whether a human is watching is a fact about the
+    /// Turn, and it is what will let a taken-over Session gain the tool from the Turn it is taken over.
+    public let onQuestion: QuestionHandler?
 
     public init(
         prompt: String,
@@ -74,7 +87,8 @@ public struct SendRequest: Sendable {
         inputs: InputBundle? = nil,
         database: any DatabaseWriter,
         mcpServers: [MCPServer]? = nil,
-        trustsRepositorySettings: Bool = false
+        trustsRepositorySettings: Bool = false,
+        onQuestion: QuestionHandler? = nil
     ) {
         self.prompt = prompt
         self.session = session
@@ -82,6 +96,7 @@ public struct SendRequest: Sendable {
         self.database = database
         self.mcpServers = mcpServers
         self.trustsRepositorySettings = trustsRepositorySettings
+        self.onQuestion = onQuestion
     }
 }
 

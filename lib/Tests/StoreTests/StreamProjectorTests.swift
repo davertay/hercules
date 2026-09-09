@@ -88,44 +88,11 @@ struct StreamProjectorTests {
         #expect(turn.costUSD == nil)
     }
 
-    @Test func askUserQuestionSignalsInterruptThenPausesCleanly() throws {
+    @Test func resultSignalsCompletedAndToolResultIsKept() throws {
         let (database, turnID) = try Self.seededWorkflow()
         let projector = StreamProjector(database: database, turnID: turnID)
 
-        let askJSON = #"{"questions":[{"header":"Goal","multiSelect":false,"options":[{"label":"A"}],"question":"What?"}]}"#
-
-        let asked = projector.ingest(Self.line(
-            #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"AskUserQuestion","input":\#(askJSON)}]}}"#
-        ))
-        #expect(asked == .askedQuestion)
-
-        // The Harness's auto-error result for the unanswerable call is noise and dropped.
-        let suppressed = projector.ingest(Self.line(
-            #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"Answer questions?","is_error":true}]}}"#
-        ))
-        #expect(suppressed == .none)
-
-        // The interrupt reads back errored but is a deliberate pause: `.completed`, Turn recorded clean.
-        let completed = projector.ingest(Self.line(
-            #"{"type":"result","subtype":"error_during_execution","is_error":true,"duration_ms":1,"result":""}"#
-        ))
-        #expect(completed == .completed)
-
-        let blocks = try database.read { db in try ContentBlockRow.fetchAll(db) }
-        #expect(blocks.count == 1)
-        #expect(blocks.first?.kind == "tool_use")
-        #expect(blocks.first?.toolName == "AskUserQuestion")
-        #expect(blocks.first?.text == askJSON)
-
-        let turn = try #require(try database.read { db in try TurnRow.fetchAll(db) }.first)
-        #expect(turn.isError == false)
-    }
-
-    @Test func ordinaryResultSignalsCompletedAndOrdinaryToolResultIsKept() throws {
-        let (database, turnID) = try Self.seededWorkflow()
-        let projector = StreamProjector(database: database, turnID: turnID)
-
-        // Absent a pending question, tool results are projected and the result signals completion.
+        // Tool results are projected as their own blocks; only the `result` line signals completion.
         let toolResult = projector.ingest(Self.line(
             #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"contents"}]}}"#
         ))

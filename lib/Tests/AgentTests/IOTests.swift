@@ -69,31 +69,6 @@ struct IOTests {
         #expect(block.text == "Hello, world")
     }
 
-    @Test func askUserQuestionInterruptsTurnAndPausesCleanly() async throws {
-        let fixture = try fixtureURL("ask-user-question.sh")
-        let (database, workflowID, root) = try WorkflowFixture.make()
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        // The fixture drains its stdin to this file, so we can prove the harness wrote the interrupt.
-        let capture = "/tmp/auq_stdin_capture.log"
-        try? FileManager.default.removeItem(atPath: capture)
-
-        _ = try await client(fixture).start(startRequest(database: database, workflowID: workflowID))
-
-        // The harness sent an interrupt control_request on stdin in response to the question.
-        let written = (try? String(contentsOfFile: capture, encoding: .utf8)) ?? ""
-        #expect(written.contains(#""subtype":"interrupt""#))
-
-        // The interrupted result reads as an error, but pausing for a question is a clean stop.
-        let turn = try #require(try await database.read { db in try TurnRow.fetchAll(db) }.first)
-        #expect(turn.isError == false)
-
-        // The question card is projected; the auto-error tool_result is suppressed.
-        let blocks = try await database.read { db in try ContentBlockRow.fetchAll(db) }
-        #expect(blocks.contains { $0.kind == "tool_use" && $0.toolName == "AskUserQuestion" })
-        #expect(!blocks.contains { $0.kind == "tool_result" })
-    }
-
     @Test func echoInitWritesSessionAndTurnRows() async throws {
         let fixture = try fixtureURL("echo-init.sh")
         let (database, workflowID, root) = try WorkflowFixture.make()
@@ -420,5 +395,160 @@ struct IOTests {
             #expect(exitCode == 1)
             #expect(err.localizedDescription == "Harness failed code=1: \(stderrTail)")
         }
+    }
+
+    // MARK: - Attended Turns
+
+    /// The arguments the fixture was launched with, read back out of the worktree it wrote them into.
+    private func launchedArguments(worktree: URL) throws -> [String] {
+        try String(contentsOf: worktree.appendingPathComponent("harness-args.txt"), encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    /// Every `--append-system-prompt-file` value, in the order the Harness was given them (ADR 0004).
+    private static func appendedPromptFiles(_ args: [String]) -> [String] {
+        args.indices.filter { args[$0] == "--append-system-prompt-file" }.map { args[$0 + 1] }
+    }
+
+    /// Offering to answer is the whole of what a caller does, and the Turn it gets is one that can ask:
+    /// the `ask_user` server configured and allowlisted, pointed at a channel this Turn opened. The
+    /// caller supplied no server and no directory — those are the Agent's, which is what leaves them
+    /// free to change.
+    @Test func aCallerWhoOffersToAnswerGetsATurnThatCanAsk() async throws {
+        let fixture = try fixtureURL("dump-args.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let worktree = root.appendingPathComponent("worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+
+        let session = try await client(fixture).start(
+            StartRequest(
+                prompt: "hello",
+                worktree: worktree,
+                mode: .readOnly,
+                database: database,
+                workflowID: workflowID,
+                kind: .design,
+                onQuestion: { _ in .cancelled }
+            )
+        )
+        defer {
+            try? FileManager.default.removeItem(
+                at: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("hercules-sessions", isDirectory: true)
+                    .appendingPathComponent(session.id.rawValue.uuidString, isDirectory: true)
+            )
+        }
+
+        let args = try launchedArguments(worktree: worktree)
+        let allowed = try #require(args.firstIndex(of: "--allowedTools"))
+        #expect(args[allowed...].contains("mcp__hercules_ask__ask_user"))
+
+        // The tool and the rules for using it arrive together: a tool nobody told the model about is one
+        // it never calls, and this caller pinned no Skill of its own, so the rules are the only appended
+        // prompt file there is.
+        #expect(Self.appendedPromptFiles(args) == [AttendedTurn.houseRules.path])
+
+        let configPath = args[try #require(args.firstIndex(of: "--mcp-config")) + 1]
+        let config = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: configPath)))
+        let entry = ((config as! [String: Any])["mcpServers"] as! [String: Any])["hercules_ask"] as! [String: Any]
+        let entryArgs = entry["args"] as! [String]
+        #expect(entryArgs.first == "--mcp-ask-server")
+        // The address is the Turn's own, under the Session's scratch — not anything the caller named.
+        #expect(entryArgs.last?.hasSuffix(".questions") == true)
+        #expect(entryArgs.last?.contains(session.id.rawValue.uuidString) == true)
+    }
+
+    /// And a caller that offers nothing gets exactly the invocation it got before any of this existed:
+    /// no server, no tool, nothing to block on. This is what keeps an unattended Execute or Validate run
+    /// unable to wedge itself on a question nobody is there to answer.
+    @Test func aCallerWhoOffersNothingGetsTheInvocationItGotBefore() async throws {
+        let fixture = try fixtureURL("dump-args.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let worktree = root.appendingPathComponent("worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+
+        _ = try await client(fixture).start(
+            StartRequest(
+                prompt: "hello",
+                worktree: worktree,
+                mode: .readOnly,
+                database: database,
+                workflowID: workflowID,
+                kind: .execute
+            )
+        )
+
+        let args = try launchedArguments(worktree: worktree)
+        #expect(!args.contains("--mcp-config"))
+        #expect(!args.contains { $0.contains("ask_user") })
+        // Neither half, not just the tool: an instruction to call a tool that isn't configured is an
+        // instruction to call nothing, and an Execute agent that wants to ask is one that is stuck — it
+        // has to fail where the run loop can see it rather than wait.
+        #expect(!args.contains("--append-system-prompt-file"))
+    }
+
+    /// The Turn a Design summary or an Allocate commit runs as. Its writer rides a per-Turn override,
+    /// which *replaces* the Session's pinned servers rather than merging into them — so the attended
+    /// bundle is added to whatever that resolved to, and the Turn ends up carrying the writer, the
+    /// question tool and the house rules at once. A last "did I capture this right?" question still has
+    /// somewhere to go.
+    @Test func aFinalizationTurnCarriesTheWriterTheQuestionToolAndTheHouseRules() async throws {
+        let fixture = try fixtureURL("dump-args.sh")
+        let (database, workflowID, root) = try WorkflowFixture.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let worktree = root.appendingPathComponent("worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        let skill = URL(fileURLWithPath: "/skills/grill-me/SKILL.md")
+
+        let client = client(fixture)
+        let session = try await client.start(
+            StartRequest(
+                prompt: "grill me",
+                worktree: worktree,
+                mode: .readOnly,
+                database: database,
+                workflowID: workflowID,
+                kind: .design,
+                skillFiles: [skill],
+                onQuestion: { _ in .cancelled }
+            )
+        )
+        defer {
+            try? FileManager.default.removeItem(
+                at: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("hercules-sessions", isDirectory: true)
+                    .appendingPathComponent(session.id.rawValue.uuidString, isDirectory: true)
+            )
+        }
+        _ = try await client.send(
+            SendRequest(
+                prompt: "write the summary",
+                session: session,
+                database: database,
+                mcpServers: [
+                    .artifactWriter(
+                        command: "/path/to/Hercules",
+                        artifactURL: root.appendingPathComponent("phases/design/summary.md")
+                    )
+                ],
+                onQuestion: { _ in .cancelled }
+            )
+        )
+
+        let args = try launchedArguments(worktree: worktree)
+        let allowed = try #require(args.firstIndex(of: "--allowedTools"))
+        #expect(args[allowed...].contains("mcp__hercules__write_artifact"))
+        #expect(args[allowed...].contains("mcp__hercules_ask__ask_user"))
+
+        let configPath = args[try #require(args.firstIndex(of: "--mcp-config")) + 1]
+        let config = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: configPath)))
+        let entries = (config as! [String: Any])["mcpServers"] as! [String: Any]
+        #expect(entries.keys.sorted() == ["hercules", "hercules_ask"])
+
+        // The Phase's Skill and the house rules, in that order. The rules attach per Session rather than
+        // per Skill, so an attended Turn reads the same ones whichever Skill is driving the Phase.
+        #expect(Self.appendedPromptFiles(args) == [skill.path, AttendedTurn.houseRules.path])
     }
 }

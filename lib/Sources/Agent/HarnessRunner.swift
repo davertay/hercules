@@ -10,7 +10,6 @@ struct HarnessRunner {
     @Dependency(\.uuid) var uuid
     @Dependency(\.harnessTeardownGrace) var teardownGrace
     let binaryURL: URL
-    /// Extra CLI arguments from the fresh `AppConfig`, appended after every generated argument.
     var extraArguments: [ExtraArgument] = []
 
     func run(request: SendRequest) async throws {
@@ -25,7 +24,8 @@ struct HarnessRunner {
                 mcpServers: request.mcpServers
             ),
             trustsRepositorySettings: request.trustsRepositorySettings,
-            inputs: request.inputs
+            inputs: request.inputs,
+            onQuestion: request.onQuestion
         )
     }
 
@@ -52,7 +52,8 @@ struct HarnessRunner {
             operation: .start,
             configuration: Harness.SessionConfiguration(request: request),
             trustsRepositorySettings: request.trustsRepositorySettings,
-            inputs: request.inputs
+            inputs: request.inputs,
+            onQuestion: request.onQuestion
         )
     }
 
@@ -65,7 +66,8 @@ struct HarnessRunner {
         operation: Harness.Operation,
         configuration: Harness.SessionConfiguration,
         trustsRepositorySettings: Bool,
-        inputs: InputBundle?
+        inputs: InputBundle?,
+        onQuestion: QuestionHandler?
     ) async throws {
         let startedAt = now
         let turnID = uuid()
@@ -86,19 +88,22 @@ struct HarnessRunner {
             initialState: LineSink(projector: StreamProjector(database: database, turnID: turnID))
         )
 
-        // Scratch dir for the config files this Turn generates for the Harness to read back: the
-        // `--mcp-config` servers and the `--settings` hook registration.
         let scratch = Harness.TurnScratch(
             directory: FileManager.default.temporaryDirectory
                 .appendingPathComponent("hercules-sessions", isDirectory: true)
                 .appendingPathComponent(sessionId.rawValue.uuidString, isDirectory: true),
             turnID: turnID
         )
-        // Both of this Turn's files are spent the moment the classification below has run: the Harness
-        // read `--settings` at startup, and the drop-file has one reader. Deferred from here so every
-        // exit — the paused return, a cancellation, an I/O failure, a throw out of classification —
-        // leaves the directory as it found it.
         defer { scratch.removeTurnFiles() }
+
+        var configuration = configuration
+        var questions: Task<Void, any Error>?
+        if let onQuestion {
+            let channel = QuestionChannel(directory: scratch.questionChannelDirectory)
+            AttendedTurn(channelDirectory: channel.directory).attach(to: &configuration)
+            questions = Task { try await channel.serve(onQuestion) }
+        }
+        defer { questions?.cancel() }
 
         let args = try Harness.renderArgs(
             binary: binaryURL,
@@ -125,7 +130,6 @@ struct HarnessRunner {
                 // Translate the projector's signal into the realtime protocol's stdin control.
                 switch sink.withLock({ $0.ingest(line) }) {
                 case .none: return .none
-                case .askedQuestion: return .interrupt
                 case .completed: return .finishInput
                 }
             }
@@ -142,15 +146,8 @@ struct HarnessRunner {
             throw cancelled(startedAt: startedAt, sink: sink)
         }
 
-        // A paused run is a deliberate stop awaiting a question's answer — already projected, nothing
-        // to classify or flag.
-        if outcome.paused { return }
-
         let durationMs = Int(now.timeIntervalSince(startedAt) * 1000)
 
-        // The Harness's own account of why it stopped, left by the hook we registered for this Turn.
-        // Absent for every Turn the hook didn't fire on, which classification then handles exactly as
-        // it did before the hook existed.
         let stopFailureReason = StopFailureHook.reportedReason(dropFile: scratch.stopFailureDropFile)
 
         try TerminationClassifier().classify(

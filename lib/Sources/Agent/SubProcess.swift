@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import os
 import Subprocess
 import System
 
@@ -46,11 +45,27 @@ struct SubProcess {
         return (prefix + existing).joined(separator: ":")
     }
 
+    /// The Harness's own idle timer on an MCP tool call. Measured on 2.1.260/261, the default aborts a
+    /// silent `tools/call` at just over thirty minutes with an explicit abort message — and a blocking
+    /// `ask_user` is silent for exactly as long as the user takes to answer. `0` disables it, which is
+    /// both necessary and sufficient.
+    ///
+    /// No Hercules-side deadline replaces it. Any value would be arbitrary, and a question left
+    /// unanswered is already visible to the user: the Turn is on screen and Stop is in the toolbar.
+    static let mcpToolIdleTimeoutVariable = "CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT"
+
+    /// What the child's inherited environment is launched with on top of it. Pure, so the invocation
+    /// can be asserted on without spawning anything.
+    static func environmentOverrides(inherited path: String?) -> [String: String] {
+        [
+            "PATH": augmentedPath(inherited: path),
+            mcpToolIdleTimeoutVariable: "0",
+        ]
+    }
+
     struct Outcome {
         let stderrTail: String
         let terminationStatus: TerminationStatus
-        /// True when the Turn was interrupted to await a question — a deliberate pause, not a failure.
-        let paused: Bool
     }
 
     /// Delivers each complete NDJSON stdout line to `onStdoutLine` as it arrives (live streaming, per
@@ -62,19 +77,21 @@ struct SubProcess {
         // fail with `EPIPE` — a `SubprocessError` we handle — instead of terminating us.
         Self.ensureSIGPIPEIgnored
 
+        // swift-subprocess keys an environment by its own `Environment.Key`; converting here leaves the
+        // overrides themselves a plain dictionary, which is what makes them assertable without spawning.
+        let environment = Self.environmentOverrides(inherited: ProcessInfo.processInfo.environment["PATH"])
+            .reduce(into: [Environment.Key: String?]()) { $0[Environment.Key(stringLiteral: $1.key)] = $1.value }
+
         var platformOptions = PlatformOptions()
         // swift-subprocess always appends a final SIGKILL, giving SIGTERM → grace → SIGKILL.
         platformOptions.teardownSequence = [
             .gracefulShutDown(allowedDurationToNextStep: teardownGrace)
         ]
 
-        let paused = OSAllocatedUnfairLock(initialState: false)
         let result = try await Subprocess.run(
             .path(FilePath(executable.path)),
             arguments: Arguments(arguments),
-            environment: .inherit.updating([
-                "PATH": Self.augmentedPath(inherited: ProcessInfo.processInfo.environment["PATH"])
-            ]),
+            environment: .inherit.updating(environment),
             workingDirectory: FilePath(workingDirectory.path),
             platformOptions: platformOptions,
             input: .inputWriter,
@@ -85,7 +102,8 @@ struct SubProcess {
             // Drain stderr concurrently so a payload larger than the pipe buffer can't wedge us.
             async let errTail = Self.collectTail(execution.standardError)
 
-            // Keep stdin open after the prompt so we can interrupt the Turn if it asks a question.
+            // Keep stdin open after the prompt: it's the Turn's control channel, and the only way to
+            // reach a Harness that's already running.
             do {
                 _ = try await inputWriter.write(Self.userMessage(input))
             } catch let error as SubprocessError where error.isBrokenPipe {
@@ -99,7 +117,6 @@ struct SubProcess {
                 case .none:
                     break
                 case .interrupt:
-                    paused.withLock { $0 = true }
                     _ = try? await inputWriter.write(Self.interruptRequest())
                 case .finishInput:
                     // Closing stdin lets the realtime-input Harness exit instead of awaiting more input.
@@ -112,8 +129,7 @@ struct SubProcess {
 
         return Outcome(
             stderrTail: result.closureResult,
-            terminationStatus: result.terminationStatus,
-            paused: paused.withLock { $0 }
+            terminationStatus: result.terminationStatus
         )
     }
 
