@@ -16,10 +16,10 @@ struct AttendedTurn {
 
     /// Adds both halves to the Turn's configuration.
     ///
-    /// The house rules ride `skillFiles` — one more `--append-system-prompt-file` (ADR 0004) — rather
-    /// than being edited into each Skill. A Skill describes what a Phase's agent is for; this describes
-    /// the environment the Harness is running in, so it attaches per Session and an attended Turn reads
-    /// the same rules whichever Skill is driving the Phase.
+    /// The house rules ride `skillFiles` — composed after the Skill into the Turn's one appended system
+    /// prompt (ADR 0004) — rather than being edited into each Skill. A Skill describes what a Phase's
+    /// agent is for; this describes the environment the Harness is running in, so it attaches per
+    /// Session and an attended Turn reads the same rules whichever Skill is driving the Phase.
     func attach(to configuration: inout Harness.SessionConfiguration) {
         configuration.mcpServers.append(
             .questionAsker(command: HerculesMCP.serverCommand, channelDirectory: channelDirectory)

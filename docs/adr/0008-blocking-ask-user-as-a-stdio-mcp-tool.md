@@ -174,7 +174,9 @@ Measured on macOS 26.6.2, 2026-09-04. Note the version column: the CLI **auto-up
 - **`--append-system-prompt-file` is semi-documented.** It is accepted, but absent from `claude
   --help`'s option list (which mentions only `--append-system-prompt`). Hercules already depends on it
   for Skills ([ADR 0004](0004-skill-injection-via-append-system-prompt-file.md)); this adds a second
-  dependence on it, for the house rules.
+  dependence on it, for the house rules. The flag takes one file — the last given wins — so the house
+  rules are composed with the Skill into a single file; shipped as a second flag, they silently
+  displaced the Skill.
 - **Adoption under vaguer briefs is untested.** Both adoption spikes used interview-shaped briefs.
   That is what the Design Phase's Skill actually instructs, so it is not a risk for the Phase this
   ships for — but 10/10 is a claim about interview-shaped work, not about all agents everywhere.
