@@ -8,10 +8,12 @@
   [6]: "acceptEdits",
   [7]: "--setting-sources",
   [8]: "user",
-  [9]: "--verbose",
-  [10]: "--include-partial-messages",
-  [11]: "--resume",
-  [12]: "00000000-0000-0000-0000-000000000001",
-  [13]: "--allowedTools",
-  [14]: "Bash"
+  [9]: "--system-prompt-snapshot",
+  [10]: "off",
+  [11]: "--verbose",
+  [12]: "--include-partial-messages",
+  [13]: "--resume",
+  [14]: "00000000-0000-0000-0000-000000000001",
+  [15]: "--allowedTools",
+  [16]: "Bash"
 ]

@@ -16,7 +16,8 @@ public struct StartRequest: Sendable {
     public let sessionID: UUID?
     /// Set only for `execute`-kind runs, so the Issue's transcript is recoverable; `nil` for chat.
     public let issueNumber: Int?
-    /// Rendered as one `--append-system-prompt-file` each (ADR 0004); re-passed on every resume Turn.
+    /// Composed, in order, into the Turn's one `--append-system-prompt-file` (ADR 0004); re-passed on
+    /// every resume Turn.
     public let skillFiles: [URL]
     /// Exposed to the Harness via `--add-dir`, alongside any `InputBundle`.
     public let addDirs: [URL]

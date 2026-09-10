@@ -14,6 +14,7 @@ public enum AgentError: Error, Sendable {
     case inputUnreadable(URL, underlying: any Error)
     case sessionBusy(id: Session.ID)
     case mcpConfigDirectoryMissing
+    case systemPromptDirectoryMissing
     case cancelled
 }
 
@@ -61,6 +62,8 @@ extension AgentError: LocalizedError {
             "Session busy \(id)"
         case .mcpConfigDirectoryMissing:
             "MCP servers were configured but no Session data directory was provided to write --mcp-config into"
+        case .systemPromptDirectoryMissing:
+            "Skill files were configured but no Session data directory was provided to compose --append-system-prompt-file into"
         case .cancelled:
             "Cancelled"
         }

@@ -405,9 +405,16 @@ struct IOTests {
             .split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
     }
 
-    /// Every `--append-system-prompt-file` value, in the order the Harness was given them (ADR 0004).
-    private static func appendedPromptFiles(_ args: [String]) -> [String] {
-        args.indices.filter { args[$0] == "--append-system-prompt-file" }.map { args[$0 + 1] }
+    /// The appended system prompt the fixture was launched with, read back out of the worktree it copied
+    /// it into: the file the argument names is Turn scratch, gone by the time the Turn returns.
+    private func launchedSystemPrompt(worktree: URL) throws -> String {
+        try String(contentsOf: worktree.appendingPathComponent("harness-system-prompt.md"), encoding: .utf8)
+    }
+
+    /// The appended system prompt a Turn carrying `files` is launched with: those documents, in that
+    /// order, as the one file the Harness honours (ADR 0004).
+    private static func composedPrompt(_ files: [URL]) throws -> String {
+        String(decoding: try Harness.appendedSystemPrompt(composing: files), as: UTF8.self)
     }
 
     /// Offering to answer is the whole of what a caller does, and the Turn it gets is one that can ask:
@@ -445,9 +452,10 @@ struct IOTests {
         #expect(args[allowed...].contains("mcp__hercules_ask__ask_user"))
 
         // The tool and the rules for using it arrive together: a tool nobody told the model about is one
-        // it never calls, and this caller pinned no Skill of its own, so the rules are the only appended
-        // prompt file there is.
-        #expect(Self.appendedPromptFiles(args) == [AttendedTurn.houseRules.path])
+        // it never calls, and this caller pinned no Skill of its own, so the rules are the whole of the
+        // appended prompt.
+        #expect(args.filter { $0 == "--append-system-prompt-file" }.count == 1)
+        #expect(try launchedSystemPrompt(worktree: worktree) == Self.composedPrompt([AttendedTurn.houseRules]))
 
         let configPath = args[try #require(args.firstIndex(of: "--mcp-config")) + 1]
         let config = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: configPath)))
@@ -500,7 +508,9 @@ struct IOTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let worktree = root.appendingPathComponent("worktree", isDirectory: true)
         try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
-        let skill = URL(fileURLWithPath: "/skills/grill-me/SKILL.md")
+        // A real file: the Harness is handed the Skill's text composed with the house rules, not its path.
+        let skill = root.appendingPathComponent("SKILL.md")
+        try "# grill-me\n\nInterview the user.\n".write(to: skill, atomically: true, encoding: .utf8)
 
         let client = client(fixture)
         let session = try await client.start(
@@ -547,8 +557,12 @@ struct IOTests {
         let entries = (config as! [String: Any])["mcpServers"] as! [String: Any]
         #expect(entries.keys.sorted() == ["hercules", "hercules_ask"])
 
-        // The Phase's Skill and the house rules, in that order. The rules attach per Session rather than
-        // per Skill, so an attended Turn reads the same ones whichever Skill is driving the Phase.
-        #expect(Self.appendedPromptFiles(args) == [skill.path, AttendedTurn.houseRules.path])
+        // The Phase's Skill and the house rules, in that order, in the one appended prompt the Harness
+        // honours — as a second flag the rules silently displaced the Skill. The rules attach per Session
+        // rather than per Skill, so an attended Turn reads the same ones whichever Skill is driving the Phase.
+        #expect(args.filter { $0 == "--append-system-prompt-file" }.count == 1)
+        #expect(
+            try launchedSystemPrompt(worktree: worktree) == Self.composedPrompt([skill, AttendedTurn.houseRules])
+        )
     }
 }

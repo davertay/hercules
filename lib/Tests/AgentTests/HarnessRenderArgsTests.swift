@@ -176,22 +176,60 @@ struct HarnessRenderArgsTests {
         #expect(!args.contains("--session-id"))
     }
 
-    @Test func skillFilesRenderOneAppendSystemPromptFileEach() throws {
-        let skillA = URL(fileURLWithPath: "/skills/grill-me.md")
-        let skillB = URL(fileURLWithPath: "/skills/to-prd.md")
+    /// The CLI honours only the last `--append-system-prompt-file` it is given, so a Turn carrying more
+    /// than one document passes the flag once, naming a file in its scratch that composes them in order.
+    @Test func skillFilesComposeIntoOneAppendedSystemPromptFile() throws {
+        let scratch = makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        try FileManager.default.createDirectory(at: scratch.directory, withIntermediateDirectories: true)
+        let skill = scratch.directory.appendingPathComponent("grill-me.md")
+        let houseRules = scratch.directory.appendingPathComponent("house-rules.md")
+        try "# grill-me\n".write(to: skill, atomically: true, encoding: .utf8)
+        try "# House rules\n".write(to: houseRules, atomically: true, encoding: .utf8)
+
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
-            configuration: configuration(mode: .write, skillFiles: [skillA, skillB]),
+            configuration: configuration(mode: .write, skillFiles: [skill, houseRules]),
             inputs: nil,
+            scratch: scratch,
             sessionId: sessionId
         )
 
-        let flagCount = args.filter { $0 == "--append-system-prompt-file" }.count
-        #expect(flagCount == 2)
-        let firstIdx = args.firstIndex(of: "--append-system-prompt-file")!
-        #expect(args[firstIdx + 1] == skillA.path)
-        #expect(args.contains(skillB.path))
+        #expect(args.filter { $0 == "--append-system-prompt-file" }.count == 1)
+        let idx = try #require(args.firstIndex(of: "--append-system-prompt-file"))
+        #expect(args[idx + 1] == scratch.systemPromptFile.path)
+        #expect(try String(contentsOf: scratch.systemPromptFile, encoding: .utf8) == "# grill-me\n\n# House rules\n")
+    }
+
+    @Test func skillFilesWithoutDataDirectoryThrows() {
+        #expect(throws: AgentError.self) {
+            try Harness.renderArgs(
+                binary: binary,
+                operation: .start,
+                configuration: configuration(mode: .write, skillFiles: [URL(fileURLWithPath: "/skills/grill-me.md")]),
+                inputs: nil,
+                scratch: nil,
+                sessionId: sessionId
+            )
+        }
+    }
+
+    /// Start and resume Turns alike render the system prompt they are given. Left to its default, the CLI
+    /// replays the prompt recorded on the Session's first request, so a resume carrying a different Skill
+    /// would run under the one the Session started with.
+    @Test func everyTurnRendersTheSystemPromptItIsGiven() throws {
+        for operation in [Harness.Operation.start, .resume] {
+            let args = try Harness.renderArgs(
+                binary: binary,
+                operation: operation,
+                configuration: configuration(mode: .readOnly),
+                inputs: nil,
+                sessionId: sessionId
+            )
+            let idx = try #require(args.firstIndex(of: "--system-prompt-snapshot"))
+            #expect(args[idx + 1] == "off")
+        }
     }
 
     @Test func addDirsRenderMultipleAddDirAlongsideInputs() throws {
@@ -320,6 +358,7 @@ struct HarnessRenderArgsTests {
 
         #expect(first.hookSettingsFile != second.hookSettingsFile)
         #expect(first.stopFailureDropFile != second.stopFailureDropFile)
+        #expect(first.systemPromptFile != second.systemPromptFile)
         #expect(first.mcpConfigFile == second.mcpConfigFile)
     }
 
@@ -641,8 +680,12 @@ struct HarnessRenderArgsTests {
     // MARK: - Extra arguments
 
     @Test func extraArgumentsAppendAfterGeneratedArguments() throws {
+        let scratch = makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        try FileManager.default.createDirectory(at: scratch.directory, withIntermediateDirectories: true)
+        let skill = scratch.directory.appendingPathComponent("grill-me.md")
+        try "# grill-me\n".write(to: skill, atomically: true, encoding: .utf8)
         let inputs = InputBundle(root: inputsRoot, relativePaths: ["a.txt"])
-        let skill = URL(fileURLWithPath: "/skills/grill-me.md")
         let args = try Harness.renderArgs(
             binary: binary,
             operation: .start,
@@ -652,15 +695,16 @@ struct HarnessRenderArgsTests {
                 addDirs: [URL(fileURLWithPath: "/extra")]
             ),
             inputs: inputs,
+            scratch: scratch,
             extraArguments: [ExtraArgument(flag: "--model", value: "opus")],
             sessionId: sessionId
         )
 
-        // The extras land after the last generated argument (the skill file's path).
+        // The extras land after the last generated argument (the appended system prompt's path).
         #expect(args.last == "opus")
         let modelIdx = args.firstIndex(of: "--model")!
-        let skillIdx = args.firstIndex(of: skill.path)!
-        #expect(modelIdx > skillIdx)
+        let promptIdx = args.firstIndex(of: scratch.systemPromptFile.path)!
+        #expect(modelIdx > promptIdx)
     }
 
     @Test func extraArgumentWithNilValueRendersBareFlag() throws {

@@ -14,7 +14,7 @@ public enum Harness {
         /// The Harness's cwd. Not rendered as an argument; passed to the subprocess directly.
         public var worktree: URL
         public var mode: AgentMode
-        /// Rendered as one `--append-system-prompt-file` each (ADR 0004).
+        /// Composed, in order, into the Turn's one `--append-system-prompt-file` (ADR 0004).
         public var skillFiles: [URL]
         /// Exposed via `--add-dir`, alongside any `InputBundle`.
         public var addDirs: [URL]
@@ -59,8 +59,8 @@ public enum Harness {
     }
 
     /// The scratch a Turn generates for its Harness and the children the Harness spawns — the
-    /// `--mcp-config` servers, the `--settings` hook registration, and the channel a blocking
-    /// `ask_user` call waits on — in the Session's data directory.
+    /// `--mcp-config` servers, the `--settings` hook registration, the composed appended system prompt,
+    /// and the channel a blocking `ask_user` call waits on — in the Session's data directory.
     ///
     /// The turn id keys whichever of them a Turn must not share with another. That is the
     /// ``StopFailureHook`` drop-file above all: one read as a later Turn's would misreport why that
@@ -89,6 +89,13 @@ public enum Harness {
             directory.appendingPathComponent("\(turnID.uuidString).stop-failure.json")
         }
 
+        /// The one file this Turn's Skills and house rules are composed into and passed as
+        /// `--append-system-prompt-file` (ADR 0004). Keyed by the turn id because the documents are the
+        /// Turn's: a resume can carry different Skills than the Session started with.
+        var systemPromptFile: URL {
+            directory.appendingPathComponent("\(turnID.uuidString).system-prompt.md")
+        }
+
         /// Where this Turn's blocking `ask_user` calls announce themselves and their answers come back
         /// (``QuestionChannel``). Keyed by the turn id like the drop-file above, and for a sharper
         /// version of the same reason: an answer read as another Turn's is a wrong answer attributed to
@@ -109,7 +116,7 @@ public enum Harness {
         /// Best effort by construction — a temp file that won't delete is not a reason to change what a
         /// Turn reports.
         func removeTurnFiles() {
-            for file in [hookSettingsFile, stopFailureDropFile, questionChannelDirectory] {
+            for file in [hookSettingsFile, stopFailureDropFile, systemPromptFile, questionChannelDirectory] {
                 try? FileManager.default.removeItem(at: file)
             }
         }
@@ -142,6 +149,11 @@ public enum Harness {
             "--input-format", "stream-json",
             "--permission-mode", permissionMode,
             "--setting-sources", settingSources,
+            // Left on, the CLI records the system prompt on a conversation's first request and replays
+            // that record on every resume, ignoring the appended prompt a later Turn passes — so a resume
+            // carrying a different Skill (Allocate resuming the grill under to-issues) would run under the
+            // Skill the Session started with. Off, every Turn renders the prompt it is given (ADR 0004).
+            "--system-prompt-snapshot", "off",
             "--verbose",
             "--include-partial-messages",
         ]
@@ -195,8 +207,13 @@ public enum Harness {
             args += ["--add-dir", dir.path]
         }
 
-        for file in configuration.skillFiles {
-            args += ["--append-system-prompt-file", file.path]
+        // The CLI honours only the last `--append-system-prompt-file` it is given: a repeated flag
+        // silently drops every file but the last. So the Turn's documents — its Skill, then any house
+        // rules — are composed into one file and passed once (ADR 0004).
+        if !configuration.skillFiles.isEmpty {
+            guard let scratch else { throw AgentError.systemPromptDirectoryMissing }
+            try appendedSystemPrompt(composing: configuration.skillFiles).write(to: scratch.systemPromptFile)
+            args += ["--append-system-prompt-file", scratch.systemPromptFile.path]
         }
 
         // The user's configured extras render last, after every Hercules-generated argument, so they
@@ -227,6 +244,15 @@ public enum Harness {
         }
         let root: [String: Any] = ["mcpServers": entries]
         return try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+    }
+
+    /// The one appended system prompt a Turn's documents compose into: each file's text, in order,
+    /// separated by a blank line. Separated from the file write so it's testable.
+    static func appendedSystemPrompt(composing files: [URL]) throws -> Data {
+        let documents = try files.map {
+            try String(contentsOf: $0, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return Data((documents.joined(separator: "\n\n") + "\n").utf8)
     }
 
     static func renderPrompt(prompt: String, inputs: InputBundle?) -> String {

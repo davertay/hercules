@@ -25,8 +25,15 @@ re-passed on every resume Turn.
 
 ## Consequences
 
-- `AgentClient` gains `skillFiles: [URL]` (one `--append-system-prompt-file` per file; an array
-  composes skills) and accepts multiple `--add-dir` directories alongside the existing
-  `InputBundle`.
-- Per ADR 0001 (a fresh Harness process per Turn), the skill file path is re-passed on every Turn
-  from Session-pinned state, so the skill stays in force across resumes.
+- `AgentClient` gains `skillFiles: [URL]` (an array composes skills) and accepts multiple `--add-dir`
+  directories alongside the existing `InputBundle`.
+- The CLI honours only the *last* `--append-system-prompt-file` it is given; repeating the flag
+  silently drops every earlier file. A Turn's skill files — and, on an attended Turn, the house rules
+  of [ADR 0008](0008-blocking-ask-user-as-a-stdio-mcp-tool.md) — are therefore composed, in order,
+  into one file in the Turn's scratch, and that one file is passed.
+- Per ADR 0001 (a fresh Harness process per Turn), the skill files are re-passed on every Turn from
+  Session-pinned state. That keeps a skill in force only if the CLI renders what it is given, and by
+  default it doesn't: it records the system prompt on a conversation's first request and replays the
+  record on every resume. Every Turn passes `--system-prompt-snapshot off`, so each resume renders the
+  skills it carries — including a different one, as when Allocate resumes the Design Session under
+  to-issues or to-prd.
